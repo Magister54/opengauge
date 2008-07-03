@@ -51,5 +51,5 @@ Arduino 5V pin output -----8|CEN VBB|1-----------------+------- DB9M pin 9 (12V 
 The Arduino is powered by the 12V line coming from the cable too
 {{{
 Arduino 12V input ------------------ DB9M pin 9 (12V Battery)
-Arduino GND input ------------------ DB9M pin 4 (Chassis Ground)
+Arduino GND input ------------------ DB9M pin 2 (Chassis Ground)
 }}}
