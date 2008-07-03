@@ -41,7 +41,7 @@ Schematic is like this:
                             +-------+
 Arduino pin 2 -------------5|TX  ISO|4-----------------+------- DB9M pin 4 (ISO K Line)
                             |       |                  |
-Arduino pin 3 -------------6|RX  GND|3--DB9M pin 5     / between MC pin 4 and pin1
+Arduino pin 3 -------------6|RX  GND|3--DB9M pin 5     / between MC pin 4 and pin 1
                             |       |                  \ goes a 510 ohms resistor
 Arduino 5V pin output -----7|VDD  NC|2--               /
                             |       |                  |
