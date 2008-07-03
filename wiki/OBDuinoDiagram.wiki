@@ -1,4 +1,4 @@
-#summary Whole diagram
+#summary Whole diagram of the *duino board, LCD, interface
 #labels Phase-Design
 
 = Diagram =
