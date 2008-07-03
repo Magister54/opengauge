@@ -1,6 +1,10 @@
 /* OBDuino
 
-   Copyright (C) 2008 Frédéric (aka Magister on ecomodder.com)
+   Copyright (C) 2008
+   
+   Main coding/ISO: Frédéric (aka Magister on ecomodder.com)
+   Buttons/LCD/params: Dave (aka dcb on ecomodder.com)
+   PWM: n8thegr8 on ecomodder.com
 
    This program is free software; you can redistribute it and/or modify it under
    the terms of the GNU General Public License as published by the Free Software
@@ -22,12 +26,35 @@
 #include <SoftwareSerial.h>
 #include <LCD4Bit.h>
 
+#define obduinosig B11001100
+
+// buttons/contrast/brightness management from mpguino.pde
+#define ContrastPin 6      
+#define BrightnessPin 9      
+byte brightness[]={0,42,85,128}; //middle button cycles through these brightness settings
+#define brightnessLength (sizeof(brightness)/sizeof(byte)) //array size
+byte brightnessIdx=1;
+
+#define lbuttonPin 17 // Left Button, on analog 3
+#define mbuttonPin 18 // Middle Button, on analog 4
+#define rbuttonPin 19 // Right Button, on analog 5
+ 
+#define lbuttonBit 8 //  pin17 is a bitmask 8 on port C
+#define mbuttonBit 16 // pin18 is a bitmask 16 on port C
+#define rbuttonBit 32 // pin19 is a bitmask 32 on port C
+#define buttonsUp   lbuttonBit + mbuttonBit + rbuttonBit  // start with the buttons in the right state      
+byte buttonState = buttonsUp;      
+
+// parms mngt from mpguino.pde too
+#define contrastIdx 0  //do contrast first to get display dialed in
+#define useMetric 1
+char *parmLabels[]={"Contrast","Use Metric"};
+unsigned long  parms[]={15ul, 1ul};  //default values
+#define parmsLength (sizeof(parms)/sizeof(unsigned long)) //array size
+
 /*
  * OBD-II ISO9141-2 Protocol
  */
-
-// change to 0 to have MPH and US MPG
-#define USE_METRIC  1
 
 #define K_OUT  2
 #define K_IN   3
@@ -64,14 +91,18 @@ PID_T pid_array[]=
   { LOAD, 0x04, 1, "%d %%" },
   { ECT, 0x05, 1, "%d C" },
   { RPM, 0x0C, 2, "%d RPM" },
-#ifdef USE_METRIC
-  { VSS, 0x0D, 1, "%d km/h" },
-#else
-  { VSS, 0x0D, 1, "%d mph" },
-#endif
+  { VSS, 0x0D, 1, "%d" },
   { MAF, 0x10, 1, "%d g/s" },
   { 0xff, 0xff, 0xff, NULL }
 };
+
+//attach the buttons interrupt      
+ISR(PCINT1_vect)
+{       
+  byte p = PINC;  // bypassing digitalRead for interrupt performance      
+
+  buttonState &= p;      
+}       
 
 // write a bit using bit bang
 void iso_write_byte(byte b)
@@ -334,6 +365,15 @@ int print_pid(byte mnemo, int value)
   index=i;
 
   sprintf(str, pid_array[index].format, value);
+  
+  // special case
+  if(mnemo==VSS)
+  {
+    if(parms[useMetric]==1)
+      strcat(str, " km/h");
+    else
+      strcat(str, " mph");
+  }
 
   lcd.printIn(str);
 }
@@ -343,9 +383,10 @@ void get_vss(void)
   int n;
   
   n=get_pid_value(VSS);
-#ifndef USE_METRIC
-  n=(int)( ((long)n*621L)/1000L );
-#endif
+
+  if(parms[useMetric]==0)  // convert to MPH
+    n=(int)( ((long)n*621L)/1000L );
+    
   print_pid(VSS, n);
 }
 
@@ -393,16 +434,56 @@ void get_cons(void)
   // 730 g/L according to Canadian Gov
   // formula: (3600 * MAF/100) / (14.7 * 730 * VSS)
   // multipled by 100 for double digits precision
-#ifdef USE_METRIC  
-  cons=(int)( ((long)maf*3355L)/((long)vss*100L) );
-  sprintf(str, "%d.%2d L/100", cons/100, (cons - ((cons/100)*100)) );
-#else
-  // single digit precision for MPG
-  cons=(int)( ((long)vss*7107L)/(long)maf );
-  sprintf(str, "%d.%d MPG", cons/10, (cons - ((cons/10)*10)) );
-#endif
+  if(parms[useMetric]==1)
+  {
+    cons=(int)( ((long)maf*3355L)/((long)vss*100L) );
+    sprintf(str, "%d.%2d L/100", cons/100, (cons - ((cons/100)*100)) );
+  }
+  else
+  {
+    // single digit precision for MPG
+    cons=(int)( ((long)vss*7107L)/(long)maf );
+    sprintf(str, "%d.%d MPG", cons/10, (cons - ((cons/10)*10)) );
+  }
 
   lcd.printIn(str);
+}
+
+void save(void)
+{
+  EEPROM.write(0, obduinosig);
+  byte p = 0;
+  for(int x=4; p<parmsLength; x+=4)
+  {
+    unsigned long v = parms[p];
+    EEPROM.write(x,   (v>>24)&255);
+    EEPROM.write(x+1, (v>>16)&255);
+    EEPROM.write(x+2, (v>>8)&255);
+    EEPROM.write(x+3, (v)&255);
+    p++;
+  }
+}
+
+//return 1 if loaded ok
+byte load(void)
+{ 
+  byte b = EEPROM.read(0);
+  if(b==obduinosig)
+  {
+    byte p=0;
+
+    for(int x=4; p<parmsLength; x+=4)
+    {
+      unsigned long v = EEPROM.read(x);
+      v = (v << 8) + EEPROM.read(x+1);
+      v = (v << 8) + EEPROM.read(x+2);
+      v = (v << 8) + EEPROM.read(x+3);
+      parms[p]=v;
+      p++;
+    }
+    return 1;
+  }
+  return 0;
 }
 
 void setup()                    // run once, when the sketch starts
@@ -410,6 +491,28 @@ void setup()                    // run once, when the sketch starts
   // init pinouts
   pinMode(K_OUT, OUTPUT);
   pinMode(K_IN, INPUT);
+
+  // buttons init
+  pinMode( lbuttonPin, INPUT );       
+  pinMode( mbuttonPin, INPUT );       
+  pinMode( rbuttonPin, INPUT );      
+  // "turn on" the internal pullup resistors      
+  digitalWrite( lbuttonPin, HIGH);       
+  digitalWrite( mbuttonPin, HIGH);       
+  digitalWrite( rbuttonPin, HIGH);       
+ 
+  // low level interrupt enable stuff
+  // interrupt 1 for the 3 buttons
+  PCICR |= (1 << PCIE1);       
+  PCMSK1 |= (1 << PCINT11);       
+  PCMSK1 |= (1 << PCINT12);       
+  PCMSK1 |= (1 << PCINT13);           
+
+  // LCD contrast/brightness init
+  pinMode(ContrastPin, OUTPUT);      
+  analogWrite(ContrastPin, parms[contrastIdx]);  
+  pinMode(BrightnessPin, OUTPUT);      
+  analogWrite(BrightnessPin, 255-brightness[brightnessIdx]);      
 
   Serial.begin(9600);  // for debugging
   Serial.println("Init ISO9141-2 OBD2 Protocol");
@@ -440,5 +543,11 @@ void loop()                     // run over and over again
   lcd.cursorTo(1,8);
   bottomright();  
   
-  delay(100);                  // wait, for what?
+  if(!(buttonState&mbuttonBit))
+  {
+    //middle is cycle through brightness settings      
+    brightnessIdx = (brightnessIdx + 1) % brightnessLength;
+    analogWrite(BrightnessPin, 255-brightness[brightnessIdx]);      
+  }
+  buttonState=buttonsUp;
 }
