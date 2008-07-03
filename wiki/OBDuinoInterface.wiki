@@ -1,41 +1,40 @@
 #summary OBDuino Interface adapter
+#labels Phase-Design
 
 = Introduction =
 
 You cannot plug directly the signals from the OBD-II to the Arduino board.
 You need a small interface that adapt the signal.
 
-
 = Details =
 
 ==Cable==
 
-To keep compatibility with already existing cable, the OBD-II to DB9F cable is wired like this:
+To keep compatibility with already existing cable, an OBD-II to DB9F cable is wired like this:
 
 {{{
 DB9F			OBD-II
-1---------------5 (Signal ground)
-2---------------4 (Chassis ground)
-3-NC
-4---------------7 (ISO K line)
-5-NC
-6---------------10 (J1850 bus-, future use)
-7---------------2  (J1850 bus+, future use)
-8-NC
+1---------------5  (Signal ground)
+2---------------4  (Chassis ground)
+3---------------6  (CAN High)
+4---------------7  (ISO K line)
+5---------------14 (CAN Low)
+6---------------10 (J1850 bus-)
+7---------------2  (J1850 bus+)
+8---------------15 (ISO L Line)
 9---------------16 (Battery)
 }}}
 *Do not plug it into a PC!!! This goes to an interface only!!!*
 
-You can make it yourself with an OBD-II plug available at http://www.carplugs.com/ for $5+$3sh. Use at least AWG24 wires especially for Battery and Chassis ground
+You can make it yourself with an OBD-II plug available at http://www.carplugs.com/ for $5+$3sh. Use at least AWG24 wires especially for Battery and Chassis ground.
 
 Or buy an already made cable at http://www.obd2allinone.com/ for $10+$5sh
 
 
-==Interface==
+==Interface for ISO==
 
-The cable goes into an interface to adapt the ISO signal for the Arduino input.
-It concists of a small IC, a resistor, a DB9M that will be plugged with the
-cable mentionned above, and a few wires that connect to the Arduino board.
+The cable goes into an interface that adapt the ISO signals for the Arduino inputs.
+It consists of a small IC ([http://www.freescale.com/webapp/sps/site/prod_summary.jsp?code=MC33290 Freescale MCZ33290EF]), a 510 ohms resistor, a DB9M that will be plugged with the cable mentioned above, and a few wires that connect to the Arduino board.
 Schematic is like this:
 {{{
                              MC33290
