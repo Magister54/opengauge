@@ -1,0 +1,59 @@
+#summary OBDuino adapter
+
+= Introduction =
+
+You cannot plug directly the signals from the OBD-II to the Arduino board.
+You need a small interface that adapt the signal.
+
+
+= Details =
+
+==Cable==
+
+To keep compatibility with already existing cable, the OBD-II
+to DB9F cable is wired like this:
+
+{{{
+DB9F			OBD-II
+1---------------5 (Signal ground)
+2---------------4 (Chassis ground)
+3-NC
+4---------------7 (ISO K line)
+5-NC
+6---------------10 (J1850 bus-, future use)
+7---------------2  (J1850 bus+, future use)
+8-NC
+9---------------16 (Battery)
+}}}
+*Do not plug it into a PC!!! This goes to an adapter only!!!*
+
+You can make it yourself with an OBD-II plug available at
+http://www.carplugs.com/ for $5+$3sh
+Use at least AWG24 wires especially for Battery and Chassis ground
+
+Or buy an already made cable at http://www.obd2allinone.com/
+for $10+$5sh
+
+
+==Interface==
+
+The cable goes into an adapter to adapt the ISO signal for the Arduino input.
+It concists of a small IC, a resistor, a DB9M that will be plugged with the
+cable mentionned above, and a few wires that connect to the Arduino board.
+Schematics is like this:
+
+                             MC33290
+                            +-------+
+Arduino pin 2 -------------5|TX  ISO|4-----------------+------- DB9M pin 4 (ISO K Line)
+                            |       |                  |
+Arduino pin 3 -------------6|RX  GND|3--DB9M pin 5     / between MC pin 4 and pin1
+                            |       |                  \ goes a 510 ohms resistor
+Arduino 5V pin output -----7|VDD  NC|2--               /
+                            |       |                  |
+Arduino 5V pin output -----8|CEN VBB|1-----------------+------- DB9M pin 9 (12V Battery)
+                            +-------+
+                     
+The Arduino is powered by the 12V line coming from the cable too
+
+Arduino 12V input ------------------ DB9M pin 9 (12V Battery)
+Arduino GND input ------------------ DB9M pin 4 (Chassis Ground)
