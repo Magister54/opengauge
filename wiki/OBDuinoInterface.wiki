@@ -41,7 +41,7 @@ The cable goes into an adapter to adapt the ISO signal for the Arduino input.
 It concists of a small IC, a resistor, a DB9M that will be plugged with the
 cable mentionned above, and a few wires that connect to the Arduino board.
 Schematics is like this:
-
+{{{
                              MC33290
                             +-------+
 Arduino pin 2 -------------5|TX  ISO|4-----------------+------- DB9M pin 4 (ISO K Line)
@@ -52,7 +52,7 @@ Arduino 5V pin output -----7|VDD  NC|2--               /
                             |       |                  |
 Arduino 5V pin output -----8|CEN VBB|1-----------------+------- DB9M pin 9 (12V Battery)
                             +-------+
-                     
+}}}                  
 The Arduino is powered by the 12V line coming from the cable too
 
 Arduino 12V input ------------------ DB9M pin 9 (12V Battery)
