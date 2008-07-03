@@ -1,0 +1,8 @@
+#summary Whole diagram
+#labels Phase-Design
+
+= Diagram =
+
+Here's the proposed diagram of the Arduino board, the LCD screen, and the [OBDuinoInterface interface].
+
+http://opengauge.org/%7Eobduino/diagram/obduino.gif
