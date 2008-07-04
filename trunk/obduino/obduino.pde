@@ -4,7 +4,7 @@
    
    Main coding/ISO: Frédéric (aka Magister on ecomodder.com)
    Buttons/LCD/params: Dave (aka dcb on ecomodder.com)
-   PWM: n8thegr8 on ecomodder.com
+   PWM: Nathan (aka n8thegr8 on ecomodder.com)
 
    This program is free software; you can redistribute it and/or modify it under
    the terms of the GNU General Public License as published by the Free Software
@@ -49,15 +49,8 @@ byte buttonState = buttonsUp;
 #define contrastIdx 0  //do contrast first to get display dialed in
 #define useMetric 1
 char *parmLabels[]={"Contrast","Use Metric"};
-unsigned long  parms[]={15ul, 1ul};  //default values
+unsigned long  parms[]={15UL, 1UL};  //default values
 #define parmsLength (sizeof(parms)/sizeof(unsigned long)) //array size
-
-/*
- * OBD-II ISO9141-2 Protocol
- */
-
-#define K_OUT  2
-#define K_IN   3
 
 LCD4Bit   lcd = LCD4Bit(2);   //create a 2-lines display.
 
@@ -66,8 +59,18 @@ void (*topright)(void);
 void (*bottomleft)(void);
 void (*bottomright)(void);
 
+unsigned long delta_time;
+unsigned long tank_dist=0UL;  // in cm, need to be read/write in the eeprom
+
+/*
+ * OBD-II ISO9141-2 Protocol
+ */
+
+#define K_OUT  2
+#define K_IN   3
+
 unsigned int baud_speed=0;
-#define bit_period  (1000000/baud_speed)
+#define bit_period  (1000000L/baud_speed)
 
 enum
 {
@@ -91,7 +94,7 @@ PID_T pid_array[]=
   { LOAD, 0x04, 1, "%d %%" },
   { ECT, 0x05, 1, "%d C" },
   { RPM, 0x0C, 2, "%d RPM" },
-  { VSS, 0x0D, 1, "%d" },
+  { VSS, 0x0D, 1, "%d" },    // special handler for speed
   { MAF, 0x10, 1, "%d g/s" },
   { 0xff, 0xff, 0xff, NULL }
 };
@@ -336,7 +339,11 @@ int get_pid_value(byte mnemo)
         n=-1;
         break;
   }
-  
+
+  char str[20];
+  sprintf(str, "pid %d=%d", pid_array[index].id, n);
+  Serial.println(str);
+
   return n;
 }
 
@@ -449,6 +456,47 @@ void get_cons(void)
   lcd.printIn(str);
 }
 
+void get_dist(void)
+{
+  unsigned long  cdist;
+  char str[20];
+  
+  // convert in hundreds of meter
+  cdist=tank_dist/10000UL;
+  
+  // convert in miles if requested
+  if(parms[useMetric]==0)
+    cdist=(cdist*621UL)/1000UL;
+
+  sprintf(str, "%ul.%ul MPG", cdist/10L, (cdist - ((cdist/10L)*10L)) );
+
+  lcd.printIn(str);
+}
+
+void accu_dist(void)
+{
+  int vss;
+  char str[20];
+  
+  vss=get_pid_value(VSS);
+
+  // acumulate distance for this tank
+
+  // in centimeter because for instance at 3km/h the car does
+  // 0.83m/s and as we do not use float, we need to multiply by
+  // 100 to have a better approximation, so in this example the
+  // car does 83cm/s. As the function can be called more than one
+  // time per second, the calculation is done in cm/ms
+
+  // the car do VSS*100'000 cm/hour
+  // =(VSS*100'000)/3600 cm/second (or cm/1000ms)
+  // =(VSS*100'000)/3600*delta_time/1000 cm/delta_time ms
+  // = VSS*delta_time/36
+
+  delta_time = millis() - delta_time;
+  tank_dist+=((unsigned long)vss*delta_time)/36UL;
+}
+
 void save(void)
 {
   EEPROM.write(0, obduinosig);
@@ -514,7 +562,7 @@ void setup()                    // run once, when the sketch starts
   pinMode(BrightnessPin, OUTPUT);      
   analogWrite(BrightnessPin, 255-brightness[brightnessIdx]);      
 
-  Serial.begin(9600);  // for debugging
+  Serial.begin(115200);  // for debugging
   Serial.println("Init ISO9141-2 OBD2 Protocol");
   if(iso_init()==0)
     Serial.println("Init OK!");
@@ -529,6 +577,8 @@ void setup()                    // run once, when the sketch starts
   topright=get_vss;
   bottomleft=get_rpm;
   bottomright=get_load;
+  
+  delta_time=millis();
 }
 
 void loop()                     // run over and over again
@@ -542,6 +592,8 @@ void loop()                     // run over and over again
   bottomleft();
   lcd.cursorTo(1,8);
   bottomright();  
+
+  accu_dist();    // accumulate distance
   
   if(!(buttonState&mbuttonBit))
   {
