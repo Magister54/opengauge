@@ -64,14 +64,16 @@ unsigned long tank_dist=0UL;  // in cm, need to be read/write in the eeprom
 
 /*
  * OBD-II ISO9141-2 Protocol
+ * Using software serial method, lib claims speed greater
+ * than 9600 bauds may be faulty, let's try.
  */
 
-#define K_OUT  2
-#define K_IN   3
+#define K_IN    2
+#define K_OUT   3
 
-unsigned int baud_speed=0;
-#define bit_period  (1000000L/baud_speed)
+SoftwareSerial ISOserial =  SoftwareSerial(K_IN, K_OUT);
 
+/* PID stuff */
 enum
 {
   LOAD,
@@ -106,65 +108,6 @@ ISR(PCINT1_vect)
 
   buttonState &= p;      
 }       
-
-// write a bit using bit bang
-void iso_write_byte(byte b)
-{
-  byte mask;
-  unsigned int bit_delay=bit_period-clockCyclesToMicroseconds(50);
-
-  // start bit
-  digitalWrite(K_OUT, LOW);
-  delayMicroseconds(bit_delay);
-  
-  mask=0x1;  
-  for (mask=0x01; mask; mask <<= 1)
-  {
-    if(b & mask)
-      digitalWrite(K_OUT, HIGH);
-    else
-      digitalWrite(K_OUT, LOW);
-
-    delayMicroseconds(bit_delay);
-  }
-  
-  // stop bit
-  digitalWrite(K_OUT, HIGH);
-  delayMicroseconds(bit_delay);
-}
-
-byte iso_read_byte(void)
-{
-  int offset;
-  byte b;
-  unsigned int bit_delay=bit_period-clockCyclesToMicroseconds(50);
-
-  while (digitalRead(K_IN));
-
-  // confirm that this is a real start bit, not line noise
-  if (digitalRead(K_IN) == LOW)
-  {
-    // frame start indicated by a falling edge and low start bit
-    // jump to the middle of the low start bit
-    delayMicroseconds(bit_delay / 2 - clockCyclesToMicroseconds(50));
-	
-    // offset of the bit in the byte: from 0 (LSB) to 7 (MSB)
-    for(offset=0; offset<8; offset++)
-    {
-	// jump to middle of next bit
-	delayMicroseconds(bit_delay);
-	
-	// read bit
-	b |= digitalRead(K_IN) << offset;
-    }
-
-    delayMicroseconds(bit_period);
-
-    return b;
-  }
-  
-  return -1;
-}
 
 // inspired by SternOBDII\code\checksum.c
 byte checksum(byte *data, int len)
@@ -203,7 +146,7 @@ int iso_write_data(byte *data, int len)
   n=i+1;
   for(i=0; i<n; i++)
   {
-    iso_write_byte(data[i]);
+    ISOserial.print(buf[i]);
     delay(20);	// inter character delay
   }
   
@@ -223,7 +166,7 @@ int iso_read_data(byte *data, int len)
 // checksum 1 bytes: [sum(header)+sum(data)]
 
   for(i=0; i<3+1+1+len; i++)
-    buf[i]=iso_read_byte();
+    buf[i]=ISOserial.read();
   
   // test, skip header comparison
   // ignore failure for the moment (0x7f)
@@ -244,38 +187,38 @@ int iso_init()
   delay(300);
 
   // send 0x33 at 5 bauds
-  baud_speed=5;
-  iso_write_byte(0x33);
+  ISOserial.begin(5);
+  ISOserial.print(0x33);
   
   // pause between 60 ms and 300ms (from protocol spec)
   delay(60);
 
   // switch to 10400 bauds
-  baud_speed=10400;
+  ISOserial.begin(10400);
 
   // wait for 0x55 from the ECU
-  b=iso_read_byte();
+  b=ISOserial.read();
   if(b!=0x55)
     return -1;
 
   delay(5);
 
   // wait for 0x08 0x08
-  b=iso_read_byte();
+  b=ISOserial.read();
   if(b!=0x08)
     return -1;
-  b=iso_read_byte();
+  b=ISOserial.read();
   if(b!=0x08)
     return -1;
 
   delay(25);
 
   // sent 0xF7 (which is ~0x08)
-  iso_write_byte(0xF7);
+  ISOserial.print(0xF7);
   delay(25);
 
   // ECU answer by 0xCC
-  b=iso_read_byte();
+  b=ISOserial.read();
   if(b!=0xCC)
     return -1;
   
