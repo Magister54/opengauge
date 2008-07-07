@@ -72,14 +72,14 @@ unsigned long tank_dist=0UL;  // in cm, need to be read/write in the eeprom
  * Using software serial method, lib claims speed greater
  * than 9600 bauds may be faulty, let's try.
  */
-
 #define K_IN    2
 #define K_OUT   3
-
 SoftwareSerial ISOserial =  SoftwareSerial(K_IN, K_OUT);
 
 /* PID stuff */
-#define PID_SUPPORTED 0x00
+
+unsigned long  pid00to20_support;
+#define PID_SUPPORT20 0x00
 #define NBR_CODE      0x01
 #define FREEZE_DTC    0x02
 #define FUEL_STATUS   0x03
@@ -96,6 +96,36 @@ SoftwareSerial ISOserial =  SoftwareSerial(K_IN, K_OUT);
 #define TIMING_ADV    0x0E
 #define INT_AIR_TEMP  0x0F
 #define MAF_AIR_FLOW  0x10
+#define THROTTLE_POS  0x11
+#define SEC_AIR_STAT  0x12
+#define OXY_SENSORS1  0x13
+#define B1S1OXY_SENS_SFT 0x14
+#define B1S2OXY_SENS_SFT 0x15
+#define B1S3OXY_SENS_SFT 0x16
+#define B1S4OXY_SENS_SFT 0x17
+#define B2S1OXY_SENS_SFT 0x18
+#define B2S2OXY_SENS_SFT 0x19
+#define B2S3OXY_SENS_SFT 0x1A
+#define B2S4OXY_SENS_SFT 0x1B
+#define OBD_STD       0x1C
+#define OXY_SENSORS2  0x1D
+#define AUX_INPUT     0x1E
+#define RUNTIME_START 0x1F
+#define PID_SUPPORT40 0x20
+
+#define LAST_PID      0x20  // same as the last one defined here
+
+// returned length of the PID response
+// constants so put in flash
+prog_uchar pid_reslen[] PROGMEM=
+{
+    // pid 0x00 to 0x1F
+    4,4,8,2,1,1,1,1,1,1,1,1,2,1,1,1,
+    2,1,1,1,2,2,2,2,2,2,2,2,1,1,1,2,
+    
+    // pid 0x20 to whatever
+    4
+};
 
 //attach the buttons interrupt      
 ISR(PCINT1_vect)
@@ -231,6 +261,13 @@ long get_pid(byte pid, char *retbuf)
   long ret;       // return value
   int reslen;
   
+  // check if PID is supported
+  if( (1<<pid & pid00to20_support) == 0)
+  {
+    retbuf[0]='\0';
+    return -1;
+  }
+  
   cmd[0]=0x01;    // ISO cmd 1, get PID
   cmd[1]=pid;
 
@@ -238,37 +275,10 @@ long get_pid(byte pid, char *retbuf)
   iso_write_data(cmd, 2);
   
   // receive length depends on pid
-  switch(pid)
-  {
-      case PID_SUPPORTED:
-      case NBR_CODE:
-        reslen=4;
-        break;
-      case FREEZE_DTC:
-        reslen=8;
-        break;
-      case FUEL_STATUS:
-      case ENGINE_RPM:
-      case MAF_AIR_FLOW:
-        reslen=2;
-        break;
-      case LOAD_VALUE:
-      case COOLANT_TEMP:
-      case STF_BANK1:
-      case LTR_BANK1:
-      case STF_BANK2:
-      case LTR_BANK2:
-      case FUEL_PRESSURE:
-      case MAN_PRESSURE:
-      case VEHICLE_SPEED:
-      case TIMING_ADV:
-      case INT_AIR_TEMP:
-        reslen=1;
-        break;
-      default:
-        reslen=0;
-        break;
-  }
+  if(pid<=LAST_PID)
+    reslen=pgm_read_byte_near(pid_reslen+pid);
+  else
+    reslen=0;
 
   // read requested length, n bytes received in buf
   iso_read_data(buf, reslen);
@@ -276,7 +286,7 @@ long get_pid(byte pid, char *retbuf)
   // formula and unit
   switch(pid)
   {
-      case PID_SUPPORTED:
+      case PID_SUPPORT20:
         ret=buf[0]<<24 + buf[1]<<16 + buf[2]<<8 + buf[3];
         sprintf_P(retbuf, PSTR("SUP:0x%04X"), ret);
         break;
@@ -305,6 +315,7 @@ long get_pid(byte pid, char *retbuf)
         sprintf_P(retbuf, PSTR("%d %%"), ret);
         break;
       case COOLANT_TEMP:
+      case INT_AIR_TEMP:      
         ret=buf[0]-40;
         sprintf_P(retbuf, PSTR("%d °C"), ret);
         break;
@@ -336,10 +347,6 @@ long get_pid(byte pid, char *retbuf)
       case TIMING_ADV:
         ret=(buf[0]/2)-64;
         sprintf_P(retbuf, PSTR("%d °"), ret);
-        break;
-      case INT_AIR_TEMP:
-        ret=buf[0]-40;
-        sprintf_P(retbuf, PSTR("%d °C"), ret);
         break;
       default:
         ret=0;
@@ -399,8 +406,19 @@ void get_cons(void)
   long maf, vss, cons;
   char str[20];
   
+  // check if MAF is supported
+  if((1<<MAF_AIR_FLOW & pid00to20_support) == 0)
+  {
+    // nope, lets approximate it with MAP and IAT
+    // later :-/
+    sprintf_P(str, PSTR("NO MAF"));
+    lcd.printIn(str);
+    return;
+  }
+  else  // request it
+    maf=get_pid(MAF_AIR_FLOW, str);
+
   // str will be scrapped and re-used to display fuel consumption
-  maf=get_pid(MAF_AIR_FLOW, str);
   vss=get_pid(VEHICLE_SPEED, str);
 
   // 14.7 air/fuel ratio
@@ -501,6 +519,15 @@ byte load(void)
   return 0;
 }
 
+void check_supported_pid(void)
+{
+  long n;
+  char str[16];
+  n=get_pid(PID_SUPPORT20, str);
+
+  pid00to20_support=(unsigned long)n;
+}
+
 void setup()                    // run once, when the sketch starts
 {
   int r;
@@ -547,6 +574,9 @@ void setup()                    // run once, when the sketch starts
   else
     Serial.println("Init failed!");
 #endif
+
+  // check supported PIDs
+  check_supported_pid();
     
   topleft=get_cons;
   topright=get_vss;
