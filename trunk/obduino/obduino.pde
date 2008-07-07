@@ -20,11 +20,15 @@
    59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
 */
 
+// uncomment to send debug on serial port at 115200 bauds
+#define DEBUG
+
 #undef int    // bug from Arduino IDE 0011
 #include <stdio.h>
 #include <EEPROM.h>
 #include <SoftwareSerial.h>
 #include <LCD4Bit.h>
+#include <avr/pgmspace.h>
 
 #define obduinosig B11001100
 
@@ -35,6 +39,7 @@ byte brightness[]={0,42,85,128}; //middle button cycles through these brightness
 #define brightnessLength (sizeof(brightness)/sizeof(byte)) //array size
 byte brightnessIdx=1;
 
+// use analog pins as digital pins
 #define lbuttonPin 17 // Left Button, on analog 3
 #define mbuttonPin 18 // Middle Button, on analog 4
 #define rbuttonPin 19 // Right Button, on analog 5
@@ -48,7 +53,7 @@ byte buttonState = buttonsUp;
 // parms mngt from mpguino.pde too
 #define contrastIdx 0  //do contrast first to get display dialed in
 #define useMetric 1
-char *parmLabels[]={"Contrast","Use Metric"};
+char *parmLabels[]={"Contrast", "Use Metric"};
 unsigned long  parms[]={15UL, 1UL};  //default values
 #define parmsLength (sizeof(parms)/sizeof(unsigned long)) //array size
 
@@ -74,32 +79,23 @@ unsigned long tank_dist=0UL;  // in cm, need to be read/write in the eeprom
 SoftwareSerial ISOserial =  SoftwareSerial(K_IN, K_OUT);
 
 /* PID stuff */
-enum
-{
-  LOAD,
-  ECT,
-  RPM,
-  VSS,
-  MAF
-};
-  
-typedef struct PID_S
-{
-  byte id;
-  byte pid;
-  byte reslen;
-  char format[10];
-} PID_T;
-
-PID_T pid_array[]=
-{
-  { LOAD, 0x04, 1, "%d %%" },
-  { ECT, 0x05, 1, "%d C" },
-  { RPM, 0x0C, 2, "%d RPM" },
-  { VSS, 0x0D, 1, "%d" },    // special handler for speed
-  { MAF, 0x10, 1, "%d g/s" },
-  { 0xff, 0xff, 0xff, NULL }
-};
+#define PID_SUPPORTED 0x00
+#define NBR_CODE      0x01
+#define FREEZE_DTC    0x02
+#define FUEL_STATUS   0x03
+#define LOAD_VALUE    0x04
+#define COOLANT_TEMP  0x05
+#define STF_BANK1     0x06
+#define LTR_BANK1     0x07
+#define STF_BANK2     0x08
+#define LTR_BANK2     0x09
+#define FUEL_PRESSURE 0x0A
+#define MAN_PRESSURE  0x0B
+#define ENGINE_RPM    0x0C
+#define VEHICLE_SPEED 0x0D
+#define TIMING_ADV    0x0E
+#define INT_AIR_TEMP  0x0F
+#define MAF_AIR_FLOW  0x10
 
 //attach the buttons interrupt      
 ISR(PCINT1_vect)
@@ -226,174 +222,202 @@ int iso_init()
   return 0;
 }
 
-int get_pid_value(byte mnemo)
+// get value of a PID, return as a long value
+// and also formatted for output in the return buffer
+long get_pid(byte pid, char *retbuf)
 {
-  byte cmd[2];
-  byte buf[20];
-  int i, n;
-  int index;
-  byte match_found;
-
-  i=0;
-  match_found=0;
-  while(pid_array[i].id!=0xff)
-  {
-    if(pid_array[i].id==mnemo)
-    {
-      match_found=1;
-      break;
-    }
-    i++;
-  }
-  
-  if(match_found==0)
-    return -1;
-  
-  index=i;
+  byte cmd[2];    // to send the command
+  byte buf[10];   // to receive the result
+  long ret;       // return value
+  int reslen;
   
   cmd[0]=0x01;    // ISO cmd 1, get PID
-  cmd[1]=pid_array[index].pid;
+  cmd[1]=pid;
 
-  // send command
+  // send command, length 2
   iso_write_data(cmd, 2);
   
-  // receive result
-  iso_read_data(buf, pid_array[index].reslen);
-
-  // formula
-  switch(pid_array[index].id)
+  // receive length depends on pid
+  switch(pid)
   {
-      case VSS:
-        n=buf[0];
+      case PID_SUPPORTED:
+      case NBR_CODE:
+        reslen=4;
         break;
-      case RPM:
-        n=(buf[0]+buf[1]*256)/4;
+      case FREEZE_DTC:
+        reslen=8;
         break;
-      case LOAD:
-        n=(buf[0]*100)/255;
+      case FUEL_STATUS:
+      case ENGINE_RPM:
+      case MAF_AIR_FLOW:
+        reslen=2;
         break;
-      case ECT:
-        n=buf[0]-40;
-        break;
-      case MAF:
-        n=(buf[0]+buf[1]*256)/100;
+      case LOAD_VALUE:
+      case COOLANT_TEMP:
+      case STF_BANK1:
+      case LTR_BANK1:
+      case STF_BANK2:
+      case LTR_BANK2:
+      case FUEL_PRESSURE:
+      case MAN_PRESSURE:
+      case VEHICLE_SPEED:
+      case TIMING_ADV:
+      case INT_AIR_TEMP:
+        reslen=1;
         break;
       default:
-        n=-1;
+        reslen=0;
         break;
   }
 
-  char str[20];
-  sprintf(str, "pid %d=%d", pid_array[index].id, n);
-  Serial.println(str);
+  // read requested length, n bytes received in buf
+  iso_read_data(buf, reslen);
 
-  return n;
-}
-
-int print_pid(byte mnemo, int value)
-{
-  int i;
-  int index;
-  byte match_found;
-  char str[20];
-
-  i=0;
-  match_found=0;
-  while(pid_array[i].id!=0xff)
+  // formula and unit
+  switch(pid)
   {
-    if(pid_array[i].id==mnemo)
-    {
-      match_found=1;
-      break;
-    }
-    i++;
+      case PID_SUPPORTED:
+        ret=buf[0]<<24 + buf[1]<<16 + buf[2]<<8 + buf[3];
+        sprintf_P(retbuf, PSTR("SUP:0x%04X"), ret);
+        break;
+      case NBR_CODE:
+        ret=buf[0]<<24 + buf[1]<<16 + buf[2]<<8 + buf[3];
+        sprintf_P(retbuf, PSTR("MIL:0x%04X"), ret);
+        break;
+      case FREEZE_DTC:
+        ret=0;  // freeze DTC, return value has no meaning
+        sprintf_P(retbuf, PSTR("DTC:0x%X%X%X%X%X%X%X%X"), buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
+        break;
+      case FUEL_STATUS:
+        ret=buf[0]<<8 + buf[1];
+        sprintf_P(retbuf, PSTR("FUEL:0x%02X"), ret);
+        break;
+      case ENGINE_RPM:
+        ret=(buf[0]*256 + buf[1])/4;
+        sprintf_P(retbuf, PSTR("%d RPM"), ret);
+        break;
+      case MAF_AIR_FLOW:
+        ret=(buf[0]*256 + buf[1]);  // not divided by 100 for return value!!
+        sprintf_P(retbuf, PSTR("%d.%d g/s"), ret/100, ret - ((ret/100)*100));
+        break;
+      case LOAD_VALUE:
+        ret=(buf[0]*100)/255;
+        sprintf_P(retbuf, PSTR("%d %%"), ret);
+        break;
+      case COOLANT_TEMP:
+        ret=buf[0]-40;
+        sprintf_P(retbuf, PSTR("%d °C"), ret);
+        break;
+      case STF_BANK1:
+      case LTR_BANK1:
+      case STF_BANK2:
+      case LTR_BANK2:
+        ret=(buf[0]-128)*7812L;  // not divided by 10000
+        sprintf_P(retbuf, PSTR("%d.%d %%"), ret/10000, ret-((ret/10000)*10000));
+        break;
+      case FUEL_PRESSURE:
+        ret=buf[0]*3;
+        sprintf_P(retbuf, PSTR("%d kPa"), ret);
+        break;
+      case MAN_PRESSURE:
+        ret=buf[0];
+        sprintf_P(retbuf, PSTR("%d kPa"), ret);
+        break;
+      case VEHICLE_SPEED:
+        ret=buf[0];
+        if(parms[useMetric]==0)  // convert to MPH for display
+        {
+          ret=(ret*621L)/1000L;
+          sprintf_P(retbuf, PSTR("%d mph"), ret);
+        }
+        else
+          sprintf_P(retbuf, PSTR("%d km/h"), ret);
+        break;
+      case TIMING_ADV:
+        ret=(buf[0]/2)-64;
+        sprintf_P(retbuf, PSTR("%d °"), ret);
+        break;
+      case INT_AIR_TEMP:
+        ret=buf[0]-40;
+        sprintf_P(retbuf, PSTR("%d °C"), ret);
+        break;
+      default:
+        ret=0;
+        sprintf_P(retbuf, PSTR("ERROR pid %d"), pid);
+        break;
   }
-  
-  if(match_found==0)
-    return -1;
-  
-  index=i;
 
-  sprintf(str, pid_array[index].format, value);
-  
-  // special case
-  if(mnemo==VSS)
-  {
-    if(parms[useMetric]==1)
-      strcat(str, " km/h");
-    else
-      strcat(str, " mph");
-  }
+#ifdef DEBUG
+  Serial.println(retbuf);
+#endif
 
-  lcd.printIn(str);
+  return ret;
 }
 
 void get_vss(void)
 {
-  int n;
-  
-  n=get_pid_value(VSS);
-
-  if(parms[useMetric]==0)  // convert to MPH
-    n=(int)( ((long)n*621L)/1000L );
-    
-  print_pid(VSS, n);
+  long n;
+  char str[16];
+  n=get_pid(VEHICLE_SPEED, str);
+  lcd.printIn(str);
 }
 
 void get_rpm(void)
 {
-  int n;
-  
-  n=get_pid_value(RPM);
-  print_pid(RPM, n);
+  long n;
+  char str[16];
+  n=get_pid(ENGINE_RPM, str);
+  lcd.printIn(str);
 }
 
 void get_load(void)
 {
-  int n;
-  
-  n=get_pid_value(LOAD);
-  print_pid(LOAD, n);
+  long n;
+  char str[16];
+  n=get_pid(LOAD_VALUE, str);
+  lcd.printIn(str);
 }
 
 void get_ect(void)
 {
-  int n;
-  
-  n=get_pid_value(ECT);
-  print_pid(ECT, n);
+  long n;
+  char str[16];
+  n=get_pid(COOLANT_TEMP, str);
+  lcd.printIn(str);
 }
 
 void get_maf(void)
 {
-  int n;
-  
-  n=get_pid_value(MAF);
-  print_pid(MAF, n);
+  long n;
+  char str[16];
+  n=get_pid(MAF_AIR_FLOW, str);
+  lcd.printIn(str);
 }
   
 void get_cons(void)
 {
-  int maf, vss, cons;
+  long maf, vss, cons;
   char str[20];
   
-  maf=get_pid_value(MAF);
-  vss=get_pid_value(VSS);
+  // str will be scrapped and re-used to display fuel consumption
+  maf=get_pid(MAF_AIR_FLOW, str);
+  vss=get_pid(VEHICLE_SPEED, str);
 
   // 14.7 air/fuel ratio
   // 730 g/L according to Canadian Gov
+  // divide MAF by 100 because our function return MAF*100
   // formula: (3600 * MAF/100) / (14.7 * 730 * VSS)
   // multipled by 100 for double digits precision
   if(parms[useMetric]==1)
   {
-    cons=(int)( ((long)maf*3355L)/((long)vss*100L) );
-    sprintf(str, "%d.%2d L/100", cons/100, (cons - ((cons/100)*100)) );
+    cons=(maf*3355L)/(vss*100L);
+    sprintf_P(str, PSTR("%d.%2d L/100"), cons/100, (cons - ((cons/100)*100)) );
   }
   else
   {
     // single digit precision for MPG
-    cons=(int)( ((long)vss*7107L)/(long)maf );
-    sprintf(str, "%d.%d MPG", cons/10, (cons - ((cons/10)*10)) );
+    cons=(vss*7107L)/maf;
+    sprintf_P(str, PSTR("%d.%d MPG"), cons/10, (cons - ((cons/10)*10)) );
   }
 
   lcd.printIn(str);
@@ -411,7 +435,7 @@ void get_dist(void)
   if(parms[useMetric]==0)
     cdist=(cdist*621UL)/1000UL;
 
-  sprintf(str, "%ul.%ul MPG", cdist/10L, (cdist - ((cdist/10L)*10L)) );
+  sprintf_P(str, PSTR("DIST:%ul.%ul"), cdist/10L, (cdist - ((cdist/10L)*10L)) );
 
   lcd.printIn(str);
 }
@@ -421,7 +445,7 @@ void accu_dist(void)
   int vss;
   char str[20];
   
-  vss=get_pid_value(VSS);
+  vss=get_pid(VEHICLE_SPEED, str);
 
   // acumulate distance for this tank
 
@@ -479,6 +503,8 @@ byte load(void)
 
 void setup()                    // run once, when the sketch starts
 {
+  int r;
+  
   // init pinouts
   pinMode(K_OUT, OUTPUT);
   pinMode(K_IN, INPUT);
@@ -500,22 +526,28 @@ void setup()                    // run once, when the sketch starts
   PCMSK1 |= (1 << PCINT13);           
 
   // LCD contrast/brightness init
-  pinMode(ContrastPin, OUTPUT);      
   analogWrite(ContrastPin, parms[contrastIdx]);  
-  pinMode(BrightnessPin, OUTPUT);      
   analogWrite(BrightnessPin, 255-brightness[brightnessIdx]);      
 
+  lcd.clear();
+  lcd.printIn("OBD-II ISO9141-2");
+
+  r=iso_init();
+  if(r==0)
+  {
+    lcd.printIn("Init ISO Failed!");
+    delay(30000);
+  }
+
+#ifdef DEBUG
   Serial.begin(115200);  // for debugging
-  Serial.println("Init ISO9141-2 OBD2 Protocol");
-  if(iso_init()==0)
+  Serial.println(memoryTest());
+  if(r==0)
     Serial.println("Init OK!");
   else
     Serial.println("Init failed!");
+#endif
     
-  lcd.clear();
-  delay(1000);
-  lcd.printIn("OBD-II ISO9141-2");
-  
   topleft=get_cons;
   topright=get_vss;
   bottomleft=get_rpm;
@@ -538,6 +570,7 @@ void loop()                     // run over and over again
 
   accu_dist();    // accumulate distance
   
+  // test buttons
   if(!(buttonState&mbuttonBit))
   {
     //middle is cycle through brightness settings      
@@ -546,3 +579,16 @@ void loop()                     // run over and over again
   }
   buttonState=buttonsUp;
 }
+
+// this function will return the number of bytes currently free in RAM      
+extern int  __bss_end; 
+extern int  *__brkval; 
+int memoryTest()
+{ 
+  int free_memory; 
+  if((int)__brkval == 0) 
+    free_memory = ((int)&free_memory) - ((int)&__bss_end); 
+  else 
+    free_memory = ((int)&free_memory) - ((int)__brkval); 
+  return free_memory; 
+} 
