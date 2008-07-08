@@ -59,10 +59,11 @@ unsigned long  parms[]={15UL, 1UL};  //default values
 
 LCD4Bit   lcd = LCD4Bit(2);   //create a 2-lines display.
 
-void (*topleft)(void);
-void (*topright)(void);
-void (*bottomleft)(void);
-void (*bottomright)(void);
+// for the 4 display corners
+int topleft;
+int topright;
+int bottomleft;
+int bottomright;
 
 unsigned long delta_time;
 unsigned long tank_dist=0UL;  // in cm, need to be read/write in the eeprom
@@ -70,7 +71,7 @@ unsigned long tank_dist=0UL;  // in cm, need to be read/write in the eeprom
 /*
  * OBD-II ISO9141-2 Protocol
  * Using software serial method, lib claims speed greater
- * than 9600 bauds may be faulty, let's try.
+ * than 9600 bauds may be faulty, let's try at 10400.
  */
 #define K_IN    2
 #define K_OUT   3
@@ -115,7 +116,11 @@ unsigned long  pid00to20_support;
 
 #define LAST_PID      0x20  // same as the last one defined here
 
-// returned length of the PID response
+/* our internal fake PIDs */
+#define FUEL_CONS     0x100
+#define TANK_DIST     0x101
+
+// returned length of the PID response.
 // constants so put in flash
 prog_uchar pid_reslen[] PROGMEM=
 {
@@ -264,6 +269,7 @@ long get_pid(byte pid, char *retbuf)
   // check if PID is supported
   if( (1<<pid & pid00to20_support) == 0)
   {
+    // nope
     retbuf[0]='\0';
     return -1;
   }
@@ -311,6 +317,7 @@ long get_pid(byte pid, char *retbuf)
         sprintf_P(retbuf, PSTR("%d.%d g/s"), ret/100, ret - ((ret/100)*100));
         break;
       case LOAD_VALUE:
+      case THROTTLE_POS:
         ret=(buf[0]*100)/255;
         sprintf_P(retbuf, PSTR("%d %%"), ret);
         break;
@@ -361,65 +368,23 @@ long get_pid(byte pid, char *retbuf)
   return ret;
 }
 
-void get_vss(void)
-{
-  long n;
-  char str[16];
-  n=get_pid(VEHICLE_SPEED, str);
-  lcd.printIn(str);
-}
-
-void get_rpm(void)
-{
-  long n;
-  char str[16];
-  n=get_pid(ENGINE_RPM, str);
-  lcd.printIn(str);
-}
-
-void get_load(void)
-{
-  long n;
-  char str[16];
-  n=get_pid(LOAD_VALUE, str);
-  lcd.printIn(str);
-}
-
-void get_ect(void)
-{
-  long n;
-  char str[16];
-  n=get_pid(COOLANT_TEMP, str);
-  lcd.printIn(str);
-}
-
-void get_maf(void)
-{
-  long n;
-  char str[16];
-  n=get_pid(MAF_AIR_FLOW, str);
-  lcd.printIn(str);
-}
-  
-void get_cons(void)
+void get_cons(char *retbuf)
 {
   long maf, vss, cons;
-  char str[20];
   
   // check if MAF is supported
   if((1<<MAF_AIR_FLOW & pid00to20_support) == 0)
   {
     // nope, lets approximate it with MAP and IAT
     // later :-/
-    sprintf_P(str, PSTR("NO MAF"));
-    lcd.printIn(str);
+    sprintf_P(retbuf, PSTR("NO MAF"));
     return;
   }
   else  // request it
-    maf=get_pid(MAF_AIR_FLOW, str);
+    maf=get_pid(MAF_AIR_FLOW, retbuf);
 
-  // str will be scrapped and re-used to display fuel consumption
-  vss=get_pid(VEHICLE_SPEED, str);
+  // retbuf will be scrapped and re-used to display fuel consumption
+  vss=get_pid(VEHICLE_SPEED, retbuf);
 
   // 14.7 air/fuel ratio
   // 730 g/L according to Canadian Gov
@@ -428,23 +393,24 @@ void get_cons(void)
   // multipled by 100 for double digits precision
   if(parms[useMetric]==1)
   {
+    if(vss==0) vss=1;  // has to display L/h instead when stopped
     cons=(maf*3355L)/(vss*100L);
-    sprintf_P(str, PSTR("%d.%2d L/100"), cons/100, (cons - ((cons/100)*100)) );
+    sprintf_P(retbuf, PSTR("%d.%2d L/100"), cons/100, (cons - ((cons/100)*100)) );
   }
   else
   {
     // single digit precision for MPG
     cons=(vss*7107L)/maf;
-    sprintf_P(str, PSTR("%d.%d MPG"), cons/10, (cons - ((cons/10)*10)) );
+    sprintf_P(retbuf, PSTR("%d.%d MPG"), cons/10, (cons - ((cons/10)*10)) );
   }
-
-  lcd.printIn(str);
+#ifdef DEBUG
+  Serial.println(retbuf);
+#endif
 }
 
-void get_dist(void)
+void get_dist(char *retbuf)
 {
   unsigned long  cdist;
-  char str[20];
   
   // convert in hundreds of meter
   cdist=tank_dist/10000UL;
@@ -453,14 +419,16 @@ void get_dist(void)
   if(parms[useMetric]==0)
     cdist=(cdist*621UL)/1000UL;
 
-  sprintf_P(str, PSTR("DIST:%ul.%ul"), cdist/10L, (cdist - ((cdist/10L)*10L)) );
+  sprintf_P(retbuf, PSTR("DIST:%ul.%ul"), cdist/10L, (cdist - ((cdist/10L)*10L)) );
 
-  lcd.printIn(str);
+#ifdef DEBUG
+  Serial.println(retbuf);
+#endif
 }
 
 void accu_dist(void)
 {
-  int vss;
+  long vss;
   char str[20];
   
   vss=get_pid(VEHICLE_SPEED, str);
@@ -479,7 +447,7 @@ void accu_dist(void)
   // = VSS*delta_time/36
 
   delta_time = millis() - delta_time;
-  tank_dist+=((unsigned long)vss*delta_time)/36UL;
+  tank_dist+=(vss*delta_time)/36UL;
 }
 
 void save(void)
@@ -517,6 +485,28 @@ byte load(void)
     return 1;
   }
   return 0;
+}
+
+void display(int pid)
+{
+  long n;
+  char str[16];
+  
+  /* check if it's a real PID or our internal one */
+  switch(pid)
+  {
+    case FUEL_CONS:
+      get_cons(str);
+      break;
+    case TANK_DIST:
+      get_dist(str);
+      break;
+    default:
+      (void)get_pid(pid, str);
+      break;
+  }
+
+  lcd.printIn(str);
 }
 
 void check_supported_pid(void)
@@ -578,10 +568,10 @@ void setup()                    // run once, when the sketch starts
   // check supported PIDs
   check_supported_pid();
     
-  topleft=get_cons;
-  topright=get_vss;
-  bottomleft=get_rpm;
-  bottomright=get_load;
+  topleft=FUEL_CONS;
+  topright=VEHICLE_SPEED;
+  bottomleft=ENGINE_RPM;
+  bottomright=LOAD_VALUE;
   
   delta_time=millis();
 }
@@ -590,13 +580,13 @@ void loop()                     // run over and over again
 {
   // display on LCD
   lcd.cursorTo(0,0);
-  topleft();
+  display(topleft);
   lcd.cursorTo(0,8);
-  topright();
+  display(topright);
   lcd.cursorTo(1,0);
-  bottomleft();
+  display(bottomleft);
   lcd.cursorTo(1,8);
-  bottomright();  
+  display(bottomright);
 
   accu_dist();    // accumulate distance
   
