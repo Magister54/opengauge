@@ -1,20 +1,20 @@
 /* OBDuino
- 
+
  Copyright (C) 2008
- 
+
  Main coding/ISO: Frédéric (aka Magister on ecomodder.com)
  Buttons/LCD/params: Dave (aka dcb on ecomodder.com)
  PWM: Nathan (aka n8thegr8 on ecomodder.com)
- 
+
  This program is free software; you can redistribute it and/or modify it under
  the terms of the GNU General Public License as published by the Free Software
  Foundation; either version 2 of the License, or (at your option) any later
  version.
- 
+
  This program is distributed in the hope that it will be useful, but WITHOUT
  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
- 
+
  You should have received a copy of the GNU General Public License along with
  this program; if not, write to the Free Software Foundation, Inc.,
  59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
@@ -32,30 +32,31 @@
 #define obduinosig B11001100
 
 // buttons/contrast/brightness management from mpguino.pde
-//LCD Pins      
-#define DIPin 4 // register select RS      
-#define DB4Pin 7       
-#define DB5Pin 8       
-#define DB6Pin 12       
-#define DB7Pin 13      
-#define ContrastPin 6      
-#define EnablePin 5       
-#define BrightnessPin 9      
-#define lcdpowerPin 15  
+//LCD Pins
+#define DIPin 4 // register select RS
+#define DB4Pin 7
+#define DB5Pin 8
+#define DB6Pin 12
+#define DB7Pin 13
+#define ContrastPin 6
+#define EnablePin 5
+#define BrightnessPin 9
+#define lcdpowerPin 15
 
-//LCD prototype      
-class LCD{      
-public:      
-  LCD( );      
-  void gotoXY(byte x, byte y);      
-  void print(char * string);      
-  void init();      
-  void tickleEnable();      
-  void cmdWriteSet();      
-  void LcdCommandWrite(byte value);      
-  void LcdDataWrite(byte value);      
-  byte pushNibble(byte value);      
-};      
+//LCD prototype
+class LCD{
+public:
+  LCD( );
+  void gotoXY(byte x, byte y);
+  void print(char *string);
+  void cls();
+  void init();
+  void tickleEnable();
+  void cmdWriteSet();
+  void LcdCommandWrite(byte value);
+  void LcdDataWrite(byte value);
+  void pushNibble(byte value);
+};
 
 // main object to play with
 LCD lcd;
@@ -73,12 +74,12 @@ byte brightnessIdx=1;
 #define lbuttonBit 8 //  pin17 is a bitmask 8 on port C
 #define mbuttonBit 16 // pin18 is a bitmask 16 on port C
 #define rbuttonBit 32 // pin19 is a bitmask 32 on port C
-#define buttonsUp   lbuttonBit + mbuttonBit + rbuttonBit  // start with the buttons in the right state      
-byte buttonState = buttonsUp;      
+#define buttonsUp   lbuttonBit + mbuttonBit + rbuttonBit  // start with the buttons in the right state
+byte buttonState = buttonsUp;
 
 // parms mngt from mpguino.pde too
 #define contrastIdx 0  //do contrast first to get display dialed in
-#define useMetric 1
+#define useMetricIdx 1
 char *parmLabels[]={
   "Contrast", "Use Metric"};
 unsigned long  parms[]={
@@ -159,13 +160,13 @@ int bottomright=LOAD_VALUE;
 unsigned long delta_time;
 unsigned long tank_dist=0UL;  // in cm, need to be read/write in the eeprom
 
-//attach the buttons interrupt      
+//attach the buttons interrupt
 ISR(PCINT1_vect)
-{       
-  byte p = PINC;  // bypassing digitalRead for interrupt performance      
+{
+  byte p = PINC;  // bypassing digitalRead for interrupt performance
 
-  buttonState &= p;      
-}       
+  buttonState &= p;
+}
 
 // inspired by SternOBDII\code\checksum.c
 byte checksum(byte *data, int len)
@@ -184,14 +185,12 @@ byte checksum(byte *data, int len)
 int iso_write_data(byte *data, int len)
 {
   int i, n;
-
   byte buf[20];
 
   // ISO header
   buf[0]=0x68;
   buf[1]=0x6A;		// 0x68 0x6A is an OBD-II request
   buf[2]=0xF1;		// our requester’s address (off-board tool)
-
   // append message
   for(i=0; i<len; i++)
     buf[i+3]=data[i];
@@ -216,14 +215,13 @@ int iso_write_data(byte *data, int len)
 int iso_read_data(byte *data, int len)
 {
   int i;
-
   byte buf[20];
 
   // header 3 bytes: [80+datalen] [destination=f1] [source=01]
   // data 1+len bytes: [40+cmd0] [result0]
   // checksum 1 bytes: [sum(header)+sum(data)]
 
-    for(i=0; i<3+1+1+len; i++)
+  for(i=0; i<3+1+1+len; i++)
     buf[i]=ISOserial.read();
 
   // test, skip header comparison
@@ -321,15 +319,16 @@ long get_pid(byte pid, char *retbuf)
   {
   case PID_SUPPORT20:
     ret=buf[0]<<24 + buf[1]<<16 + buf[2]<<8 + buf[3];
-    sprintf_P(retbuf, PSTR("SUP:0x%04X"), ret);
+    sprintf_P(retbuf, PSTR("SUP:0x%08X"), ret);
     break;
   case MIL_CODE:
     ret=buf[0]<<24 + buf[1]<<16 + buf[2]<<8 + buf[3];
-    sprintf_P(retbuf, PSTR("MIL:0x%04X"), ret);
+    sprintf_P(retbuf, PSTR("MIL:0x%08X"), ret);
     break;
   case FREEZE_DTC:
-    ret=0;  // freeze DTC, return value has no meaning
-    sprintf_P(retbuf, PSTR("DTC:0x%X%X%X%X%X%X%X%X"), buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
+    // return value has no meaning
+    ret=buf[0]<<24 + buf[1]<<16 + buf[2]<<8 + buf[3];
+    sprintf_P(retbuf, PSTR("DTC:0x%08X"), buf);
     break;
   case FUEL_STATUS:
     ret=buf[0]<<8 + buf[1];
@@ -349,7 +348,7 @@ long get_pid(byte pid, char *retbuf)
     sprintf_P(retbuf, PSTR("%d %%"), ret);
     break;
   case COOLANT_TEMP:
-  case INT_AIR_TEMP:      
+  case INT_AIR_TEMP:
     ret=buf[0]-40;
     sprintf_P(retbuf, PSTR("%d °C"), ret);
     break;
@@ -370,7 +369,7 @@ long get_pid(byte pid, char *retbuf)
     break;
   case VEHICLE_SPEED:
     ret=buf[0];
-    if(parms[useMetric]==0)  // convert to MPH for display
+    if(parms[useMetricIdx]==0)  // convert to MPH for display
     {
       ret=(ret*621L)/1000L;
       sprintf_P(retbuf, PSTR("%d mph"), ret);
@@ -408,7 +407,7 @@ void get_cons(char *retbuf)
     return;
   }
   else  // request it
-  maf=get_pid(MAF_AIR_FLOW, retbuf);
+    maf=get_pid(MAF_AIR_FLOW, retbuf);
 
   // retbuf will be scrapped and re-used to display fuel consumption
   vss=get_pid(VEHICLE_SPEED, retbuf);
@@ -418,13 +417,13 @@ void get_cons(char *retbuf)
   // divide MAF by 100 because our function return MAF*100
   // formula: (3600 * MAF/100) / (14.7 * 730 * VSS)
   // multipled by 100 for double digits precision
-  if(parms[useMetric]==1)
+  if(parms[useMetricIdx]==1)
   {
     if(vss==0)
       cons=(maf*3355L)/100L;
     else
       cons=(maf*3355L)/(vss*100L);
-    sprintf_P(retbuf, PSTR("%d.%2d L/%s"), cons/100, (cons - ((cons/100)*100)), (vss==0)?"h":"100" );
+    sprintf_P(retbuf, PSTR("%d.%2d %s"), cons/100, (cons - ((cons/100)*100)), (vss==0)?"L/h":"\006\007" );
   }
   else
   {
@@ -435,6 +434,7 @@ void get_cons(char *retbuf)
       cons=(vss*7107L)/maf;
     sprintf_P(retbuf, PSTR("%d.%d %s"), cons/10, (cons - ((cons/10)*10)), (vss==0)?"GPH":"MPG" );
   }
+
 #ifdef DEBUG
   Serial.println(retbuf);
 #endif
@@ -448,7 +448,7 @@ void get_dist(char *retbuf)
   cdist=tank_dist/10000UL;
 
   // convert in miles if requested
-  if(parms[useMetric]==0)
+  if(parms[useMetricIdx]==0)
     cdist=(cdist*621UL)/1000UL;
 
   sprintf_P(retbuf, PSTR("DIST:%ul.%ul"), cdist/10L, (cdist - ((cdist/10L)*10L)) );
@@ -499,7 +499,7 @@ void save(void)
 
 //return 1 if loaded ok
 byte load(void)
-{ 
+{
   byte b = EEPROM.read(0);
   if(b==obduinosig)
   {
@@ -548,7 +548,7 @@ void check_supported_pid(void)
 
   n=get_pid(PID_SUPPORT20, str);
   pid00to20_support=(unsigned long)n;
-  
+
   // do we support pid 20 to 40?
   if( (1<<(PID_SUPPORT40-1) & pid00to20_support) == 0)
     return;  //nope
@@ -564,45 +564,70 @@ void check_mil_code(void)
   byte nb;
   byte cmd[2];
   byte buf[6];
-  int i, j;
-  
+  byte i, j, k;
+
   n=get_pid(MIL_CODE, str);
-  
+
   /* A request for this PID returns 4 bytes of data. The first byte contains
-  two pieces of information. Bit A7 (the seventh bit of byte A, the first byte)
-  indicates whether or not the MIL (check engine light) is illuminated. Bits A0
-  through A6 represent the number of diagnostic trouble codes currently flagged
-  in the ECU. The second, third, and fourth bytes give information about the
-  availability and completeness of certain on-board tests. Note that test
-  availability signified by set (1) bit; completeness signified by reset (0)
-  bit. (from Wikipedia)
-  */
+   two pieces of information. Bit A7 (the seventh bit of byte A, the first byte)
+   indicates whether or not the MIL (check engine light) is illuminated. Bits A0
+   through A6 represent the number of diagnostic trouble codes currently flagged
+   in the ECU. The second, third, and fourth bytes give information about the
+   availability and completeness of certain on-board tests. Note that test
+   availability signified by set (1) bit; completeness signified by reset (0)
+   bit. (from Wikipedia)
+   */
   if( (1<<31 & n) !=0)  // test bit A7
   {
-      // we have MIL on
-      nb=(n>>24) & 0x7F;
-      sprintf(str, PSTR("CHECK ENGINE ON"));
-      lcd.print(str);
-      lcd.gotoXY(1,0);
-      sprintf(str, PSTR("%d CODE IN ECU"), nb);
-      lcd.print(str);
-      delay(2000);
-      
-      // retrieve code
-      cmd[0]=0x03;
-      iso_write_data(cmd, 1);
-      
-      for(i=0;i<nb/3;i++)  // each packet contain 3 code
+    // we have MIL on
+    nb=(n>>24) & 0x7F;
+    lcd.print(PSTR("CHECK ENGINE ON"));
+    lcd.gotoXY(1,0);
+    sprintf(str, PSTR("%d CODE(S) IN ECU"), nb);
+    lcd.print(str);
+    delay(2000);
+
+    // retrieve code
+    cmd[0]=0x03;
+    iso_write_data(cmd, 1);
+
+    // we display only the first 6 codes
+    // if you have more than 6 in your ECU
+    // your car is obviously wrong :-/
+    for(i=0;i<nb/3;i++)  // each received packet contain 3 codes
+    {
+      iso_read_data(buf, 6);
+      k=0;  // to build the string
+      for(j=0;j<3;j++)
       {
-        iso_read_data(buf, 6);
-        for(j=0;j<3;j++)
+        switch(buf[j*2] & 0xC0)
         {
-          1;
+          case 0x00:
+            str[k]='P';  // powertrain
+            break;
+          case 0x40:
+            str[k]='C';  // chassis
+            break;
+          case 0x80:
+            str[k]='B';  // body
+            break;
+          case 0xC0:
+            str[k]='U';  // network
+            break;
         }
+        k++;
+        str[k++]='0' + (buf[j*2] & 0x30)>>4;   // first digit is 0-3 only
+        str[k++]='0' + (buf[j*2] & 0x0F);
+        str[k++]='0' + (buf[j*2 +1] & 0xF0)>>4;
+        str[k++]='0' + (buf[j*2 +1] & 0x0F);
       }
+      str[k++]='\0';  // make asciiz
+      lcd.print(str);
+      lcd.gotoXY(0, 1);  // go to next line
+    }
   }
 }
-  
+
 void setup()                    // run once, when the sketch starts
 {
   int r;
@@ -612,20 +637,20 @@ void setup()                    // run once, when the sketch starts
   pinMode(K_IN, INPUT);
 
   // buttons init
-  pinMode( lbuttonPin, INPUT );       
-  pinMode( mbuttonPin, INPUT );       
-  pinMode( rbuttonPin, INPUT );      
-  // "turn on" the internal pullup resistors      
-  digitalWrite( lbuttonPin, HIGH);       
-  digitalWrite( mbuttonPin, HIGH);       
-  digitalWrite( rbuttonPin, HIGH);       
+  pinMode( lbuttonPin, INPUT );
+  pinMode( mbuttonPin, INPUT );
+  pinMode( rbuttonPin, INPUT );
+  // "turn on" the internal pullup resistors
+  digitalWrite( lbuttonPin, HIGH);
+  digitalWrite( mbuttonPin, HIGH);
+  digitalWrite( rbuttonPin, HIGH);
 
   // low level interrupt enable stuff
   // interrupt 1 for the 3 buttons
-  PCICR |= (1 << PCIE1);       
-  PCMSK1 |= (1 << PCINT11);       
-  PCMSK1 |= (1 << PCINT12);       
-  PCMSK1 |= (1 << PCINT13);           
+  PCICR |= (1 << PCIE1);
+  PCMSK1 |= (1 << PCINT11);
+  PCMSK1 |= (1 << PCINT12);
+  PCMSK1 |= (1 << PCINT13);
 
   // LCD init
   pinMode(lcdpowerPin,OUTPUT);
@@ -639,11 +664,11 @@ void setup()                    // run once, when the sketch starts
   pinMode(DB5Pin,OUTPUT);
   pinMode(DB6Pin,OUTPUT);
   pinMode(DB7Pin,OUTPUT);
-  delay(500);      
- 
+  delay(500);
+
   analogWrite(ContrastPin,parms[contrastIdx]);
   lcd.init();
-  lcd.LcdCommandWrite(B00000001);  // clear display, set cursor position to zero         
+  lcd.LcdCommandWrite(B00000001);  // clear display, set cursor position to zero
   lcd.LcdCommandWrite(B10000000);  // set dram to zero
 
   lcd.gotoXY(0, 0);
@@ -667,9 +692,9 @@ void setup()                    // run once, when the sketch starts
 
   // check supported PIDs
   check_supported_pid();
-  
+
   // check if we have MIL code
-//  check_mil_code();
+  //check_mil_code();
 
   topleft=FUEL_CONS;
   topright=VEHICLE_SPEED;
@@ -681,6 +706,18 @@ void setup()                    // run once, when the sketch starts
 
 void loop()                     // run over and over again
 {
+  long n;
+  char str[16];
+
+  // if RPM are 0 then the engine is shutdowned
+  n=get_pid(ENGINE_RPM, str);
+  if(n==0)
+  {
+      // calculate that if we are at 0 for x seconds then
+      // save current data (especially distance) in eeprom ONCE
+      // and shutdown brightness?
+  }
+  
   // display on LCD
   lcd.gotoXY(0,0);
   display(topleft);
@@ -694,125 +731,156 @@ void loop()                     // run over and over again
   accu_dist();    // accumulate distance
 
   // test buttons
+  // need a button command to reset distance trip (tank)
+  // need to save in eeprom one day :)
   if(!(buttonState&mbuttonBit))
   {
-    //middle is cycle through brightness settings      
+    //middle is cycle through brightness settings
     brightnessIdx = (brightnessIdx + 1) % brightnessLength;
-    analogWrite(BrightnessPin, 255-brightness[brightnessIdx]);      
+    analogWrite(BrightnessPin, 255-brightness[brightnessIdx]);
   }
   buttonState=buttonsUp;
 }
 
-// this function will return the number of bytes currently free in RAM      
-extern int  __bss_end; 
-extern int  *__brkval; 
+// this function will return the number of bytes currently free in RAM
+extern int  __bss_end;
+extern int  *__brkval;
 int memoryTest()
-{ 
-  int free_memory; 
-  if((int)__brkval == 0) 
-    free_memory = ((int)&free_memory) - ((int)&__bss_end); 
-  else 
-    free_memory = ((int)&free_memory) - ((int)__brkval); 
-  return free_memory; 
-} 
+{
+  int free_memory;
+  if((int)__brkval == 0)
+    free_memory = ((int)&free_memory) - ((int)&__bss_end);
+  else
+    free_memory = ((int)&free_memory) - ((int)__brkval);
+  return free_memory;
+}
 
-//LCD functions      
-LCD::LCD(){      
-}      
-//x=0..16, y= 0..1      
-void LCD::gotoXY(byte x, byte y){      
-  byte dr=x+0x80;      
-  if (y==1)       
-    dr += 0x40;      
-  if (y==2)       
-    dr += 0x14;      
-  if (y==3)       
-    dr += 0x54;      
-  lcd.LcdCommandWrite(dr);        
-}      
- 
-void LCD::print(char * string){      
-  byte x = 0;      
-  char c = string[x];      
-  while(c != 0){      
-    lcd.LcdDataWrite(c);       
-    x++;      
-    c = string[x];      
-  }      
-}      
- 
- 
-//do the lcd initialization voodoo      
-void LCD::init(){      
-  LcdCommandWrite(B00000010);  // 4 bit operation        
- 
-  LcdCommandWrite(B00101000);// 4-bit interface, 2 display lines, 5x8 font       
-  LcdCommandWrite(B00001100);  // display control:       
-  LcdCommandWrite(B00000110);  // entry mode set: increment automatically, no display shift       
- 
-//creating the custom fonts: 
-  LcdCommandWrite(B01001000);  // set cgram 
-  static byte chars[] PROGMEM ={ 
-    B11111,B00000,B11111,B11111,B00000, 
-    B11111,B00000,B11111,B11111,B00000, 
-    B11111,B00000,B11111,B11111,B00000, 
-    B00000,B00000,B00000,B11111,B00000, 
-    B00000,B00000,B00000,B11111,B00000, 
-    B00000,B11111,B11111,B11111,B01110, 
-    B00000,B11111,B11111,B11111,B01110, 
-    B00000,B11111,B11111,B11111,B01110}; 
- 
-    for(byte x=0;x<5;x++)       
-      for(byte y=0;y<8;y++)       
-          LcdDataWrite(pgm_read_byte(&chars[y*5+x])); //write the character data to the character generator ram      
- 
-  LcdCommandWrite(B00000001);  // clear display, set cursor position to zero         
- 
-  LcdCommandWrite(B10000000);  // set dram to zero       
- 
-}        
- 
-void  LCD::tickleEnable(){       
-  // send a pulse to enable       
-  digitalWrite(EnablePin,HIGH);       
-  delayMicroseconds(1);  // pause 1 ms according to datasheet       
-  digitalWrite(EnablePin,LOW);       
-  delayMicroseconds(1);  // pause 1 ms according to datasheet       
-}        
- 
-void LCD::cmdWriteSet(){       
-  digitalWrite(EnablePin,LOW);       
-  delayMicroseconds(1);  // pause 1 ms according to datasheet       
-  digitalWrite(DIPin,0);       
-}       
- 
-byte LCD::pushNibble(byte value){       
-  digitalWrite(DB7Pin, value & 128);       
-  value <<= 1;       
-  digitalWrite(DB6Pin, value & 128);       
-  value <<= 1;       
-  digitalWrite(DB5Pin, value & 128);       
-  value <<= 1;       
-  digitalWrite(DB4Pin, value & 128);       
-  value <<= 1;       
-  return value;      
-}      
- 
-void LCD::LcdCommandWrite(byte value){       
-  value=pushNibble(value);      
-  cmdWriteSet();       
-  tickleEnable();       
-  value=pushNibble(value);      
-  cmdWriteSet();       
-  tickleEnable();       
-  delay(5);       
-}       
- 
-void LCD::LcdDataWrite(byte value){       
-  digitalWrite(DIPin, HIGH);       
-  value=pushNibble(value);      
-  tickleEnable();       
-  value=pushNibble(value);      
-  tickleEnable();       
-  delay(5);       
-}       
+//LCD functions
+LCD::LCD()
+{
+    // nothing here, move along
+}
+//x=0..16, y= 0..1
+void LCD::gotoXY(byte x, byte y)
+{
+  byte dr=0x80+x;
+  if(y!=0)    // save 2 bytes compared to "if(y==1)"
+    dr+=0x40;
+  lcd.LcdCommandWrite(dr);
+}
+
+void LCD::print(char *string)
+{
+  while(*string != 0)
+    lcd.LcdDataWrite(*string++);
+}
+
+// do the lcd initialization voodoo
+// thanks to Yoshi SuperMID for debugging :)
+void LCD::init()
+{
+  delay(16);                    // wait for more than 15 msec
+  pushNibble(B00110000);  // send (B0011) to DB7-4
+  cmdWriteSet();
+  tickleEnable();
+  delay(5);                     // wait for more than 4.1 msec
+  pushNibble(B00110000);  // send (B0011) to DB7-4
+  cmdWriteSet();
+  tickleEnable();
+  delay(1);                     // wait for more than 100 usec
+  pushNibble(B00110000);  // send (B0011) to DB7-4
+  cmdWriteSet();
+  tickleEnable();
+  delay(1);                     // wait for more than 100 usec
+  pushNibble(B00100000);  // send (B0010) to DB7-4 for 4bit
+  cmdWriteSet();
+  tickleEnable();
+  delay(1);                     // wait for more than 100 usec
+  // ready to use normal LcdCommandWrite() function now!
+
+  LcdCommandWrite(B00101000);   // 4-bit interface, 2 display lines, 5x8 font
+  LcdCommandWrite(B00001100);   // display control on, no cursor, no blink
+  LcdCommandWrite(B00000110);   // entry mode set: increment automatically, no display shift
+
+  //creating the custom fonts (8 char max)
+  // char 0 is not used
+  // 1-4 are for big nums
+  // 5 is the period
+  // 6&7 is the L/100 datagram in 2 chars only
+
+  // set cg ram to address 0x08 (B001000) to skip the
+  // first 8 rows as we do not use char 0
+  LcdCommandWrite(B01001000);
+  static byte chars[] PROGMEM ={
+    B11111,B00000,B11111,B11111,B00000,B10000,B00000,
+    B11111,B00000,B11111,B11111,B00000,B10000,B00000,
+    B11111,B00000,B11111,B11111,B00000,B11001,B00000,
+    B00000,B00000,B00000,B11111,B00000,B00010,B00000,
+    B00000,B00000,B00000,B11111,B00000,B00100,B00000,
+    B00000,B11111,B11111,B11111,B01110,B01001,B11011,
+    B00000,B11111,B11111,B11111,B01110,B00001,B11011,
+    B00000,B11111,B11111,B11111,B01110,B00001,B11011};
+
+  for(byte x=0;x<7;x++)
+    for(byte y=0;y<8;y++)
+        LcdDataWrite(pgm_read_byte(&chars[y*5+x])); //write the character data to the character generator ram
+
+  LcdCommandWrite(B00000001);  // clear display, set cursor position to zero
+  LcdCommandWrite(B10000000);  // set dram to zero
+}
+
+void LCD::cls()
+{
+  LcdCommandWrite(B00000001);  // Clear Display
+  LcdCommandWrite(B00000010);  // Return Home
+ }
+
+void LCD::tickleEnable()
+{
+  // send a pulse to enable
+  digitalWrite(EnablePin,HIGH);
+  delayMicroseconds(1);  // pause 1 ms according to datasheet
+  digitalWrite(EnablePin,LOW);
+  delayMicroseconds(1);  // pause 1 ms according to datasheet
+}
+
+void LCD::cmdWriteSet()
+{
+  digitalWrite(EnablePin,LOW);
+  delayMicroseconds(1);  // pause 1 ms according to datasheet
+  digitalWrite(DIPin,0);
+}
+
+void LCD::pushNibble(byte value)
+{
+  digitalWrite(DB7Pin, value & 128);
+  value <<= 1;
+  digitalWrite(DB6Pin, value & 128);
+  value <<= 1;
+  digitalWrite(DB5Pin, value & 128);
+  value <<= 1;
+  digitalWrite(DB4Pin, value & 128);
+}
+
+void LCD::LcdCommandWrite(byte value)
+{
+  pushNibble(value);
+  cmdWriteSet();
+  tickleEnable();
+  value<<=4;
+  pushNibble(value);
+  cmdWriteSet();
+  tickleEnable();
+  delay(5);
+}
+
+void LCD::LcdDataWrite(byte value)
+{
+  digitalWrite(DIPin, HIGH);
+  pushNibble(value);
+  tickleEnable();
+  value<<=4;
+  pushNibble(value);
+  tickleEnable();
+  delay(5);
+}
