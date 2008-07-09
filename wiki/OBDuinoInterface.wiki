@@ -26,6 +26,8 @@ DB9F			OBD-II
 }}}
 *Do not plug it into a PC!!! This goes to an interface only!!!*
 
+http://opengauge.org/%7Eobduino/hardware/obd2_cable.jpg
+
 You can make it yourself with an OBD-II plug available at http://www.carplugs.com/ for $5+$3sh. Use at least AWG24 wires especially for Battery and Chassis ground.
 
 Or buy an already made cable at http://www.obd2allinone.com/ for $10+$5sh
