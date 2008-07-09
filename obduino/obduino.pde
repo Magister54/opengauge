@@ -27,14 +27,39 @@
 #include <stdio.h>
 #include <EEPROM.h>
 #include <SoftwareSerial.h>
-#include <LCD4Bit.h>
 #include <avr/pgmspace.h>
 
 #define obduinosig B11001100
 
 // buttons/contrast/brightness management from mpguino.pde
+//LCD Pins      
+#define DIPin 4 // register select RS      
+#define DB4Pin 7       
+#define DB5Pin 8       
+#define DB6Pin 12       
+#define DB7Pin 13      
 #define ContrastPin 6      
+#define EnablePin 5       
 #define BrightnessPin 9      
+#define lcdpowerPin 15  
+
+//LCD prototype      
+class LCD{      
+public:      
+  LCD( );      
+  void gotoXY(byte x, byte y);      
+  void print(char * string);      
+  void init();      
+  void tickleEnable();      
+  void cmdWriteSet();      
+  void LcdCommandWrite(byte value);      
+  void LcdDataWrite(byte value);      
+  byte pushNibble(byte value);      
+};      
+
+// main object to play with
+LCD lcd;
+
 byte brightness[]={
   0,42,85,128}; //middle button cycles through these brightness settings
 #define brightnessLength (sizeof(brightness)/sizeof(byte)) //array size
@@ -59,8 +84,6 @@ char *parmLabels[]={
 unsigned long  parms[]={
   15UL, 1UL};  //default values
 #define parmsLength (sizeof(parms)/sizeof(unsigned long)) //array size
-
-LCD4Bit   lcd = LCD4Bit(2);   //create a 2-lines display.
 
 /*
  * OBD-II ISO9141-2 Protocol
@@ -515,7 +538,7 @@ void display(int pid)
     break;
   }
 
-  lcd.printIn(str);
+  lcd.print(str);
 }
 
 void check_supported_pid(void)
@@ -559,10 +582,10 @@ void check_mil_code(void)
       // we have MIL on
       nb=(n>>24) & 0x7F;
       sprintf(str, PSTR("CHECK ENGINE ON"));
-      lcd.printIn(str);
-      lcd.cursorTo(1,0);
+      lcd.print(str);
+      lcd.gotoXY(1,0);
       sprintf(str, PSTR("%d CODE IN ECU"), nb);
-      lcd.printIn(str);
+      lcd.print(str);
       delay(2000);
       
       // retrieve code
@@ -604,17 +627,32 @@ void setup()                    // run once, when the sketch starts
   PCMSK1 |= (1 << PCINT12);       
   PCMSK1 |= (1 << PCINT13);           
 
-  // LCD contrast/brightness init
-  analogWrite(ContrastPin, parms[contrastIdx]);  
-  analogWrite(BrightnessPin, 255-brightness[brightnessIdx]);      
+  // LCD init
+  pinMode(lcdpowerPin,OUTPUT);
+  digitalWrite(lcdpowerPin,LOW);
+  analogWrite(BrightnessPin,255-brightness[brightnessIdx]);
+  delay(500);
+  digitalWrite(lcdpowerPin,HIGH);
+  pinMode(EnablePin,OUTPUT);
+  pinMode(DIPin,OUTPUT);
+  pinMode(DB4Pin,OUTPUT);
+  pinMode(DB5Pin,OUTPUT);
+  pinMode(DB6Pin,OUTPUT);
+  pinMode(DB7Pin,OUTPUT);
+  delay(500);      
+ 
+  analogWrite(ContrastPin,parms[contrastIdx]);
+  lcd.init();
+  lcd.LcdCommandWrite(B00000001);  // clear display, set cursor position to zero         
+  lcd.LcdCommandWrite(B10000000);  // set dram to zero
 
-  lcd.clear();
-  lcd.printIn(PSTR("OBD-II ISO9141-2"));
+  lcd.gotoXY(0, 0);
+  lcd.print(PSTR("OBD-II ISO9141-2"));
 
   r=iso_init();
   if(r==0)
   {
-    lcd.printIn(PSTR("Init ISO Failed!"));
+    lcd.print(PSTR("Init ISO Failed!"));
     delay(30000);
   }
 
@@ -644,13 +682,13 @@ void setup()                    // run once, when the sketch starts
 void loop()                     // run over and over again
 {
   // display on LCD
-  lcd.cursorTo(0,0);
+  lcd.gotoXY(0,0);
   display(topleft);
-  lcd.cursorTo(0,8);
+  lcd.gotoXY(0,8);
   display(topright);
-  lcd.cursorTo(1,0);
+  lcd.gotoXY(1,0);
   display(bottomleft);
-  lcd.cursorTo(1,8);
+  lcd.gotoXY(1,8);
   display(bottomright);
 
   accu_dist();    // accumulate distance
@@ -677,3 +715,104 @@ int memoryTest()
     free_memory = ((int)&free_memory) - ((int)__brkval); 
   return free_memory; 
 } 
+
+//LCD functions      
+LCD::LCD(){      
+}      
+//x=0..16, y= 0..1      
+void LCD::gotoXY(byte x, byte y){      
+  byte dr=x+0x80;      
+  if (y==1)       
+    dr += 0x40;      
+  if (y==2)       
+    dr += 0x14;      
+  if (y==3)       
+    dr += 0x54;      
+  lcd.LcdCommandWrite(dr);        
+}      
+ 
+void LCD::print(char * string){      
+  byte x = 0;      
+  char c = string[x];      
+  while(c != 0){      
+    lcd.LcdDataWrite(c);       
+    x++;      
+    c = string[x];      
+  }      
+}      
+ 
+ 
+//do the lcd initialization voodoo      
+void LCD::init(){      
+  LcdCommandWrite(B00000010);  // 4 bit operation        
+ 
+  LcdCommandWrite(B00101000);// 4-bit interface, 2 display lines, 5x8 font       
+  LcdCommandWrite(B00001100);  // display control:       
+  LcdCommandWrite(B00000110);  // entry mode set: increment automatically, no display shift       
+ 
+//creating the custom fonts: 
+  LcdCommandWrite(B01001000);  // set cgram 
+  static byte chars[] PROGMEM ={ 
+    B11111,B00000,B11111,B11111,B00000, 
+    B11111,B00000,B11111,B11111,B00000, 
+    B11111,B00000,B11111,B11111,B00000, 
+    B00000,B00000,B00000,B11111,B00000, 
+    B00000,B00000,B00000,B11111,B00000, 
+    B00000,B11111,B11111,B11111,B01110, 
+    B00000,B11111,B11111,B11111,B01110, 
+    B00000,B11111,B11111,B11111,B01110}; 
+ 
+    for(byte x=0;x<5;x++)       
+      for(byte y=0;y<8;y++)       
+          LcdDataWrite(pgm_read_byte(&chars[y*5+x])); //write the character data to the character generator ram      
+ 
+  LcdCommandWrite(B00000001);  // clear display, set cursor position to zero         
+ 
+  LcdCommandWrite(B10000000);  // set dram to zero       
+ 
+}        
+ 
+void  LCD::tickleEnable(){       
+  // send a pulse to enable       
+  digitalWrite(EnablePin,HIGH);       
+  delayMicroseconds(1);  // pause 1 ms according to datasheet       
+  digitalWrite(EnablePin,LOW);       
+  delayMicroseconds(1);  // pause 1 ms according to datasheet       
+}        
+ 
+void LCD::cmdWriteSet(){       
+  digitalWrite(EnablePin,LOW);       
+  delayMicroseconds(1);  // pause 1 ms according to datasheet       
+  digitalWrite(DIPin,0);       
+}       
+ 
+byte LCD::pushNibble(byte value){       
+  digitalWrite(DB7Pin, value & 128);       
+  value <<= 1;       
+  digitalWrite(DB6Pin, value & 128);       
+  value <<= 1;       
+  digitalWrite(DB5Pin, value & 128);       
+  value <<= 1;       
+  digitalWrite(DB4Pin, value & 128);       
+  value <<= 1;       
+  return value;      
+}      
+ 
+void LCD::LcdCommandWrite(byte value){       
+  value=pushNibble(value);      
+  cmdWriteSet();       
+  tickleEnable();       
+  value=pushNibble(value);      
+  cmdWriteSet();       
+  tickleEnable();       
+  delay(5);       
+}       
+ 
+void LCD::LcdDataWrite(byte value){       
+  digitalWrite(DIPin, HIGH);       
+  value=pushNibble(value);      
+  tickleEnable();       
+  value=pushNibble(value);      
+  tickleEnable();       
+  delay(5);       
+}       
