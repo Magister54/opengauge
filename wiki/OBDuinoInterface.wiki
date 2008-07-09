@@ -37,6 +37,10 @@ Or buy an already made cable at http://www.obd2allinone.com/ for $10+$5sh
 
 The cable goes into an interface that adapt the ISO signals for the Arduino inputs.
 It consists of a small IC ([http://www.freescale.com/webapp/sps/site/prod_summary.jsp?code=MC33290 Freescale MCZ33290EF]), a 510 ohms resistor, a DB9M that will be plugged with the cable mentioned above, and a few wires that connect to the Arduino board.
+
+The MC33290 is a small chip, you can solder some wires on it for better handling.
+http://opengauge.org/%7Eobduino/hardware/MC33290.jpg
+
 Schematic is like this:
 {{{
                              MC33290
