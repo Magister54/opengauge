@@ -133,11 +133,12 @@ unsigned long  pid20to40_support=0;
 #define RUNTIME_START 0x1F
 #define PID_SUPPORT40 0x20
 
-#define LAST_PID      0x20  // same as the last one defined here
+#define LAST_PID      0x20  // same as the last one defined above
 
 /* our internal fake PIDs */
-#define FUEL_CONS     0x100
-#define TANK_DIST     0x101
+#define NO_DISPLAY    0xF0
+#define FUEL_CONS     0xF1
+#define TANK_DIST     0xF2
 
 // returned length of the PID response.
 // constants so put in flash
@@ -152,10 +153,10 @@ prog_uchar pid_reslen[] PROGMEM=
 };
 
 // for the 4 display corners
-int topleft=FUEL_CONS;
-int topright=VEHICLE_SPEED;
-int bottomleft=ENGINE_RPM;
-int bottomright=LOAD_VALUE;
+byte topleft=FUEL_CONS;
+byte topright=VEHICLE_SPEED;
+byte bottomleft=ENGINE_RPM;
+byte bottomright=LOAD_VALUE;
 
 unsigned long delta_time;
 unsigned long tank_dist=0UL;  // in cm, need to be read/write in the eeprom
@@ -169,9 +170,9 @@ ISR(PCINT1_vect)
 }
 
 // inspired by SternOBDII\code\checksum.c
-byte checksum(byte *data, int len)
+byte checksum(byte *data, byte len)
 {
-  int i;
+  byte i;
   byte crc;
 
   crc=0;
@@ -182,9 +183,9 @@ byte checksum(byte *data, int len)
 }
 
 // inspired by SternOBDII\code\iso.c
-int iso_write_data(byte *data, int len)
+byte iso_write_data(byte *data, byte len)
 {
-  int i, n;
+  byte i, n;
   byte buf[20];
 
   // ISO header
@@ -212,9 +213,9 @@ int iso_write_data(byte *data, int len)
 
 // read n byte of data (+ header + cmd and crc)
 // return the result only in data
-int iso_read_data(byte *data, int len)
+byte iso_read_data(byte *data, byte len)
 {
-  int i;
+  byte i;
   byte buf[20];
 
   // header 3 bytes: [80+datalen] [destination=f1] [source=01]
@@ -234,7 +235,7 @@ int iso_read_data(byte *data, int len)
   return len;
 }
 
-int iso_init()
+byte iso_init()
 {
   byte b;
 
@@ -289,10 +290,10 @@ long get_pid(byte pid, char *retbuf)
   byte cmd[2];    // to send the command
   byte buf[10];   // to receive the result
   long ret;       // return value
-  int reslen;
+  byte reslen;
 
   // check if PID is supported
-  if( (1<<(pid-1) & pid00to20_support) == 0)
+  if( (1L<<(pid-1) & pid00to20_support) == 0)
   {
     // nope
     retbuf[0]='\0';
@@ -317,29 +318,12 @@ long get_pid(byte pid, char *retbuf)
   // formula and unit
   switch(pid)
   {
-  case PID_SUPPORT20:
-    ret=buf[0]<<24 + buf[1]<<16 + buf[2]<<8 + buf[3];
-    sprintf_P(retbuf, PSTR("SUP:0x%08X"), ret);
-    break;
-  case MIL_CODE:
-    ret=buf[0]<<24 + buf[1]<<16 + buf[2]<<8 + buf[3];
-    sprintf_P(retbuf, PSTR("MIL:0x%08X"), ret);
-    break;
-  case FREEZE_DTC:
-    // return value has no meaning
-    ret=buf[0]<<24 + buf[1]<<16 + buf[2]<<8 + buf[3];
-    sprintf_P(retbuf, PSTR("DTC:0x%08X"), buf);
-    break;
-  case FUEL_STATUS:
-    ret=buf[0]<<8 + buf[1];
-    sprintf_P(retbuf, PSTR("FUEL:0x%02X"), ret);
-    break;
   case ENGINE_RPM:
-    ret=(buf[0]*256 + buf[1])/4;
+    ret=(buf[1]<<8 + buf[0])/4;
     sprintf_P(retbuf, PSTR("%d RPM"), ret);
     break;
   case MAF_AIR_FLOW:
-    ret=(buf[0]*256 + buf[1]);  // not divided by 100 for return value!!
+    ret=(buf[1]<<8 + buf[0]);  // not divided by 100 for return value!!
     sprintf_P(retbuf, PSTR("%d.%d g/s"), ret/100, ret - ((ret/100)*100));
     break;
   case LOAD_VALUE:
@@ -381,9 +365,53 @@ long get_pid(byte pid, char *retbuf)
     ret=(buf[0]/2)-64;
     sprintf_P(retbuf, PSTR("%d °"), ret);
     break;
+  case OBD_STD:
+    ret=buf[0];
+    switch(buf[0])
+    {
+      case 0x01:
+        sprintf_P(retbuf, PSTR("OBD2-CARB"));
+        break;
+      case 0x02:
+        sprintf_P(retbuf, PSTR("OBD2-EPA"));
+        break;
+      case 0x03:
+        sprintf_P(retbuf, PSTR("OBD1&2"));
+        break;
+      case 0x04:
+        sprintf_P(retbuf, PSTR("OBD1"));
+        break;
+      case 0x05:
+        sprintf_P(retbuf, PSTR("NOT OBD"));
+        break;
+      case 0x06:
+        sprintf_P(retbuf, PSTR("EOBD"));
+        break;
+      default:
+        sprintf_P(retbuf, PSTR("OBD:%02X"), ret);
+        break;
+    }
+    break;
+  // for the moment, everything else, display the raw answer
+  case PID_SUPPORT20:
+  case MIL_CODE:
+  case FREEZE_DTC:
+  case FUEL_STATUS:
+  case PID_SUPPORT40:
   default:
-    ret=0;
-    sprintf_P(retbuf, PSTR("ERROR pid %d"), pid);
+    ret=0L;
+    switch(reslen)
+    {
+        case 4:
+          ret+=buf[3]<<24;
+        case 3:
+          ret+=buf[2]<<16;
+        case 2:
+          ret+=buf[1]<<8;
+        case 1:
+          ret+=buf[0];
+    }
+    sprintf_P(retbuf, PSTR("%2X:0x%08X"), pid, buf);
     break;
   }
 
@@ -399,7 +427,7 @@ void get_cons(char *retbuf)
   long maf, vss, cons;
 
   // check if MAF is supported
-  if((1<<(MAF_AIR_FLOW-1) & pid00to20_support) == 0)
+  if((1L<<(MAF_AIR_FLOW-1) & pid00to20_support) == 0)
   {
     // nope, lets approximate it with MAP and IAT
     // later :-/
@@ -461,7 +489,7 @@ void get_dist(char *retbuf)
 void accu_dist(void)
 {
   long vss;
-  char str[20];
+  char str[16];
 
   vss=get_pid(VEHICLE_SPEED, str);
 
@@ -519,7 +547,7 @@ byte load(void)
   return 0;
 }
 
-void display(int pid)
+void display(byte pid)
 {
   long n;
   char str[16];
@@ -527,6 +555,8 @@ void display(int pid)
   /* check if it's a real PID or our internal one */
   switch(pid)
   {
+  case NO_DISPLAY:
+    return;
   case FUEL_CONS:
     get_cons(str);
     break;
@@ -543,23 +573,23 @@ void display(int pid)
 
 void check_supported_pid(void)
 {
-  long n;
+  unsigned long n;
   char str[16];
 
   n=get_pid(PID_SUPPORT20, str);
-  pid00to20_support=(unsigned long)n;
+  pid00to20_support=n;
 
   // do we support pid 20 to 40?
-  if( (1<<(PID_SUPPORT40-1) & pid00to20_support) == 0)
+  if( (1L<<(PID_SUPPORT40-1) & pid00to20_support) == 0)
     return;  //nope
 
   n=get_pid(PID_SUPPORT40, str);
-  pid20to40_support=(unsigned long)n;
+  pid20to40_support=n;
 }
 
 void check_mil_code(void)
 {
-  long n;
+  unsigned long n;
   char str[16];
   byte nb;
   byte cmd[2];
@@ -577,13 +607,16 @@ void check_mil_code(void)
    availability signified by set (1) bit; completeness signified by reset (0)
    bit. (from Wikipedia)
    */
-  if( (1<<31 & n) !=0)  // test bit A7
+  if( (1L<<31 & n) !=0)  // test bit A7
   {
     // we have MIL on
     nb=(n>>24) & 0x7F;
     lcd.print(PSTR("CHECK ENGINE ON"));
     lcd.gotoXY(1,0);
     sprintf(str, PSTR("%d CODE(S) IN ECU"), nb);
+#ifdef DEBUG
+  Serial.println(str);
+#endif
     lcd.print(str);
     delay(2000);
 
@@ -621,16 +654,19 @@ void check_mil_code(void)
         str[k++]='0' + (buf[j*2 +1] & 0xF0)>>4;
         str[k++]='0' + (buf[j*2 +1] & 0x0F);
       }
-      str[k++]='\0';  // make asciiz
+      str[k]='\0';  // make asciiz
+#ifdef DEBUG
+  Serial.println(str);
+#endif
       lcd.print(str);
-      lcd.gotoXY(0, 1);  // go to next line
+      lcd.gotoXY(0, 1);  // go to next line to display the 3 next
     }
   }
 }
 
 void setup()                    // run once, when the sketch starts
 {
-  int r;
+  byte r;
 
   // init pinouts
   pinMode(K_OUT, OUTPUT);
@@ -694,7 +730,7 @@ void setup()                    // run once, when the sketch starts
   check_supported_pid();
 
   // check if we have MIL code
-  //check_mil_code();
+  check_mil_code();
 
   topleft=FUEL_CONS;
   topright=VEHICLE_SPEED;
