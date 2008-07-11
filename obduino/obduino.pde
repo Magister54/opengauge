@@ -447,8 +447,6 @@ void get_cons(char *retbuf)
   // formula: (3600 * MAF/100) / (14.7 * 730 * VSS)
   // multipled by 100 for double digits precision
   
-  vss=100;
-  maf=2000;
   if(parms[useMetricIdx]==1)
   {
     if(vss==0)
