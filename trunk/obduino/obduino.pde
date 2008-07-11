@@ -28,6 +28,7 @@
 #include <EEPROM.h>
 #include <SoftwareSerial.h>
 #include <avr/pgmspace.h>
+#include <avr/sleep.h>
 
 #define obduinosig B11001100
 
@@ -610,13 +611,13 @@ void check_mil_code(void)
   {
     // we have MIL on
     nb=(n>>24) & 0x7F;
-    lcd.print(PSTR("CHECK ENGINE ON"));
+    lcd.print("CHECK ENGINE ON");
     lcd.gotoXY(1,0);
-    sprintf(str, PSTR("%d CODE(S) IN ECU"), nb);
+    sprintf_P(str, PSTR("%d CODE(S) IN ECU"), nb);
+    lcd.print(str);
 #ifdef DEBUG
   Serial.println(str);
 #endif
-    lcd.print(str);
     delay(2000);
 
     // retrieve code
@@ -667,6 +668,12 @@ void setup()                    // run once, when the sketch starts
 {
   byte r;
 
+#ifdef DEBUG
+  Serial.begin(115200);  // for debugging
+  Serial.print("bytes free:");
+  Serial.println(memoryTest());
+#endif
+
   // init pinouts
   pinMode(K_OUT, OUTPUT);
   pinMode(K_IN, INPUT);
@@ -703,24 +710,27 @@ void setup()                    // run once, when the sketch starts
   lcd.LcdCommandWrite(B10000000);  // set dram to zero
 
   lcd.gotoXY(0, 0);
-  lcd.print(PSTR("OBD-II ISO9141-2"));
+  lcd.print("OBD-II ISO9141-2");
   delay(2000);
 
   r=iso_init();
-  if(r==0)
-  {
-    lcd.print(PSTR("Init ISO Failed!"));
-    delay(30000);
-  }
 
 #ifdef DEBUG
-  Serial.begin(115200);  // for debugging
-  Serial.println(memoryTest());
   if(r==0)
     Serial.println("Init OK!");
   else
     Serial.println("Init failed!");
 #endif
+
+  if(r==0)
+  {
+    lcd.print("Init ISO Failed!");
+    delay(5000);
+    set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+    sleep_enable();
+    while(1);
+      sleep_mode();
+  }
 
   // check supported PIDs
   check_supported_pid();
