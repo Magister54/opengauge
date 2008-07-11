@@ -41,7 +41,6 @@
 #define ContrastPin 6
 #define EnablePin 5
 #define BrightnessPin 9
-#define lcdpowerPin 15
 
 //LCD prototype
 class LCD{
@@ -689,18 +688,14 @@ void setup()                    // run once, when the sketch starts
   PCMSK1 |= (1 << PCINT13);
 
   // LCD init
-  pinMode(lcdpowerPin,OUTPUT);
-  digitalWrite(lcdpowerPin,LOW);
-  analogWrite(BrightnessPin,255-brightness[brightnessIdx]);
-  delay(500);
-  digitalWrite(lcdpowerPin,HIGH);
-  pinMode(EnablePin,OUTPUT);
-  pinMode(DIPin,OUTPUT);
-  pinMode(DB4Pin,OUTPUT);
-  pinMode(DB5Pin,OUTPUT);
-  pinMode(DB6Pin,OUTPUT);
-  pinMode(DB7Pin,OUTPUT);
-  delay(500);
+  analogWrite(BrightnessPin,255-brightness[brightnessIdx]);      
+  pinMode(EnablePin,OUTPUT);       
+  pinMode(DIPin,OUTPUT);       
+  pinMode(DB4Pin,OUTPUT);       
+  pinMode(DB5Pin,OUTPUT);       
+  pinMode(DB6Pin,OUTPUT);       
+  pinMode(DB7Pin,OUTPUT);       
+  delay(500);      
 
   analogWrite(ContrastPin,parms[contrastIdx]);
   lcd.init();
@@ -709,6 +704,7 @@ void setup()                    // run once, when the sketch starts
 
   lcd.gotoXY(0, 0);
   lcd.print(PSTR("OBD-II ISO9141-2"));
+  delay(2000);
 
   r=iso_init();
   if(r==0)
