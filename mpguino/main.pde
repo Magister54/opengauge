@@ -1,5 +1,10 @@
-#define ver=660
+#define ver=670
+/*
+updated lcd init procedure
+removed power up logic
+removed lcd power pin logic
 
+*/
 //GPL Software    
 //#define debuguino youbetyourbippy  
 #include <avr/pgmspace.h>  
@@ -38,7 +43,6 @@ unsigned long  parms[]={15ul,10000ul,304409714ul,4ul,420000000ul,13300ul,500ul};
 #define ContrastPin 6      
 #define EnablePin 5       
 #define BrightnessPin 9      
-#define lcdpowerPin 15  
  
 #define lbuttonPin 17 // Left Button, on analog 3,        
 #define mbuttonPin 18 // Middle Button, on analog 4       
@@ -165,10 +169,8 @@ DisplayFx displayFuncs[] ={
   doDisplay7};      
 #define displayFuncSize (sizeof(displayFuncs)/sizeof(DisplayFx)) //array size      
 prog_char  * displayFuncNames[displayFuncSize]; 
-int powerUp = MCUSR &1;  //did we reset or power up?
 byte newRun = 0;
 void setup (void){
-  MCUSR=0;
   #ifdef debuguino  
   Serial.begin(9600);  
   Serial.println("OpenGauge MPGuino online");  
@@ -186,14 +188,8 @@ void setup (void){
   displayFuncNames[9]=  PSTR("Tank raw Data "); 
   displayFuncNames[10]= PSTR("CPU Monitor ");      
  
- 
- 
-  pinMode(lcdpowerPin,OUTPUT);      
-  digitalWrite(lcdpowerPin,LOW);  
   pinMode(BrightnessPin,OUTPUT);      
   analogWrite(BrightnessPin,255-brightness[brightnessIdx]);      
-  delay(500);  
-  digitalWrite(lcdpowerPin,HIGH);  
   pinMode(EnablePin,OUTPUT);       
   pinMode(DIPin,OUTPUT);       
   pinMode(DB4Pin,OUTPUT);       
@@ -204,14 +200,13 @@ void setup (void){
  
   pinMode(ContrastPin,OUTPUT);      
   analogWrite(ContrastPin,parms[contrastIdx]);  
-  if(powerUp)  
-    lcd.init();      
+  lcd.init();      
   lcd.LcdCommandWrite(B00000001);  // clear display, set cursor position to zero         
   lcd.LcdCommandWrite(B10000000);  // set dram to zero
   lcd.gotoXY(0,0); 
   lcd.print(getStr(PSTR("OpenGauge       ")));      
   lcd.gotoXY(0,1);      
-  lcd.print(getStr(PSTR("  MPGuino  v0.66")));      
+  lcd.print(getStr(PSTR("  MPGuino  v0.67")));      
 
   pinMode(InjectorOpenPin, INPUT);       
   pinMode(InjectorClosedPin, INPUT);       
@@ -245,7 +240,6 @@ byte holdDisplay = 0;
 
 #define looptime 1000000ul/loopsPerSecond //1/2 second      
 void loop (void){       
-  lcd.init();
   if(newRun !=1)
     initGuino();//go through the initialization screen
   unsigned long lastActivity =microSeconds();
@@ -456,36 +450,50 @@ void LCD::print(char * string){
 }      
  
  
-//do the lcd initialization voodoo      
-void LCD::init(){      
-  LcdCommandWrite(B00000010);  // 4 bit operation        
- 
-  LcdCommandWrite(B00101000);// 4-bit interface, 2 display lines, 5x8 font       
-  LcdCommandWrite(B00001100);  // display control:       
-  LcdCommandWrite(B00000110);  // entry mode set: increment automatically, no display shift       
- 
-//creating the custom fonts: 
-  LcdCommandWrite(B01001000);  // set cgram 
-  static byte chars[] PROGMEM ={ 
-    B11111,B00000,B11111,B11111,B00000, 
-    B11111,B00000,B11111,B11111,B00000, 
-    B11111,B00000,B11111,B11111,B00000, 
-    B00000,B00000,B00000,B11111,B00000, 
-    B00000,B00000,B00000,B11111,B00000, 
-    B00000,B11111,B11111,B11111,B01110, 
-    B00000,B11111,B11111,B11111,B01110, 
-    B00000,B11111,B11111,B11111,B01110}; 
- 
-    for(byte x=0;x<5;x++)       
-      for(byte y=0;y<8;y++)       
-          LcdDataWrite(pgm_read_byte(&chars[y*5+x])); //write the character data to the character generator ram      
- 
-  LcdCommandWrite(B00000001);  // clear display, set cursor position to zero         
- 
-  LcdCommandWrite(B10000000);  // set dram to zero       
- 
-}        
- 
+void LCD::init(){
+  delay(16);                    // wait for more than 15 msec
+  pushNibble(B00110000);  // send (B0011) to DB7-4
+  cmdWriteSet();
+  tickleEnable();
+  delay(5);                     // wait for more than 4.1 msec
+  pushNibble(B00110000);  // send (B0011) to DB7-4
+  cmdWriteSet();
+  tickleEnable();
+  delay(1);                     // wait for more than 100 usec
+  pushNibble(B00110000);  // send (B0011) to DB7-4
+  cmdWriteSet();
+  tickleEnable();
+  delay(1);                     // wait for more than 100 usec
+  pushNibble(B00100000);  // send (B0010) to DB7-4 for 4bit
+  cmdWriteSet();
+  tickleEnable();
+  delay(1);                     // wait for more than 100 usec
+  // ready to use normal LcdCommandWrite() function now!
+  LcdCommandWrite(B00101000);   // 4-bit interface, 2 display lines, 5x8 font
+  LcdCommandWrite(B00001100);   // display control:
+  LcdCommandWrite(B00000110);   // entry mode set: increment automatically, no display shift
+
+//creating the custom fonts:
+  LcdCommandWrite(B01001000);  // set cgram
+  static byte chars[] PROGMEM ={
+    B11111,B00000,B11111,B11111,B00000,
+    B11111,B00000,B11111,B11111,B00000,
+    B11111,B00000,B11111,B11111,B00000,
+    B00000,B00000,B00000,B11111,B00000,
+    B00000,B00000,B00000,B11111,B00000,
+    B00000,B11111,B11111,B11111,B01110,
+    B00000,B11111,B11111,B11111,B01110,
+    B00000,B11111,B11111,B11111,B01110};
+
+    for(byte x=0;x<5;x++)
+      for(byte y=0;y<8;y++)
+          LcdDataWrite(pgm_read_byte(&chars[y*5+x])); //write the character data to the character generator ram
+
+  LcdCommandWrite(B00000001);  // clear display, set cursor position to zero
+  LcdCommandWrite(B10000000);  // set dram to zero
+
+}
+
 void  LCD::tickleEnable(){       
   // send a pulse to enable       
   digitalWrite(EnablePin,HIGH);       
