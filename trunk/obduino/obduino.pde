@@ -321,50 +321,50 @@ long get_pid(byte pid, char *retbuf)
   {
   case ENGINE_RPM:
     ret=(buf[1]<<8 + buf[0])/4;
-    sprintf_P(retbuf, PSTR("%d RPM"), ret);
+    sprintf_P(retbuf, PSTR("%ld RPM"), ret);
     break;
   case MAF_AIR_FLOW:
     ret=(buf[1]<<8 + buf[0]);  // not divided by 100 for return value!!
-    sprintf_P(retbuf, PSTR("%d.%d g/s"), ret/100, ret - ((ret/100)*100));
+    sprintf_P(retbuf, PSTR("%ld.%ld g/s"), ret/100, ret - ((ret/100)*100));
     break;
   case LOAD_VALUE:
   case THROTTLE_POS:
     ret=(buf[0]*100)/255;
-    sprintf_P(retbuf, PSTR("%d %%"), ret);
+    sprintf_P(retbuf, PSTR("%ld %%"), ret);
     break;
   case COOLANT_TEMP:
   case INT_AIR_TEMP:
     ret=buf[0]-40;
-    sprintf_P(retbuf, PSTR("%d °C"), ret);
+    sprintf_P(retbuf, PSTR("%ld °C"), ret);
     break;
   case STF_BANK1:
   case LTR_BANK1:
   case STF_BANK2:
   case LTR_BANK2:
     ret=(buf[0]-128)*7812L;  // not divided by 10000
-    sprintf_P(retbuf, PSTR("%d.%d %%"), ret/10000, ret-((ret/10000)*10000));
+    sprintf_P(retbuf, PSTR("%ld.%ld %%"), ret/10000, ret-((ret/10000)*10000));
     break;
   case FUEL_PRESSURE:
     ret=buf[0]*3;
-    sprintf_P(retbuf, PSTR("%d kPa"), ret);
+    sprintf_P(retbuf, PSTR("%ld kPa"), ret);
     break;
   case MAN_PRESSURE:
     ret=buf[0];
-    sprintf_P(retbuf, PSTR("%d kPa"), ret);
+    sprintf_P(retbuf, PSTR("%ld kPa"), ret);
     break;
   case VEHICLE_SPEED:
     ret=buf[0];
     if(parms[useMetricIdx]==0)  // convert to MPH for display
     {
       ret=(ret*621L)/1000L;
-      sprintf_P(retbuf, PSTR("%d mph"), ret);
+      sprintf_P(retbuf, PSTR("%ld mph"), ret);
     }
     else
-      sprintf_P(retbuf, PSTR("%d km/h"), ret);
+      sprintf_P(retbuf, PSTR("%ld km/h"), ret);
     break;
   case TIMING_ADV:
     ret=(buf[0]/2)-64;
-    sprintf_P(retbuf, PSTR("%d °"), ret);
+    sprintf_P(retbuf, PSTR("%ld °"), ret);
     break;
   case OBD_STD:
     ret=buf[0];
@@ -453,7 +453,7 @@ void get_cons(char *retbuf)
       cons=(maf*3355L)/100L;
     else
       cons=(maf*3355L)/(vss*100L);
-    sprintf_P(retbuf, PSTR("%d.%02d %s"), cons/100L, (cons - ((cons/100L)*100L)), (vss==0)?"L/h":"\006\007" );
+    sprintf_P(retbuf, PSTR("%ld.%02ld %s"), cons/100L, cons-((cons/100L)*100L), (vss==0)?"L/h":"\001\002" );
   }
   else
   {
@@ -462,7 +462,7 @@ void get_cons(char *retbuf)
       cons=maf/7107L;  // gallon per hour
     else
       cons=(vss*7107L)/maf;
-    sprintf_P(retbuf, PSTR("%d.%d %s"), cons/10, (cons - ((cons/10)*10)), (vss==0)?"GPH":"MPG" );
+    sprintf_P(retbuf, PSTR("%ld.%ld %s"), cons/10, (cons - ((cons/10)*10)), (vss==0)?"GPH":"MPG" );
   }
 
 #ifdef DEBUG
@@ -481,7 +481,7 @@ void get_dist(char *retbuf)
   if(parms[useMetricIdx]==0)
     cdist=(cdist*621UL)/1000UL;
 
-  sprintf_P(retbuf, PSTR("DIST:%ul.%ul"), cdist/10L, (cdist - ((cdist/10L)*10L)) );
+  sprintf_P(retbuf, PSTR("DIST:%lu.%lu"), cdist/10L, (cdist - ((cdist/10L)*10L)) );
 
 #ifdef DEBUG
   Serial.println(retbuf);
@@ -845,19 +845,15 @@ void LCD::init()
   delay(16);                    // wait for more than 15 msec
   pushNibble(B00110000);  // send (B0011) to DB7-4
   cmdWriteSet();
-  tickleEnable();
   delay(5);                     // wait for more than 4.1 msec
   pushNibble(B00110000);  // send (B0011) to DB7-4
   cmdWriteSet();
-  tickleEnable();
   delay(1);                     // wait for more than 100 usec
   pushNibble(B00110000);  // send (B0011) to DB7-4
   cmdWriteSet();
-  tickleEnable();
   delay(1);                     // wait for more than 100 usec
   pushNibble(B00100000);  // send (B0010) to DB7-4 for 4bit
   cmdWriteSet();
-  tickleEnable();
   delay(1);                     // wait for more than 100 usec
   // ready to use normal LcdCommandWrite() function now!
 
@@ -867,26 +863,24 @@ void LCD::init()
 
   //creating the custom fonts (8 char max)
   // char 0 is not used
-  // 1-4 are for big nums
-  // 5 is the period
-  // 6&7 is the L/100 datagram in 2 chars only
-
+  // 1&2 is the L/100 datagram in 2 chars only
+#define NB_CHAR  2
   // set cg ram to address 0x08 (B001000) to skip the
   // first 8 rows as we do not use char 0
   LcdCommandWrite(B01001000);
   static byte chars[] PROGMEM ={
-    B11111,B00000,B11111,B11111,B00000,B10000,B00000,
-    B11111,B00000,B11111,B11111,B00000,B10000,B00000,
-    B11111,B00000,B11111,B11111,B00000,B11001,B00000,
-    B00000,B00000,B00000,B11111,B00000,B00010,B00000,
-    B00000,B00000,B00000,B11111,B00000,B00100,B00000,
-    B00000,B11111,B11111,B11111,B01110,B01001,B11011,
-    B00000,B11111,B11111,B11111,B01110,B00001,B11011,
-    B00000,B11111,B11111,B11111,B01110,B00001,B11011};
+    B10000,B00000,
+    B10000,B00000,
+    B11001,B00000,
+    B00010,B00000,
+    B00100,B00000,
+    B01001,B11011,
+    B00001,B11011,
+    B00001,B11011};
 
-  for(byte x=0;x<7;x++)
-    for(byte y=0;y<8;y++)
-        LcdDataWrite(pgm_read_byte(&chars[y*5+x])); //write the character data to the character generator ram
+  for(byte x=0;x<NB_CHAR;x++)
+    for(byte y=0;y<8;y++)  // 8 rows
+        LcdDataWrite(pgm_read_byte(&chars[y*NB_CHAR+x])); //write the character data to the character generator ram
 
   LcdCommandWrite(B00000001);  // clear display, set cursor position to zero
   LcdCommandWrite(B10000000);  // set dram to zero
@@ -912,6 +906,7 @@ void LCD::cmdWriteSet()
   digitalWrite(EnablePin,LOW);
   delayMicroseconds(1);  // pause 1 ms according to datasheet
   digitalWrite(DIPin,0);
+  tickleEnable();
 }
 
 void LCD::pushNibble(byte value)
@@ -929,11 +924,9 @@ void LCD::LcdCommandWrite(byte value)
 {
   pushNibble(value);
   cmdWriteSet();
-  tickleEnable();
   value<<=4;
   pushNibble(value);
   cmdWriteSet();
-  tickleEnable();
   delay(5);
 }
 
