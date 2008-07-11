@@ -255,6 +255,7 @@ byte iso_init()
 
   // wait for 0x55 from the ECU
   b=ISOserial.read();
+
   if(b!=0x55)
     return -1;
 
@@ -445,13 +446,16 @@ void get_cons(char *retbuf)
   // divide MAF by 100 because our function return MAF*100
   // formula: (3600 * MAF/100) / (14.7 * 730 * VSS)
   // multipled by 100 for double digits precision
+  
+  vss=100;
+  maf=2000;
   if(parms[useMetricIdx]==1)
   {
     if(vss==0)
       cons=(maf*3355L)/100L;
     else
       cons=(maf*3355L)/(vss*100L);
-    sprintf_P(retbuf, PSTR("%d.%2d %s"), cons/100, (cons - ((cons/100)*100)), (vss==0)?"L/h":"\006\007" );
+    sprintf_P(retbuf, PSTR("%d.%02d %s"), cons/100L, (cons - ((cons/100L)*100L)), (vss==0)?"L/h":"\006\007" );
   }
   else
   {
@@ -611,7 +615,8 @@ void check_mil_code(void)
   {
     // we have MIL on
     nb=(n>>24) & 0x7F;
-    lcd.print("CHECK ENGINE ON");
+    sprintf_P(str, PSTR("CHECK ENGINE ON"));
+    lcd.print(str);
     lcd.gotoXY(1,0);
     sprintf_P(str, PSTR("%d CODE(S) IN ECU"), nb);
     lcd.print(str);
@@ -667,10 +672,12 @@ void check_mil_code(void)
 void setup()                    // run once, when the sketch starts
 {
   byte r;
+  char str[20];
 
 #ifdef DEBUG
   Serial.begin(115200);  // for debugging
-  Serial.print("bytes free:");
+  sprintf_P(str, PSTR("bytes free:"));
+  Serial.print(str);
   Serial.println(memoryTest());
 #endif
 
@@ -710,21 +717,35 @@ void setup()                    // run once, when the sketch starts
   lcd.LcdCommandWrite(B10000000);  // set dram to zero
 
   lcd.gotoXY(0, 0);
-  lcd.print("OBD-II ISO9141-2");
+  sprintf_P(str, PSTR("OBD-II ISO9141-2"));
+  lcd.print(str);
   delay(2000);
+
+#ifdef DEBUG
+  sprintf_P(str, PSTR("Initialization..."));
+  Serial.println(str);
+#endif
 
   r=iso_init();
 
 #ifdef DEBUG
   if(r==0)
-    Serial.println("Init OK!");
+  {
+    sprintf_P(str, PSTR("Init OK!"));
+    Serial.println(str);
+  }
   else
-    Serial.println("Init failed!");
+  {
+    sprintf_P(str, PSTR("Init failed!"));
+    Serial.println(str);
+  }
 #endif
 
-  if(r==0)
+  if(r!=0)
   {
-    lcd.print("Init ISO Failed!");
+    sprintf_P(str, PSTR("Init ISO Failed!"));
+    lcd.cls();
+    lcd.print(str);
     delay(5000);
     set_sleep_mode(SLEEP_MODE_PWR_DOWN);
     sleep_enable();
@@ -744,6 +765,8 @@ void setup()                    // run once, when the sketch starts
   bottomright=LOAD_VALUE;
 
   delta_time=millis();
+  
+  lcd.cls();
 }
 
 void loop()                     // run over and over again
@@ -763,11 +786,11 @@ void loop()                     // run over and over again
   // display on LCD
   lcd.gotoXY(0,0);
   display(topleft);
-  lcd.gotoXY(0,8);
+  lcd.gotoXY(8,0);
   display(topright);
-  lcd.gotoXY(1,0);
+  lcd.gotoXY(0,1);
   display(bottomleft);
-  lcd.gotoXY(1,8);
+  lcd.gotoXY(8,1);
   display(bottomright);
 
   accu_dist();    // accumulate distance
