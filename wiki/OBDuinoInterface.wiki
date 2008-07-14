@@ -61,4 +61,5 @@ Arduino GND input ------------------ DB9M pin 2 (Chassis Ground)
 }}}
 
 Interface being built:
+
 http://opengauge.org/%7Eobduino/hardware/iso_interface.jpg
