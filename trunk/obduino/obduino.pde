@@ -248,7 +248,7 @@ byte iso_init()
 
   // send 0x33 at 5 bauds
 #ifdef DEBUG
-  sprintf(str, PSTR("Send 0x33"));
+  sprintf_P(str, PSTR("Send 0x33"));
   lcd.cls();
   lcd.print(str);
 #endif
@@ -263,13 +263,13 @@ byte iso_init()
 
   // wait for 0x55 from the ECU
 #ifdef DEBUG
-  sprintf(str, PSTR("Wait 0x55"));
+  sprintf_P(str, PSTR("Wait 0x55"));
   lcd.cls();
   lcd.print(str);
 #endif
   b=ISOserial.read();
 #ifdef DEBUG
-  sprintf(str, PSTR("Got1 0x%02X"), b);
+  sprintf_P(str, PSTR("Got1 0x%02X"), b);
   lcd.cls();
   lcd.print(str);
 #endif
@@ -280,13 +280,13 @@ byte iso_init()
 
   // wait for 0x08 0x08
 #ifdef DEBUG
-  sprintf(str, PSTR("Wait 0x08"));
+  sprintf_P(str, PSTR("Wait 0x08"));
   lcd.cls();
   lcd.print(str);
 #endif
   b=ISOserial.read();
 #ifdef DEBUG
-  sprintf(str, PSTR("Got2 0x%02X"), b);
+  sprintf_P(str, PSTR("Got2 0x%02X"), b);
   lcd.cls();
   lcd.print(str);
 #endif
@@ -296,13 +296,13 @@ byte iso_init()
   delay(20);
   
 #ifdef DEBUG
-  sprintf(str, PSTR("Wait 0x08"));
+  sprintf_P(str, PSTR("Wait 0x08"));
   lcd.cls();
   lcd.print(str);
 #endif
   b=ISOserial.read();
 #ifdef DEBUG
-  sprintf(str, PSTR("Got3 0x%02X"), b);
+  sprintf_P(str, PSTR("Got3 0x%02X"), b);
   lcd.cls();
   lcd.print(str);
 #endif
@@ -313,7 +313,7 @@ byte iso_init()
 
   // sent 0xF7 (which is ~0x08)
 #ifdef DEBUG
-  sprintf(str, PSTR("Send 0xF7"));
+  sprintf_P(str, PSTR("Send 0xF7"));
   lcd.cls();
   lcd.print(str);
 #endif
@@ -323,13 +323,13 @@ byte iso_init()
 
   // ECU answer by 0xCC
 #ifdef DEBUG
-  sprintf(str, PSTR("Wait 0xCC"));
+  sprintf_P(str, PSTR("Wait 0xCC"));
   lcd.cls();
   lcd.print(str);
 #endif
   b=ISOserial.read();
 #ifdef DEBUG
-  sprintf(str, PSTR("Got4 0x%02X"), b);
+  sprintf_P(str, PSTR("Got4 0x%02X"), b);
   lcd.cls();
   lcd.print(str);
 #endif
