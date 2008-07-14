@@ -59,3 +59,6 @@ The Arduino is powered by the 12V line coming from the cable too
 Arduino 12V input ------------------ DB9M pin 9 (12V Battery)
 Arduino GND input ------------------ DB9M pin 2 (Chassis Ground)
 }}}
+
+Interface being built:
+http://opengauge.org/%7Eobduino/hardware/iso_interface.jpg
