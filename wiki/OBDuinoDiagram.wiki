@@ -6,3 +6,23 @@
 Here's the proposed diagram of the Arduino board, the LCD screen, and the [OBDuinoInterface interface].
 
 http://opengauge.org/%7Eobduino/diagram/obduino.gif
+
+= Hardware =
+
+Some pictures of the hardware
+
+An arduino clone board called the freeduino, some headers were missing when I took the pictures:
+
+http://opengauge.org/%7Eobduino/hardware/freeduino_front.jpg
+http://opengauge.org/%7Eobduino/hardware/freeduino_back.jpg
+
+
+The LCD screen with its wires attached, note the transistor and the resistor, covered by (not yet heated) shrink tube, on the right side:
+
+http://opengauge.org/%7Eobduino/hardware/lcd.jpg
+http://opengauge.org/%7Eobduino/hardware/lcd_back.jpg
+
+
+Freeduino and LCD attached, it's just missing the 3 buttons and the [OBDuinoInterface ISO interface].
+
+http://opengauge.org/%7Eobduino/hardware/duino_lcd.jpg
