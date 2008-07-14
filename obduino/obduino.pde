@@ -238,12 +238,20 @@ byte iso_read_data(byte *data, byte len)
 byte iso_init()
 {
   byte b;
+#ifdef DEBUG
+  char str[16];
+#endif
 
   // drive K line high for 300ms
   digitalWrite(K_OUT, HIGH);
   delay(300);
 
   // send 0x33 at 5 bauds
+#ifdef DEBUG
+  sprintf(str, PSTR("Send 0x33"));
+  lcd.cls();
+  lcd.print(str);
+#endif
   ISOserial.begin(5);
   ISOserial.print(0x33);
 
@@ -254,29 +262,77 @@ byte iso_init()
   ISOserial.begin(10400);
 
   // wait for 0x55 from the ECU
+#ifdef DEBUG
+  sprintf(str, PSTR("Wait 0x55"));
+  lcd.cls();
+  lcd.print(str);
+#endif
   b=ISOserial.read();
-
+#ifdef DEBUG
+  sprintf(str, PSTR("Got1 0x%02X"), b);
+  lcd.cls();
+  lcd.print(str);
+#endif
   if(b!=0x55)
     return -1;
 
   delay(5);
 
   // wait for 0x08 0x08
+#ifdef DEBUG
+  sprintf(str, PSTR("Wait 0x08"));
+  lcd.cls();
+  lcd.print(str);
+#endif
   b=ISOserial.read();
+#ifdef DEBUG
+  sprintf(str, PSTR("Got2 0x%02X"), b);
+  lcd.cls();
+  lcd.print(str);
+#endif
   if(b!=0x08)
     return -1;
+    
+  delay(20);
+  
+#ifdef DEBUG
+  sprintf(str, PSTR("Wait 0x08"));
+  lcd.cls();
+  lcd.print(str);
+#endif
   b=ISOserial.read();
+#ifdef DEBUG
+  sprintf(str, PSTR("Got3 0x%02X"), b);
+  lcd.cls();
+  lcd.print(str);
+#endif
   if(b!=0x08)
     return -1;
 
   delay(25);
 
   // sent 0xF7 (which is ~0x08)
+#ifdef DEBUG
+  sprintf(str, PSTR("Send 0xF7"));
+  lcd.cls();
+  lcd.print(str);
+#endif
   ISOserial.print(0xF7);
+  
   delay(25);
 
   // ECU answer by 0xCC
+#ifdef DEBUG
+  sprintf(str, PSTR("Wait 0xCC"));
+  lcd.cls();
+  lcd.print(str);
+#endif
   b=ISOserial.read();
+#ifdef DEBUG
+  sprintf(str, PSTR("Got4 0x%02X"), b);
+  lcd.cls();
+  lcd.print(str);
+#endif
   if(b!=0xCC)
     return -1;
 
@@ -741,10 +797,10 @@ void setup()                    // run once, when the sketch starts
 
   if(r!=0)
   {
+    delay(5000);
     sprintf_P(str, PSTR("Init ISO Failed!"));
     lcd.cls();
     lcd.print(str);
-    delay(5000);
     set_sleep_mode(SLEEP_MODE_PWR_DOWN);
     sleep_enable();
     while(1);
