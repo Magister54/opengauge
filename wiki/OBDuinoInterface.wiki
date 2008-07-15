@@ -1,4 +1,4 @@
-#summary OBDuino Interface adapter
+#summary OBDuino ISO Interface adapter and OBD2 cable
 #labels Phase-Design
 
 = Introduction =
@@ -28,9 +28,9 @@ DB9F			OBD-II
 
 http://opengauge.org/%7Eobduino/hardware/obd2_cable.jpg
 
-You can make it yourself with an OBD-II plug available at http://www.carplugs.com/ for $5+$3sh. Use at least AWG24 wires especially for Battery and Chassis ground.
+You can make it yourself with an OBD-II plug available at http://www.carplugs.com/ for $5+$3sh. Use at least AWG24 wires especially for Battery and ground.
 
-Or buy an already made cable at http://www.obd2allinone.com/ for $10+$5sh
+Or buy an already made cable at http://www.obd2allinone.com/ for $10+$5sh or elsewhere.
 
 
 ==Interface for ISO==
@@ -45,9 +45,9 @@ Schematic is like this:
 {{{
                              MC33290
                             +-------+
-Arduino pin 2 -------------5|TX  ISO|4-----------------+------- DB9M pin 4 (ISO K Line)
+Arduino pin 3 -------------5|TX  ISO|4-----------------+------- DB9M pin 4 (ISO K Line)
                             |       |                  |
-Arduino pin 3 -------------6|RX  GND|3--DB9M pin 1     / between MC pin 4 and pin 1
+Arduino pin 2 -------------6|RX  GND|3--DB9M pin 1     / between MC pin 4 and pin 1
                             |       |                  \ goes a 510 ohms resistor
 Arduino 5V pin output -----7|VDD  NC|2--               /
                             |       |                  |
@@ -59,6 +59,7 @@ The Arduino is powered by the 12V line coming from the cable too
 Arduino 12V input ------------------ DB9M pin 9 (12V Battery)
 Arduino GND input ------------------ DB9M pin 2 (Chassis Ground)
 }}}
+*Some cars only have one ground so you may have to use pin 1 instead of pin 2 to power the board*
 
 Interface being built:
 
