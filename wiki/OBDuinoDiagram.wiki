@@ -1,17 +1,27 @@
-#summary Whole diagram of the *duino board, LCD, interface
+#summary Whole diagram of the Arduino board, LCD, ISO interface
 #labels Phase-Design
 
 = Diagram =
 
-Here's the proposed diagram of the Arduino board, the LCD screen, and the [OBDuinoInterface interface].
+Here's the proposed diagram of the [http://arduino.cc Arduino] board, the LCD screen, and the [OBDuinoInterface ISO interface].
 
 http://opengauge.org/%7Eobduino/diagram/obduino.gif
 
 = Hardware =
 
-Some pictures of the hardware
+You need (for ISO):
+  # a duino clone board, serial or USB, your choice
+  # an HD44780 compatible LCD screen 2x16
+  # a transistor 2N3906 or NTE159
+  # three small push buttons
+  # a 220 ohms resistor
+  # a Freescale MC33290 ic
+  # a 510 ohms resistor
+  # a DB9 male
 
-An arduino clone board called the freeduino, some headers were missing when I took the pictures:
+==Some pictures of the hardware==
+
+A clone board called the freeduino, some headers were missing when I took pictures:
 
 http://opengauge.org/%7Eobduino/hardware/freeduino_front.jpg
 http://opengauge.org/%7Eobduino/hardware/freeduino_back.jpg
