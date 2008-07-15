@@ -44,9 +44,10 @@
 #define BrightnessPin 9
 
 //LCD prototype
-class LCD{
+class LCD
+{
 public:
-  LCD( );
+  LCD();
   void gotoXY(byte x, byte y);
   void print(char *string);
   void cls();
@@ -251,9 +252,33 @@ byte iso_init()
   sprintf_P(str, PSTR("Send 0x33"));
   lcd.cls();
   lcd.print(str);
+  Serial.println(str);
 #endif
+
+/*
+  As SoftwareSerial use an int for the delay and we need
+  a 200'000ms delay, let's do it by hand instead of:
+
   ISOserial.begin(5);
-  ISOserial.print(0x33);
+  ISOserial.print(0x33);    // this should take about 2 seconds
+*/
+
+  b=0x33;
+  // start bit
+  digitalWrite(K_OUT, LOW);
+  delay(200);
+  // data
+  for (byte mask = 0x01; mask; mask <<= 1)
+  {
+    if (b & mask) // choose bit
+      digitalWrite(K_OUT, HIGH); // send 1
+    else
+      digitalWrite(K_OUT, LOW); // send 1
+    delay(200);
+  }
+  // stop bit
+  digitalWrite(K_OUT, HIGH);
+  delay(200); 
 
   // pause between 60 ms and 300ms (from protocol spec)
   delay(60);
@@ -266,12 +291,14 @@ byte iso_init()
   sprintf_P(str, PSTR("Wait 0x55"));
   lcd.cls();
   lcd.print(str);
+  Serial.println(str);
 #endif
   b=ISOserial.read();
 #ifdef DEBUG
   sprintf_P(str, PSTR("Got1 0x%02X"), b);
   lcd.cls();
   lcd.print(str);
+  Serial.println(str);
 #endif
   if(b!=0x55)
     return -1;
@@ -283,12 +310,14 @@ byte iso_init()
   sprintf_P(str, PSTR("Wait 0x08"));
   lcd.cls();
   lcd.print(str);
+  Serial.println(str);
 #endif
   b=ISOserial.read();
 #ifdef DEBUG
   sprintf_P(str, PSTR("Got2 0x%02X"), b);
   lcd.cls();
   lcd.print(str);
+  Serial.println(str);
 #endif
   if(b!=0x08)
     return -1;
@@ -299,12 +328,14 @@ byte iso_init()
   sprintf_P(str, PSTR("Wait 0x08"));
   lcd.cls();
   lcd.print(str);
+  Serial.println(str);
 #endif
   b=ISOserial.read();
 #ifdef DEBUG
   sprintf_P(str, PSTR("Got3 0x%02X"), b);
   lcd.cls();
   lcd.print(str);
+  Serial.println(str);
 #endif
   if(b!=0x08)
     return -1;
@@ -316,6 +347,7 @@ byte iso_init()
   sprintf_P(str, PSTR("Send 0xF7"));
   lcd.cls();
   lcd.print(str);
+  Serial.println(str);
 #endif
   ISOserial.print(0xF7);
   
@@ -326,12 +358,14 @@ byte iso_init()
   sprintf_P(str, PSTR("Wait 0xCC"));
   lcd.cls();
   lcd.print(str);
+  Serial.println(str);
 #endif
   b=ISOserial.read();
 #ifdef DEBUG
   sprintf_P(str, PSTR("Got4 0x%02X"), b);
   lcd.cls();
   lcd.print(str);
+  Serial.println(str);
 #endif
   if(b!=0xCC)
     return -1;
