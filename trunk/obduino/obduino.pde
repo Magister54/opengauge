@@ -4,6 +4,7 @@
 
  Main coding/ISO: Frédéric (aka Magister on ecomodder.com)
  Buttons/LCD/params: Dave (aka dcb on ecomodder.com)
+ Soon:
  PWM: Nathan (aka n8thegr8 on ecomodder.com)
 
  This program is free software; you can redistribute it and/or modify it under
@@ -25,8 +26,7 @@
 
 #undef int    // bug from Arduino IDE 0011
 #include <stdio.h>
-#include <EEPROM.h>
-#include <SoftwareSerial.h>
+#include <avr/eeprom.h>
 #include <avr/pgmspace.h>
 #include <avr/sleep.h>
 
@@ -89,17 +89,16 @@ unsigned long  parms[]={
 
 /*
  * OBD-II ISO9141-2 Protocol
- * Using software serial method, lib claims speed greater
- * than 9600 bauds may be faulty, let's try at 10400.
  */
 #define K_IN    2
 #define K_OUT   3
-SoftwareSerial ISOserial =  SoftwareSerial(K_IN, K_OUT);
+// bit period for 10400 bauds = 1000000/10400 = 96
+#define _bitPeriod 96
 
 /* PID stuff */
 
-unsigned long  pid00to20_support=0;
-unsigned long  pid20to40_support=0;
+unsigned long  pid01to20_support=0;
+unsigned long  pid21to40_support=0;
 #define PID_SUPPORT20 0x00
 #define MIL_CODE      0x01
 #define FREEZE_DTC    0x02
@@ -159,6 +158,7 @@ byte topright=VEHICLE_SPEED;
 byte bottomleft=ENGINE_RPM;
 byte bottomright=LOAD_VALUE;
 
+// for distance
 unsigned long delta_time;
 unsigned long tank_dist=0UL;  // in cm, need to be read/write in the eeprom
 
@@ -170,8 +170,60 @@ ISR(PCINT1_vect)
   buttonState &= p;
 }
 
+int iso_read_byte()
+{
+  int val = 0;
+  int bitDelay = _bitPeriod - clockCyclesToMicroseconds(50);
+  
+  // one byte of serial data (LSB first)
+  // ...--\    /--\/--\/--\/--\/--\/--\/--\/--\/--...
+  //	 \--/\--/\--/\--/\--/\--/\--/\--/\--/
+  //	start  0   1   2   3   4   5   6   7 stop
+
+  while (digitalRead(K_IN));
+
+  // confirm that this is a real start bit, not line noise
+  if (digitalRead(K_IN) == LOW)
+  {
+    // frame start indicated by a falling edge and low start bit
+    // jump to the middle of the low start bit
+    delayMicroseconds(bitDelay / 2 - clockCyclesToMicroseconds(50));
+	
+    // offset of the bit in the byte: from 0 (LSB) to 7 (MSB)
+    for (int offset = 0; offset < 8; offset++)
+    {
+	// jump to middle of next bit
+	delayMicroseconds(bitDelay);
+	// read bit
+	val |= digitalRead(K_IN) << offset;
+    }
+    delayMicroseconds(_bitPeriod);
+    return val;
+  }
+  return -1;
+} 
+
+void iso_write_byte(byte b)
+{
+  int bitDelay = _bitPeriod - clockCyclesToMicroseconds(50); // a digitalWrite is about 50 cycles
+
+  digitalWrite(K_OUT, LOW);
+  delayMicroseconds(bitDelay);
+
+  for (byte mask = 0x01; mask; mask <<= 1)
+  {
+    if (b & mask) // choose bit
+      digitalWrite(K_OUT, HIGH); // send 1
+    else
+      digitalWrite(K_OUT, LOW); // send 0
+    delayMicroseconds(bitDelay);
+  }
+  digitalWrite(K_OUT, HIGH);
+  delayMicroseconds(bitDelay); 
+}
+  
 // inspired by SternOBDII\code\checksum.c
-byte checksum(byte *data, byte len)
+byte iso_checksum(byte *data, byte len)
 {
   byte i;
   byte crc;
@@ -199,13 +251,13 @@ byte iso_write_data(byte *data, byte len)
 
   // calculate checksum
   i+=3;
-  buf[i]=checksum(buf, i);
+  buf[i]=iso_checksum(buf, i);
 
   // send char one by one
   n=i+1;
   for(i=0; i<n; i++)
   {
-    ISOserial.print(buf[i]);
+    iso_write_byte(buf[i]);
     delay(20);	// inter character delay
   }
 
@@ -224,7 +276,7 @@ byte iso_read_data(byte *data, byte len)
   // checksum 1 bytes: [sum(header)+sum(data)]
 
   for(i=0; i<3+1+1+len; i++)
-    buf[i]=ISOserial.read();
+    buf[i]=iso_read_byte();
 
   // test, skip header comparison
   // ignore failure for the moment (0x7f)
@@ -252,17 +304,9 @@ byte iso_init()
   sprintf_P(str, PSTR("Send 0x33"));
   lcd.cls();
   lcd.print(str);
-  Serial.println(str);
 #endif
 
-/*
-  As SoftwareSerial use an int for the delay and we need
-  a 200'000ms delay, let's do it by hand instead of:
-
-  ISOserial.begin(5);
-  ISOserial.print(0x33);    // this should take about 2 seconds
-*/
-
+  // 5 bauds
   b=0x33;
   // start bit
   digitalWrite(K_OUT, LOW);
@@ -283,22 +327,19 @@ byte iso_init()
   // pause between 60 ms and 300ms (from protocol spec)
   delay(60);
 
-  // switch to 10400 bauds
-  ISOserial.begin(10400);
+  // switch now to 10400 bauds
 
   // wait for 0x55 from the ECU
 #ifdef DEBUG
   sprintf_P(str, PSTR("Wait 0x55"));
   lcd.cls();
   lcd.print(str);
-  Serial.println(str);
 #endif
-  b=ISOserial.read();
+  b=iso_read_byte();
 #ifdef DEBUG
   sprintf_P(str, PSTR("Got1 0x%02X"), b);
   lcd.cls();
   lcd.print(str);
-  Serial.println(str);
 #endif
   if(b!=0x55)
     return -1;
@@ -310,14 +351,12 @@ byte iso_init()
   sprintf_P(str, PSTR("Wait 0x08"));
   lcd.cls();
   lcd.print(str);
-  Serial.println(str);
 #endif
-  b=ISOserial.read();
+  b=iso_read_byte();
 #ifdef DEBUG
   sprintf_P(str, PSTR("Got2 0x%02X"), b);
   lcd.cls();
   lcd.print(str);
-  Serial.println(str);
 #endif
   if(b!=0x08)
     return -1;
@@ -328,14 +367,12 @@ byte iso_init()
   sprintf_P(str, PSTR("Wait 0x08"));
   lcd.cls();
   lcd.print(str);
-  Serial.println(str);
 #endif
-  b=ISOserial.read();
+  b=iso_read_byte();
 #ifdef DEBUG
   sprintf_P(str, PSTR("Got3 0x%02X"), b);
   lcd.cls();
   lcd.print(str);
-  Serial.println(str);
 #endif
   if(b!=0x08)
     return -1;
@@ -347,9 +384,8 @@ byte iso_init()
   sprintf_P(str, PSTR("Send 0xF7"));
   lcd.cls();
   lcd.print(str);
-  Serial.println(str);
 #endif
-  ISOserial.print(0xF7);
+  iso_write_byte(0xF7);
   
   delay(25);
 
@@ -358,14 +394,12 @@ byte iso_init()
   sprintf_P(str, PSTR("Wait 0xCC"));
   lcd.cls();
   lcd.print(str);
-  Serial.println(str);
 #endif
-  b=ISOserial.read();
+  b=iso_read_byte();
 #ifdef DEBUG
   sprintf_P(str, PSTR("Got4 0x%02X"), b);
   lcd.cls();
   lcd.print(str);
-  Serial.println(str);
 #endif
   if(b!=0xCC)
     return -1;
@@ -384,7 +418,7 @@ long get_pid(byte pid, char *retbuf)
   byte reslen;
 
   // check if PID is supported
-  if( (1L<<(pid-1) & pid00to20_support) == 0)
+  if( (1L<<(pid-1) & pid01to20_support) == 0)
   {
     // nope
     retbuf[0]='\0';
@@ -479,7 +513,7 @@ long get_pid(byte pid, char *retbuf)
         sprintf_P(retbuf, PSTR("EOBD"));
         break;
       default:
-        sprintf_P(retbuf, PSTR("OBD:%02X"), ret);
+        sprintf_P(retbuf, PSTR("OBD:%02X"), buf[0]);
         break;
     }
     break;
@@ -518,7 +552,7 @@ void get_cons(char *retbuf)
   long maf, vss, cons;
 
   // check if MAF is supported
-  if((1L<<(MAF_AIR_FLOW-1) & pid00to20_support) == 0)
+  if((1L<<(MAF_AIR_FLOW-1) & pid01to20_support) == 0)
   {
     // nope, lets approximate it with MAP and IAT
     // later :-/
@@ -602,38 +636,23 @@ void accu_dist(void)
   tank_dist+=(vss*delta_time)/36UL;
 }
 
+// we have 512 bytes of EEPROM
 void save(void)
 {
-  EEPROM.write(0, obduinosig);
-  byte p = 0;
-  for(int x=4; p<parmsLength; x+=4)
-  {
-    unsigned long v = parms[p];
-    EEPROM.write(x,   (v>>24)&255);
-    EEPROM.write(x+1, (v>>16)&255);
-    EEPROM.write(x+2, (v>>8)&255);
-    EEPROM.write(x+3, (v)&255);
-    p++;
-  }
+  // signature at address 0x00
+  eeprom_write_byte((uint8_t*)0, obduinosig);
+  
+  // parameters are all long, align and start at address 0x04
+  eeprom_write_block(parms, (void*)0x04, sizeof(parms));
 }
 
 //return 1 if loaded ok
 byte load(void)
 {
-  byte b = EEPROM.read(0);
+  byte b = eeprom_read_byte((const uint8_t*)0);
   if(b==obduinosig)
   {
-    byte p=0;
-
-    for(int x=4; p<parmsLength; x+=4)
-    {
-      unsigned long v = EEPROM.read(x);
-      v = (v << 8) + EEPROM.read(x+1);
-      v = (v << 8) + EEPROM.read(x+2);
-      v = (v << 8) + EEPROM.read(x+3);
-      parms[p]=v;
-      p++;
-    }
+    eeprom_read_block(parms, (void*)0x04, sizeof(parms));
     return 1;
   }
   return 0;
@@ -669,14 +688,20 @@ void check_supported_pid(void)
   char str[16];
 
   n=get_pid(PID_SUPPORT20, str);
-  pid00to20_support=n;
+  pid01to20_support=n;
+#ifdef DEBUG
+  sprintf_P(str, PSTR("SUP:0x%02X"), n);
+  lcd.cls();
+  lcd.print(str);
+  delay(2000);
+#endif
 
-  // do we support pid 20 to 40?
-  if( (1L<<(PID_SUPPORT40-1) & pid00to20_support) == 0)
+  // do we support pid 21 to 40?
+  if( (1L<<(PID_SUPPORT40-1) & pid01to20_support) == 0)
     return;  //nope
 
   n=get_pid(PID_SUPPORT40, str);
-  pid20to40_support=n;
+  pid21to40_support=n;
 }
 
 void check_mil_code(void)
@@ -705,11 +730,11 @@ void check_mil_code(void)
     nb=(n>>24) & 0x7F;
     sprintf_P(str, PSTR("CHECK ENGINE ON"));
     lcd.print(str);
-    lcd.gotoXY(1,0);
+    lcd.gotoXY(0,1);
     sprintf_P(str, PSTR("%d CODE(S) IN ECU"), nb);
     lcd.print(str);
 #ifdef DEBUG
-  Serial.println(str);
+    Serial.println(str);
 #endif
     delay(2000);
 
@@ -724,7 +749,7 @@ void check_mil_code(void)
     {
       iso_read_data(buf, 6);
       k=0;  // to build the string
-      for(j=0;j<3;j++)
+      for(j=0;j<3;j++)  // the 3 codes
       {
         switch(buf[j*2] & 0xC0)
         {
@@ -749,7 +774,7 @@ void check_mil_code(void)
       }
       str[k]='\0';  // make asciiz
 #ifdef DEBUG
-  Serial.println(str);
+      Serial.println(str);
 #endif
       lcd.print(str);
       lcd.gotoXY(0, 1);  // go to next line to display the 3 next
@@ -801,10 +826,6 @@ void setup()                    // run once, when the sketch starts
 
   analogWrite(ContrastPin,parms[contrastIdx]);
   lcd.init();
-  lcd.LcdCommandWrite(B00000001);  // clear display, set cursor position to zero
-  lcd.LcdCommandWrite(B10000000);  // set dram to zero
-
-  lcd.gotoXY(0, 0);
   sprintf_P(str, PSTR("OBD-II ISO9141-2"));
   lcd.print(str);
   delay(2000);
@@ -831,13 +852,13 @@ void setup()                    // run once, when the sketch starts
 
   if(r!=0)
   {
-    delay(5000);
-    sprintf_P(str, PSTR("Init ISO Failed!"));
+    sprintf_P(str, PSTR("ISO Init Failed!"));
     lcd.cls();
     lcd.print(str);
+    delay(5000);
     set_sleep_mode(SLEEP_MODE_PWR_DOWN);
     sleep_enable();
-    while(1);
+    while(1)
       sleep_mode();
   }
 
@@ -862,15 +883,19 @@ void loop()                     // run over and over again
   long n;
   char str[16];
 
+#if 0
   // if RPM are 0 then the engine is shutdowned
   n=get_pid(ENGINE_RPM, str);
   if(n==0)
   {
+      // test if it was running before
+      
       // calculate that if we are at 0 for x seconds then
       // save current data (especially distance) in eeprom ONCE
       // and shutdown brightness?
   }
-  
+#endif
+
   // display on LCD
   lcd.gotoXY(0,0);
   display(topleft);
@@ -929,7 +954,7 @@ void LCD::print(char *string)
 }
 
 // do the lcd initialization voodoo
-// thanks to Yoshi SuperMID for debugging :)
+// thanks to Yoshi "SuperMID" for tips :)
 void LCD::init()
 {
   delay(16);                    // wait for more than 15 msec
@@ -972,7 +997,7 @@ void LCD::init()
     for(byte y=0;y<8;y++)  // 8 rows
         LcdDataWrite(pgm_read_byte(&chars[y*NB_CHAR+x])); //write the character data to the character generator ram
 
-  LcdCommandWrite(B00000001);  // clear display, set cursor position to zero
+  cls();
   LcdCommandWrite(B10000000);  // set dram to zero
 }
 
