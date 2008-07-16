@@ -59,8 +59,12 @@ The Arduino is powered by the 12V line coming from the cable too
 Arduino 12V input ------------------ DB9M pin 9 (12V Battery)
 Arduino GND input ------------------ DB9M pin 2 (Chassis Ground)
 }}}
-*Some cars only have one ground so you may have to use pin 1 instead of pin 2 to power the board*
+*Some cars have only one ground so you may have to use pin 1 instead of pin 2 to power the board or just solder pin 1 and 2 together*
 
-Interface being built:
+Interface front:
 
 http://opengauge.org/%7Eobduino/hardware/iso_interface.jpg
+
+Interface back:
+
+http://opengauge.org/%7Eobduino/hardware/iso_interface_back.jpg
