@@ -36,3 +36,7 @@ http://opengauge.org/%7Eobduino/hardware/lcd_back.jpg
 Freeduino and LCD attached, it's just missing the 3 buttons and the [OBDuinoInterface ISO interface].
 
 http://opengauge.org/%7Eobduino/hardware/duino_lcd.jpg
+
+
+Freeduino, LCD, ISO interface:
+http://opengauge.org/%7Eobduino/hardware/obduino.jpg
