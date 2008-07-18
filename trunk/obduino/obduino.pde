@@ -28,7 +28,6 @@
 #include <stdio.h>
 #include <avr/eeprom.h>
 #include <avr/pgmspace.h>
-#include <avr/sleep.h>
 
 #define obduinosig B11001100
 
@@ -93,7 +92,7 @@ unsigned long  parms[]={
 #define K_IN    2
 #define K_OUT   3
 // bit period for 10400 bauds = 1000000/10400 = 96
-#define _bitPeriod 96
+#define _bitPeriod 1000000L/10400L
 
 /* PID stuff */
 
@@ -174,13 +173,19 @@ int iso_read_byte()
 {
   int val = 0;
   int bitDelay = _bitPeriod - clockCyclesToMicroseconds(50);
+  unsigned long timer;
   
   // one byte of serial data (LSB first)
   // ...--\    /--\/--\/--\/--\/--\/--\/--\/--\/--...
   //	 \--/\--/\--/\--/\--/\--/\--/\--/\--/
   //	start  0   1   2   3   4   5   6   7 stop
 
-  while (digitalRead(K_IN));
+  timer=millis();
+  while (digitalRead(K_IN))    // wait for start bit
+  {
+      if(millis()-timer > 300)  // timeout after 300ms
+        return -1;
+  }
 
   // confirm that this is a real start bit, not line noise
   if (digitalRead(K_IN) == LOW)
@@ -306,12 +311,11 @@ byte iso_init()
   lcd.print(str);
 #endif
 
-  // 5 bauds
-  b=0x33;
   // start bit
   digitalWrite(K_OUT, LOW);
   delay(200);
   // data
+  b=0x33;
   for (byte mask = 0x01; mask; mask <<= 1)
   {
     if (b & mask) // choose bit
@@ -406,6 +410,94 @@ byte iso_init()
 
   // init OK!
   return 0;
+}
+
+byte kwp_slow_init(void)
+{
+  int i;
+  char send_p[5]={0xc1,0x33,0xf1,0x81,0x66};
+  byte b;
+  char str[16];
+  
+  // drive K line high for 300ms
+  digitalWrite(K_OUT, HIGH);
+  delay(300);
+
+  // send 0x33 at 5 bauds
+#ifdef DEBUG
+  sprintf_P(str, PSTR("Send 0x33"));
+  lcd.cls();
+  lcd.print(str);
+#endif
+
+  // start bit
+  digitalWrite(K_OUT, LOW);
+  delay(200);
+  // data
+  b=0x33;
+  for (byte mask = 0x01; mask; mask <<= 1)
+  {
+    if (b & mask) // choose bit
+      digitalWrite(K_OUT, HIGH); // send 1
+    else
+      digitalWrite(K_OUT, LOW); // send 1
+    delay(200);
+  }
+  // stop bit
+  digitalWrite(K_OUT, HIGH);
+  delay(200); 
+  
+  delay(50);
+  
+  // send command
+  for(i=0; i<5; i++)
+  {
+    iso_write_byte(send_p[i]);
+    delay(20);	// inter character delay
+  }
+  
+  for(i=0; i<7; i++)
+  {
+    b=iso_read_byte();
+    sprintf_P(str, PSTR("GotS 0x%02X"), b);
+    lcd.cls();
+    lcd.print(str);
+  }
+}
+
+byte kwp_fast_init(void)
+{
+  int i;
+  char send_p[5]={0xc1,0x33,0xf1,0x81,0x66};
+  byte b;
+  char str[16];
+  
+  // drive K line high for 300ms
+  digitalWrite(K_OUT, HIGH);
+  delay(300);
+
+  // pull K line low for 25ms
+  digitalWrite(K_OUT, LOW);
+  delay(25);
+
+  // rise K line high for 25ms
+  digitalWrite(K_OUT, HIGH);
+  delay(25);
+  
+  // send command
+  for(i=0; i<5; i++)
+  {
+    iso_write_byte(send_p[i]);
+    delay(20);	// inter character delay
+  }
+  
+  for(i=0; i<7; i++)
+  {
+    b=iso_read_byte();
+    sprintf_P(str, PSTR("GotF 0x%02X"), b);
+    lcd.cls();
+    lcd.print(str);
+  }
 }
 
 // get value of a PID, return as a long value
@@ -787,15 +879,9 @@ void setup()                    // run once, when the sketch starts
   byte r;
   char str[20];
 
-#ifdef DEBUG
-  Serial.begin(115200);  // for debugging
-  sprintf_P(str, PSTR("bytes free:"));
-  Serial.print(str);
-  Serial.println(memoryTest());
-#endif
-
   // init pinouts
   pinMode(K_OUT, OUTPUT);
+  digitalWrite( K_OUT, HIGH);
   pinMode(K_IN, INPUT);
 
   // buttons init
@@ -824,6 +910,13 @@ void setup()                    // run once, when the sketch starts
   pinMode(DB7Pin,OUTPUT);       
   delay(500);      
 
+#ifdef DEBUG
+  Serial.begin(115200);  // for debugging
+  sprintf_P(str, PSTR("bytes free:"));
+  Serial.print(str);
+  Serial.println(memoryTest());
+#endif
+
   analogWrite(ContrastPin,parms[contrastIdx]);
   lcd.init();
   sprintf_P(str, PSTR("OBD-II ISO9141-2"));
@@ -835,8 +928,12 @@ void setup()                    // run once, when the sketch starts
   Serial.println(str);
 #endif
 
-  r=iso_init();
-
+  while(1)
+  {
+    kwp_fast_init();
+    kwp_slow_init();
+    
+    r=iso_init();
 #ifdef DEBUG
   if(r==0)
   {
@@ -849,18 +946,17 @@ void setup()                    // run once, when the sketch starts
     Serial.println(str);
   }
 #endif
-
-  if(r!=0)
-  {
-    sprintf_P(str, PSTR("ISO Init Failed!"));
-    lcd.cls();
-    lcd.print(str);
-    delay(5000);
-    set_sleep_mode(SLEEP_MODE_PWR_DOWN);
-    sleep_enable();
-    while(1)
-      sleep_mode();
-  }
+    if(r==0)  // success!
+      break;
+    else
+    {
+      delay(2000);  // let display the received char
+      sprintf_P(str, PSTR("ISO Init Failed!"));
+      lcd.cls();
+      lcd.print(str);
+      delay(2000);
+     }
+   }
 
   // check supported PIDs
   check_supported_pid();
