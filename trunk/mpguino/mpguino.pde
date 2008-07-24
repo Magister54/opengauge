@@ -1,4 +1,4 @@
-#define ver=680
+#define ver=670
 /*
 
 */
@@ -203,7 +203,7 @@ void setup (void){
   lcd.gotoXY(0,0); 
   lcd.print(getStr(PSTR("OpenGauge       ")));      
   lcd.gotoXY(0,1);      
-  lcd.print(getStr(PSTR("  MPGuino  v0.68")));      
+  lcd.print(getStr(PSTR("  MPGuino  v0.67")));      
 
   pinMode(InjectorOpenPin, INPUT);       
   pinMode(InjectorClosedPin, INPUT);       
