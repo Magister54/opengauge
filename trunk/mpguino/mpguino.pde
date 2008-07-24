@@ -1,8 +1,5 @@
-#define ver=670
+#define ver=680
 /*
-updated lcd init procedure
-removed power up logic
-removed lcd power pin logic
 
 */
 //GPL Software    
@@ -206,7 +203,7 @@ void setup (void){
   lcd.gotoXY(0,0); 
   lcd.print(getStr(PSTR("OpenGauge       ")));      
   lcd.gotoXY(0,1);      
-  lcd.print(getStr(PSTR("  MPGuino  v0.67")));      
+  lcd.print(getStr(PSTR("  MPGuino  v0.68")));      
 
   pinMode(InjectorOpenPin, INPUT);       
   pinMode(InjectorClosedPin, INPUT);       
