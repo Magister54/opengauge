@@ -4,7 +4,7 @@ note to DB: change version numbers to suit, the boards say "v1.0" on them though
 
 = Introduction =
 
-This is a schematic derived from the Arduino + LCD schmatic. It replaces the Arduino with a Atmega168 chip and resonator. 
+This is a schematic derived from the Arduino + LCD schmatic. It replaces the Arduino with a Atmega168 chip crystal, voltage regulator and some assorted caps. 
 
 = Details =
 
