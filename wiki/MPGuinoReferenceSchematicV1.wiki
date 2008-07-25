@@ -1,6 +1,6 @@
 #MPGuino Reference Schematic v 1.0 (Paul Badger)
 
-note to DB: change version numbers to suit the boards say "v1.0" on them though
+note to DB: change version numbers to suit, the boards say "v1.0" on them though
 
 = Introduction =
 
