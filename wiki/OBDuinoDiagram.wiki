@@ -3,6 +3,8 @@
 
 = Diagram =
 
+[[MPGuinoRefSchematic1.0| MPGuino Reference Schematic]]
+
 Here's the proposed diagram of the [http://arduino.cc Arduino] board, the LCD screen, and the [OBDuinoInterface ISO interface].
 
 http://opengauge.org/%7Eobduino/diagram/obduino.gif
