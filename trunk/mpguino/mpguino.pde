@@ -1,4 +1,4 @@
-#define ver=680
+#define ver=690
 /*
 
 */
@@ -17,9 +17,11 @@ byte brightnessIdx=1;
 #define currentTripResetTimeoutUSIdx 4
 #define tankSizeIdx 5 
 #define injectorSettleTimeIdx 6
-char *  parmLabels[]={"Contrast","VSS Pulses/Mile", "MicroSec/Gallon","Pulses/2 revs","Timout(microSec)","Tank Gal * 1000","Injector DelayuS"};
+#define weightIdx 7
+#define scratchpadIdx 8
+char *  parmLabels[]={"Contrast","VSS Pulses/Mile", "MicroSec/Gallon","Pulses/2 revs","Timout(microSec)","Tank Gal * 1000","Injector DelayuS","Weight (lbs)","scratchpad(odo?)"};
 //unsigned long  parms[]={15ul,16408ul,684968626ul,3ul,420000000ul,13300ul,500ul};//default values
-unsigned long  parms[]={15ul,10000ul,304409714ul,4ul,420000000ul,13300ul,500ul};//default values
+unsigned long  parms[]={15ul,10000ul,304409714ul,4ul,420000000ul,13300ul,500ul,2400ul,0ul,};//default values
 #define parmsLength (sizeof(parms)/sizeof(unsigned long)) //array size      
 
 
@@ -50,11 +52,53 @@ unsigned long  parms[]={15ul,10000ul,304409714ul,4ul,420000000ul,13300ul,500ul};
 #define mbuttonBit 16 // pin18 is a bitmask 16 on port C        
 #define rbuttonBit 32 // pin19 is a bitmask 32 on port C        
 #define loopsPerSecond 2 // how many times will we try and loop in a second     
- 
+
+typedef void (* pFunc)(void);//type for display function pointers      
+
 volatile unsigned long timer2_overflow_count;
 
+/*** Set up the Events ***
+We have our own ISR for timer2 which gets called about once a millisecond.
+So we define certain event functions that we can schedule by calling addEvent
+with the event ID and the number of milliseconds to wait before calling the event. 
+The milliseconds is approximate.
+
+Keep the event functions SMALL!!!  This is an interrupt!
+
+*/
+//event functions
+void enableVSS(){PCMSK1 |= (1 << PCINT8);}
+void enableLButton(){PCMSK1 |= (1 << PCINT11);}
+void enableMButton(){PCMSK1 |= (1 << PCINT12);}
+void enableRButton(){PCMSK1 |= (1 << PCINT13);}
+//array of the event functions
+pFunc eventFuncs[] ={enableVSS, enableLButton,enableMButton,enableRButton};
+#define eventFuncSize (sizeof(eventFuncs)/sizeof(pFunc)) 
+//define the event IDs
+#define enableVSSID 0
+#define enableLButtonID 1
+#define enableMButtonID 2
+#define enableRButtonID 3
+//ms counters
+unsigned int eventFuncCounts[eventFuncSize];
+
+//schedule an event to occur ms milliseconds from now
+void addEvent(byte eventID, unsigned int ms){
+  eventFuncCounts[eventID]=ms;
+}
+
+/* this ISR gets called every 1.024 milliseconds, we will call that a millisecond for our purposes
+go through all the event counts, 
+  if any are non zero subtract 1 and call the associated function if it just turned zero.  */
 ISR(TIMER2_OVF_vect){
-	timer2_overflow_count++;
+  timer2_overflow_count++;
+  for(byte eventID = 0; eventID < eventFuncSize; eventID++){
+    if(eventFuncCounts[eventID]!= 0){
+      eventFuncCounts[eventID]--;
+      if(eventFuncCounts[eventID] == 0)
+          eventFuncs[eventID](); 
+    }  
+  }
 }
 
  
@@ -83,12 +127,14 @@ unsigned long microSeconds (void){
   return tmp;     
 }    
  
- 
+unsigned long elapsedMicroseconds(unsigned long startMicroSeconds, unsigned long currentMicroseconds ){      
+  if(currentMicroseconds >= startMicroSeconds)      
+    return currentMicroseconds-startMicroSeconds;      
+  return 4294967295 - (startMicroSeconds-currentMicroseconds);      
+}      
+
 unsigned long elapsedMicroseconds(unsigned long startMicroSeconds ){      
-  unsigned long msec = microSeconds();      
-  if(msec >= startMicroSeconds)      
-    return msec-startMicroSeconds;      
-  return 4294967295 - (startMicroSeconds-msec);      
+  return elapsedMicroseconds(startMicroSeconds, microSeconds());
 }      
  
 //Trip prototype      
@@ -140,21 +186,30 @@ void processInjClosed(void){
     tmpTrip.injHius += x;       
   tmpTrip.injPulses++;      
 }      
+
+unsigned volatile long lastVSS1;
+unsigned volatile long lastVSSTime;
+unsigned volatile long lastVSS2;
  
 //attach the vss/buttons interrupt      
-ISR( PCINT1_vect ){       
+ISR( PCINT1_vect ){   
   static byte vsspinstate=0;      
   byte p = PINC;//bypassing digitalRead for interrupt performance      
   if ((p & vssBit) != (vsspinstate & vssBit)){      
+    PCMSK1 &= (!(1 << PCINT8));
     tmpTrip.vssPulses++;      
+    lastVSS1=lastVSS2;
+    unsigned long t = microSeconds();
+    lastVSS2=elapsedMicroseconds(lastVSSTime,t);
+    lastVSSTime=t;
+    addEvent(enableVSSID,4);
   }      
   vsspinstate = p;      
   buttonState &= p;      
 }       
  
-typedef void (* DisplayFx)(void);//type for display function pointers      
  
-DisplayFx displayFuncs[] ={ 
+pFunc displayFuncs[] ={ 
   doDisplayInstantCurrent, 
   doDisplayInstantTank, 
   doDisplayBigInstant, 
@@ -166,7 +221,7 @@ DisplayFx displayFuncs[] ={
   doDisplay5, 
   doDisplay6, 
   doDisplay7};      
-#define displayFuncSize (sizeof(displayFuncs)/sizeof(DisplayFx)) //array size      
+#define displayFuncSize (sizeof(displayFuncs)/sizeof(pFunc)) //array size      
 prog_char  * displayFuncNames[displayFuncSize]; 
 byte newRun = 0;
 void setup (void){
@@ -206,7 +261,7 @@ void setup (void){
   LCD::gotoXY(0,0); 
   LCD::print(getStr(PSTR("OpenGauge       ")));      
   LCD::gotoXY(0,1);      
-  LCD::print(getStr(PSTR("  MPGuino  v0.68")));      
+  LCD::print(getStr(PSTR("  MPGuino  v0.69")));      
 
   pinMode(InjectorOpenPin, INPUT);       
   pinMode(InjectorClosedPin, INPUT);       
@@ -226,11 +281,11 @@ void setup (void){
 //  digitalWrite( VSSPin, HIGH);       
  
   //low level interrupt enable stuff      
+  enableVSS();
+  enableLButton();
+  enableMButton();
+  enableRButton();
   PCICR |= (1 << PCIE1);       
-  PCMSK1 |= (1 << PCINT8);       
-  PCMSK1 |= (1 << PCINT11);       
-  PCMSK1 |= (1 << PCINT12);       
-  PCMSK1 |= (1 << PCINT13);           
  
   delay2(1500);       
 }       
@@ -381,11 +436,12 @@ char * getStr(prog_char * str){
 } 
 
  
+
  
  
-void doDisplayInstantCurrent(){displayTripCombo('I','M',instant.mpg(),'S',instant.mph(),'C','M',current.mpg(),'D',current.miles());}      
+void doDisplayInstantCurrent(){displayTripCombo('I','M',instant.mpg(),'S',instantmph(),'C','M',current.mpg(),'D',current.miles());}      
  
-void doDisplayInstantTank(){displayTripCombo('I','M',instant.mpg(),'S',instant.mph(),'T','M',tank.mpg(),'D',tank.miles());}      
+void doDisplayInstantTank(){displayTripCombo('I','M',instant.mpg(),'S',instantmph(),'T','M',tank.mpg(),'D',tank.miles());}      
  
 void doDisplayBigInstant() {bigNum(instant.mpg(),"INST","MPG ");}      
 void doDisplayBigCurrent() {bigNum(current.mpg(),"CURR","MPG ");}      
@@ -559,6 +615,20 @@ Trip::Trip(){
 unsigned long tmp1[2];
 unsigned long tmp2[2];
 unsigned long tmp3[2];
+
+unsigned long instantmph(){      
+  unsigned long vssPulseTimeuS = (lastVSS1 + lastVSS2) / 2;
+  init64(tmp1,0,1000000000ul);
+  init64(tmp2,0,parms[vssPulsesPerMileIdx]);
+  div64(tmp1,tmp2);
+  init64(tmp2,0,3600);
+  mul64(tmp1,tmp2);
+  init64(tmp2,0,vssPulseTimeuS);
+  div64(tmp1,tmp2);
+  return tmp1[1];
+}
+
+
  
 unsigned long Trip::miles(){      
   init64(tmp1,0,vssPulses);
@@ -964,8 +1034,6 @@ void init2(){
 	// this needs to be called before setup() or some functions won't
 	// work there
 	sei();
-
-
 	
 	// timer 0 is used for millis2() and delay2()
 	timer2_overflow_count = 0;
