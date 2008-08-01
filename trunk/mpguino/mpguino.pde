@@ -1,4 +1,4 @@
-#define ver=670
+#define ver=680
 /*
 
 */
@@ -51,6 +51,12 @@ unsigned long  parms[]={15ul,10000ul,304409714ul,4ul,420000000ul,13300ul,500ul};
 #define rbuttonBit 32 // pin19 is a bitmask 32 on port C        
 #define loopsPerSecond 2 // how many times will we try and loop in a second     
  
+volatile unsigned long timer2_overflow_count;
+
+ISR(TIMER2_OVF_vect){
+	timer2_overflow_count++;
+}
+
  
  
 unsigned long maxLoopLength = 0; //see if we are overutilizing the CPU      
@@ -60,18 +66,17 @@ unsigned long maxLoopLength = 0; //see if we are overutilizing the CPU
 byte buttonState = buttonsUp;      
  
  
-//overflow counter used by millis()      
-extern volatile unsigned long timer0_overflow_count;      
-unsigned long lastMicroSeconds=millis() * 1000;   
+//overflow counter used by millis2()      
+unsigned long lastMicroSeconds=millis2() * 1000;   
 unsigned long microSeconds (void){     
-  unsigned long tmp_timer0_overflow_count;    
+  unsigned long tmp_timer2_overflow_count;    
   unsigned long tmp;    
-  byte tmp_tcnt0;    
+  byte tmp_tcnt2;    
   cli(); //disable interrupts    
-  tmp_timer0_overflow_count = timer0_overflow_count;    
-  tmp_tcnt0 = TCNT0;    
+  tmp_timer2_overflow_count = timer2_overflow_count;    
+  tmp_tcnt2 = TCNT2;    
   sei(); // enable interrupts    
-  tmp = ((tmp_timer0_overflow_count << 8) + tmp_tcnt0) * 4;     
+  tmp = ((tmp_timer2_overflow_count << 8) + tmp_tcnt2) * 4;     
   if((tmp<=lastMicroSeconds) && (lastMicroSeconds<4290560000ul))    
     return microSeconds();     
   lastMicroSeconds=tmp;   
@@ -106,9 +111,7 @@ public:
 };      
  
 //LCD prototype      
-class LCD{      
-public:      
-  LCD( ) ;      
+namespace LCD{      
   void gotoXY(byte x, byte y);      
   void print(char * string);      
   void init();      
@@ -122,7 +125,6 @@ public:
  
 //main objects we will be working with:      
 unsigned long injHiStart; //for timing injector pulses      
-LCD lcd;      
 Trip tmpTrip;      
 Trip instant;      
 Trip current;      
@@ -168,6 +170,7 @@ DisplayFx displayFuncs[] ={
 prog_char  * displayFuncNames[displayFuncSize]; 
 byte newRun = 0;
 void setup (void){
+  init2();
   #ifdef debuguino  
   Serial.begin(9600);  
   Serial.println("OpenGauge MPGuino online");  
@@ -193,17 +196,17 @@ void setup (void){
   pinMode(DB5Pin,OUTPUT);       
   pinMode(DB6Pin,OUTPUT);       
   pinMode(DB7Pin,OUTPUT);       
-  delay(500);      
+  delay2(500);      
  
   pinMode(ContrastPin,OUTPUT);      
   analogWrite(ContrastPin,parms[contrastIdx]);  
-  lcd.init();      
-  lcd.LcdCommandWrite(B00000001);  // clear display, set cursor position to zero         
-  lcd.LcdCommandWrite(B10000000);  // set dram to zero
-  lcd.gotoXY(0,0); 
-  lcd.print(getStr(PSTR("OpenGauge       ")));      
-  lcd.gotoXY(0,1);      
-  lcd.print(getStr(PSTR("  MPGuino  v0.67")));      
+  LCD::init();      
+  LCD::LcdCommandWrite(B00000001);  // clear display, set cursor position to zero         
+  LCD::LcdCommandWrite(B10000000);  // set dram to zero
+  LCD::gotoXY(0,0); 
+  LCD::print(getStr(PSTR("OpenGauge       ")));      
+  LCD::gotoXY(0,1);      
+  LCD::print(getStr(PSTR("  MPGuino  v0.68")));      
 
   pinMode(InjectorOpenPin, INPUT);       
   pinMode(InjectorClosedPin, INPUT);       
@@ -229,7 +232,7 @@ void setup (void){
   PCMSK1 |= (1 << PCINT12);       
   PCMSK1 |= (1 << PCINT13);           
  
-  delay(1500);       
+  delay2(1500);       
 }       
  
 byte screen=0;      
@@ -285,36 +288,36 @@ void loop (void){
  
  if(holdDisplay==0){
     displayFuncs[screen]();    //call the appropriate display routine      
-    lcd.gotoXY(0,0);        
+    LCD::gotoXY(0,0);        
     
 //see if any buttons were pressed, display a brief message if so      
       if(!(buttonState&lbuttonBit) && !(buttonState&mbuttonBit)&& !(buttonState&rbuttonBit)){// left and middle and right = initialize      
-          lcd.print(getStr(PSTR("Setup ")));    
+          LCD::print(getStr(PSTR("Setup ")));    
           initGuino();  
       //}else if(!(buttonState&lbuttonBit) && !(buttonState&rbuttonBit)){// left and right = run lcd init = tank reset      
-      //    lcd.print(getStr(PSTR("Init LCD "))); 
-      //    lcd.init();
+      //    LCD::print(getStr(PSTR("Init LCD "))); 
+      //    LCD::init();
       }else if (!(buttonState&lbuttonBit) && !(buttonState&mbuttonBit)){// left and middle = tank reset      
           tank.reset();      
-          lcd.print(getStr(PSTR("Tank Reset ")));      
+          LCD::print(getStr(PSTR("Tank Reset ")));      
       }else if(!(buttonState&mbuttonBit) && !(buttonState&rbuttonBit)){// right and middle = current reset      
           current.reset();      
-          lcd.print(getStr(PSTR("Current Reset ")));      
+          LCD::print(getStr(PSTR("Current Reset ")));      
       }else if(!(buttonState&lbuttonBit)){ //left is rotate through screeens to the left      
         if(screen!=0)      
           screen=(screen-1);       
         else      
           screen=displayFuncSize-1;      
-        lcd.print(getStr(displayFuncNames[screen]));      
+        LCD::print(getStr(displayFuncNames[screen]));      
       }else if(!(buttonState&mbuttonBit)){ //middle is cycle through brightness settings      
         brightnessIdx = (brightnessIdx + 1) % brightnessLength;      
         analogWrite(BrightnessPin,255-brightness[brightnessIdx]);      
-        lcd.print(getStr(PSTR("Brightness ")));      
-        lcd.LcdDataWrite('0' + brightnessIdx);      
-        lcd.print(" ");      
+        LCD::print(getStr(PSTR("Brightness ")));      
+        LCD::LcdDataWrite('0' + brightnessIdx);      
+        LCD::print(" ");      
       }else if(!(buttonState&rbuttonBit)){//right is rotate through screeens to the left      
         screen=(screen+1)%displayFuncSize;      
-        lcd.print(getStr(displayFuncNames[screen]));      
+        LCD::print(getStr(displayFuncNames[screen]));      
       }      
       if(buttonState!=buttonsUp)
          holdDisplay=1;
@@ -394,36 +397,34 @@ void doDisplay4(void){rawDisplay(&instant);} //display instant trip "raw" inject
 void doDisplay5(void){rawDisplay(&current);} //display current trip "raw" injector and vss data.        
 void doDisplay6(void){rawDisplay(&tank);}    //display tank trip "raw" injector and vss data.        
 void doDisplay7(void){      
-  lcd.gotoXY(0,0);lcd.print("C%");lcd.print(format(maxLoopLength*1000/(looptime/100)));lcd.print(" T"); lcd.print(format(tank.time()));     
+  LCD::gotoXY(0,0);LCD::print("C%");LCD::print(format(maxLoopLength*1000/(looptime/100)));LCD::print(" T"); LCD::print(format(tank.time()));     
   unsigned long mem = memoryTest();      
   mem*=1000;      
-  lcd.gotoXY(0,1);lcd.print("FREE MEM: ");lcd.print(format(mem));      
+  LCD::gotoXY(0,1);LCD::print("FREE MEM: ");LCD::print(format(mem));      
 }    //display max cpu utilization and ram.        
  
 void displayTripCombo(char t1, char t1L1, unsigned long t1V1, char t1L2, unsigned long t1V2,  char t2, char t2L1, unsigned long t2V1, char t2L2, unsigned long t2V2){ 
-  lcd.gotoXY(0,0);lcd.LcdDataWrite(t1);lcd.LcdDataWrite(t1L1);lcd.print(format(t1V1));lcd.LcdDataWrite(' '); 
-      lcd.LcdDataWrite(t1L2);lcd.print(format(t1V2)); 
-  lcd.gotoXY(0,1);lcd.LcdDataWrite(t2);lcd.LcdDataWrite(t2L1);lcd.print(format(t2V1));lcd.LcdDataWrite(' '); 
-      lcd.LcdDataWrite(t2L2);lcd.print(format(t2V2)); 
+  LCD::gotoXY(0,0);LCD::LcdDataWrite(t1);LCD::LcdDataWrite(t1L1);LCD::print(format(t1V1));LCD::LcdDataWrite(' '); 
+      LCD::LcdDataWrite(t1L2);LCD::print(format(t1V2)); 
+  LCD::gotoXY(0,1);LCD::LcdDataWrite(t2);LCD::LcdDataWrite(t2L1);LCD::print(format(t2V1));LCD::LcdDataWrite(' '); 
+      LCD::LcdDataWrite(t2L2);LCD::print(format(t2V2)); 
 }      
  
 //arduino doesn't do well with types defined in a script as parameters, so have to pass as void * and use -> notation.      
 void tDisplay( void * r){ //display trip functions.        
   Trip *t = (Trip *)r;      
-  lcd.gotoXY(0,0);lcd.print("MH");lcd.print(format(t->mph()));lcd.print("MG");lcd.print(format(t->mpg()));      
-  lcd.gotoXY(0,1);lcd.print("MI");lcd.print(format(t->miles()));lcd.print("GA");lcd.print(format(t->gallons()));      
+  LCD::gotoXY(0,0);LCD::print("MH");LCD::print(format(t->mph()));LCD::print("MG");LCD::print(format(t->mpg()));      
+  LCD::gotoXY(0,1);LCD::print("MI");LCD::print(format(t->miles()));LCD::print("GA");LCD::print(format(t->gallons()));      
 }      
  
 void rawDisplay(void * r){      
   Trip *t = (Trip *)r;      
-  lcd.gotoXY(0,0);lcd.print("IJ");lcd.print(format(t->injHiSec*1000));lcd.print("uS");lcd.print(format(t->injHius*1000));      
-  lcd.gotoXY(0,1);lcd.print("IC");lcd.print(format(t->injPulses*1000));lcd.print("VC");lcd.print(format(t->vssPulses*1000));      
+  LCD::gotoXY(0,0);LCD::print("IJ");LCD::print(format(t->injHiSec*1000));LCD::print("uS");LCD::print(format(t->injHius*1000));      
+  LCD::gotoXY(0,1);LCD::print("IC");LCD::print(format(t->injPulses*1000));LCD::print("VC");LCD::print(format(t->vssPulses*1000));      
 }      
  
  
-//LCD functions      
-LCD::LCD(){      
-}      
+    
 //x=0..16, y= 0..1      
 void LCD::gotoXY(byte x, byte y){      
   byte dr=x+0x80;      
@@ -433,14 +434,14 @@ void LCD::gotoXY(byte x, byte y){
     dr += 0x14;      
   if (y==3)       
     dr += 0x54;      
-  lcd.LcdCommandWrite(dr);        
+  LCD::LcdCommandWrite(dr);        
 }      
  
 void LCD::print(char * string){      
   byte x = 0;      
   char c = string[x];      
   while(c != 0){      
-    lcd.LcdDataWrite(c);       
+    LCD::LcdDataWrite(c);       
     x++;      
     c = string[x];      
   }      
@@ -448,23 +449,23 @@ void LCD::print(char * string){
  
  
 void LCD::init(){
-  delay(16);                    // wait for more than 15 msec
+  delay2(16);                    // wait for more than 15 msec
   pushNibble(B00110000);  // send (B0011) to DB7-4
   cmdWriteSet();
   tickleEnable();
-  delay(5);                     // wait for more than 4.1 msec
+  delay2(5);                     // wait for more than 4.1 msec
   pushNibble(B00110000);  // send (B0011) to DB7-4
   cmdWriteSet();
   tickleEnable();
-  delay(1);                     // wait for more than 100 usec
+  delay2(1);                     // wait for more than 100 usec
   pushNibble(B00110000);  // send (B0011) to DB7-4
   cmdWriteSet();
   tickleEnable();
-  delay(1);                     // wait for more than 100 usec
+  delay2(1);                     // wait for more than 100 usec
   pushNibble(B00100000);  // send (B0010) to DB7-4 for 4bit
   cmdWriteSet();
   tickleEnable();
-  delay(1);                     // wait for more than 100 usec
+  delay2(1);                     // wait for more than 100 usec
   // ready to use normal LcdCommandWrite() function now!
   LcdCommandWrite(B00101000);   // 4-bit interface, 2 display lines, 5x8 font
   LcdCommandWrite(B00001100);   // display control:
@@ -494,14 +495,14 @@ void LCD::init(){
 void  LCD::tickleEnable(){       
   // send a pulse to enable       
   digitalWrite(EnablePin,HIGH);       
-  delayMicroseconds(1);  // pause 1 ms according to datasheet       
+  delayMicroseconds2(1);  // pause 1 ms according to datasheet       
   digitalWrite(EnablePin,LOW);       
-  delayMicroseconds(1);  // pause 1 ms according to datasheet       
+  delayMicroseconds2(1);  // pause 1 ms according to datasheet       
 }        
  
 void LCD::cmdWriteSet(){       
   digitalWrite(EnablePin,LOW);       
-  delayMicroseconds(1);  // pause 1 ms according to datasheet       
+  delayMicroseconds2(1);  // pause 1 ms according to datasheet       
   digitalWrite(DIPin,0);       
 }       
  
@@ -524,7 +525,7 @@ void LCD::LcdCommandWrite(byte value){
   value=pushNibble(value);      
   cmdWriteSet();       
   tickleEnable();       
-  delay(5);       
+  delay2(5);       
 }       
  
 void LCD::LcdDataWrite(byte value){       
@@ -533,7 +534,7 @@ void LCD::LcdDataWrite(byte value){
   tickleEnable();       
   value=pushNibble(value);      
   tickleEnable();       
-  delay(5);       
+  delay2(5);       
 }       
  
  
@@ -670,23 +671,23 @@ void bigNum (unsigned long t, char * txt1, char * txt2){
     r=format(t/100); //009.86 
   }   
  
-  lcd.gotoXY(0,0); 
-  lcd.print(bignumchars1+(r[2]-'0')*4); 
-  lcd.print(" "); 
-  lcd.print(bignumchars1+(r[4]-'0')*4); 
-  lcd.print(" "); 
-  lcd.print(bignumchars1+(r[5]-'0')*4); 
-  lcd.print(" "); 
-  lcd.print(txt1); 
+  LCD::gotoXY(0,0); 
+  LCD::print(bignumchars1+(r[2]-'0')*4); 
+  LCD::print(" "); 
+  LCD::print(bignumchars1+(r[4]-'0')*4); 
+  LCD::print(" "); 
+  LCD::print(bignumchars1+(r[5]-'0')*4); 
+  LCD::print(" "); 
+  LCD::print(txt1); 
  
-  lcd.gotoXY(0,1); 
-  lcd.print(bignumchars2+(r[2]-'0')*4); 
-  lcd.print(" "); 
-  lcd.print(bignumchars2+(r[4]-'0')*4); 
-  lcd.LcdDataWrite(dp); 
-  lcd.print(bignumchars2+(r[5]-'0')*4); 
-  lcd.print(" "); 
-  lcd.print(txt2); 
+  LCD::gotoXY(0,1); 
+  LCD::print(bignumchars2+(r[2]-'0')*4); 
+  LCD::print(" "); 
+  LCD::print(bignumchars2+(r[4]-'0')*4); 
+  LCD::LcdDataWrite(dp); 
+  LCD::print(bignumchars2+(r[5]-'0')*4); 
+  LCD::print(" "); 
+  LCD::print(txt2); 
 }      
  
 //the standard 64 bit math brings in  5000+ bytes
@@ -856,15 +857,15 @@ void editParm(byte parmIdx){
   //set pos = 0
   //display v
 
-    lcd.gotoXY(8,0);        
-    lcd.print("        ");
-    lcd.gotoXY(0,0);        
-    lcd.print(parmLabels[parmIdx]);
-    lcd.gotoXY(0,1);    
+    LCD::gotoXY(8,0);        
+    LCD::print("        ");
+    LCD::gotoXY(0,0);        
+    LCD::print(parmLabels[parmIdx]);
+    LCD::gotoXY(0,1);    
     char * fmtv=    uformat(v);
-    lcd.print(fmtv);
-    lcd.print(" OK XX");
-    lcd.LcdCommandWrite(B00001110);
+    LCD::print(fmtv);
+    LCD::print(" OK XX");
+    LCD::LcdCommandWrite(B00001110);
 
     for(int x=9 ; x>=0 ;x--){ //do a nice thing and put the cursor at the first non zero number
       if(fmtv[x] != '0')
@@ -874,11 +875,11 @@ void editParm(byte parmIdx){
   while(true){
 
     if(p<10)
-      lcd.gotoXY(p,1);   
+      LCD::gotoXY(p,1);   
     if(p==10)     
-      lcd.gotoXY(11,1);   
+      LCD::gotoXY(11,1);   
     if(p==11)     
-      lcd.gotoXY(14,1);   
+      LCD::gotoXY(14,1);   
 
      if(keyLock == 0){ 
        if(!(buttonState&lbuttonBit)){// left
@@ -889,11 +890,11 @@ void editParm(byte parmIdx){
             if(p==12)p=0;
         }else if(!(buttonState&mbuttonBit)){// middle
              if(p==11){  //cancel selected
-                lcd.LcdCommandWrite(B00001100);
+                LCD::LcdCommandWrite(B00001100);
                 return;
              }
              if(p==10){  //ok selected
-                lcd.LcdCommandWrite(B00001100);
+                LCD::LcdCommandWrite(B00001100);
                 parms[parmIdx]=rformat(fmtv);
                 return;
              }
@@ -903,9 +904,9 @@ void editParm(byte parmIdx){
              if (n > 9) n=0;
              if(p==0 && n > 3) n=0;
              fmtv[p]='0'+ n;
-             lcd.gotoXY(0,1);        
-             lcd.print(fmtv);
-             lcd.gotoXY(p,1);        
+             LCD::gotoXY(0,1);        
+             LCD::print(fmtv);
+             LCD::gotoXY(p,1);        
              if(parmIdx==contrastIdx)//adjust contrast dynamically
                  analogWrite(ContrastPin,rformat(fmtv));  
 
@@ -918,7 +919,7 @@ void editParm(byte parmIdx){
         keyLock=0;
      }
       buttonState=buttonsUp;
-      delay(125);
+      delay2(125);
   }      
   
 }
@@ -930,3 +931,56 @@ void initGuino(){ //edit all the parameters
   holdDisplay=1;
 }  
 
+
+unsigned long millis2(){
+	return timer2_overflow_count * 64UL * 2 / (16000000UL / 128000UL);
+}
+
+void delay2(unsigned long ms){
+	unsigned long start = millis2();
+	while (millis2() - start < ms);
+}
+
+/* Delay for the given number of microseconds.  Assumes a 16 MHz clock. 
+ * Disables interrupts, which will disrupt the millis2() function if used
+ * too frequently. */
+void delayMicroseconds2(unsigned int us){
+	uint8_t oldSREG;
+	if (--us == 0)	return;
+	us <<= 2;
+	us -= 2;
+	oldSREG = SREG;
+	cli();
+	// busy wait
+	__asm__ __volatile__ (
+		"1: sbiw %0,1" "\n\t" // 2 cycles
+		"brne 1b" : "=w" (us) : "0" (us) // 2 cycles
+	);
+	// reenable interrupts.
+	SREG = oldSREG;
+}
+
+void init2(){
+	// this needs to be called before setup() or some functions won't
+	// work there
+	sei();
+
+
+	
+	// timer 0 is used for millis2() and delay2()
+	timer2_overflow_count = 0;
+	// on the ATmega168, timer 0 is also used for fast hardware pwm
+	// (using phase-correct PWM would mean that timer 0 overflowed half as often
+	// resulting in different millis2() behavior on the ATmega8 and ATmega168)
+        TCCR2A=1<<WGM20|1<<WGM21;
+	// set timer 2 prescale factor to 64
+        TCCR2B=1<<CS22;
+
+
+//      TCCR2A=TCCR0A;
+//      TCCR2B=TCCR0B;
+	// enable timer 2 overflow interrupt
+	TIMSK2|=1<<TOIE2;
+	// disable timer 0 overflow interrupt
+	TIMSK0&=!(1<<TOIE0);
+}
