@@ -173,17 +173,17 @@ int iso_read_byte()
 {
   int val = 0;
   int bitDelay = _bitPeriod - clockCyclesToMicroseconds(50);
-  unsigned long timer;
+  unsigned long timeout;
   
   // one byte of serial data (LSB first)
   // ...--\    /--\/--\/--\/--\/--\/--\/--\/--\/--...
   //	 \--/\--/\--/\--/\--/\--/\--/\--/\--/
   //	start  0   1   2   3   4   5   6   7 stop
 
-  timer=millis();
+  timeout=millis();
   while (digitalRead(K_IN))    // wait for start bit
   {
-      if(millis()-timer > 300)  // timeout after 300ms
+      if((millis()-timeout) > 300L)  // timeout after 300ms
         return -1;
   }
 
@@ -293,24 +293,16 @@ byte iso_read_data(byte *data, byte len)
   return len;
 }
 
+/* ISO 9141 init */
 byte iso_init()
 {
   byte b;
-#ifdef DEBUG
-  char str[16];
-#endif
 
   // drive K line high for 300ms
   digitalWrite(K_OUT, HIGH);
   delay(300);
 
   // send 0x33 at 5 bauds
-#ifdef DEBUG
-  sprintf_P(str, PSTR("Send 0x33"));
-  lcd.cls();
-  lcd.print(str);
-#endif
-
   // start bit
   digitalWrite(K_OUT, LOW);
   delay(200);
@@ -321,7 +313,7 @@ byte iso_init()
     if (b & mask) // choose bit
       digitalWrite(K_OUT, HIGH); // send 1
     else
-      digitalWrite(K_OUT, LOW); // send 1
+      digitalWrite(K_OUT, LOW); // send 0
     delay(200);
   }
   // stop bit
@@ -334,77 +326,32 @@ byte iso_init()
   // switch now to 10400 bauds
 
   // wait for 0x55 from the ECU
-#ifdef DEBUG
-  sprintf_P(str, PSTR("Wait 0x55"));
-  lcd.cls();
-  lcd.print(str);
-#endif
   b=iso_read_byte();
-#ifdef DEBUG
-  sprintf_P(str, PSTR("Got1 0x%02X"), b);
-  lcd.cls();
-  lcd.print(str);
-#endif
   if(b!=0x55)
     return -1;
 
   delay(5);
 
   // wait for 0x08 0x08
-#ifdef DEBUG
-  sprintf_P(str, PSTR("Wait 0x08"));
-  lcd.cls();
-  lcd.print(str);
-#endif
   b=iso_read_byte();
-#ifdef DEBUG
-  sprintf_P(str, PSTR("Got2 0x%02X"), b);
-  lcd.cls();
-  lcd.print(str);
-#endif
   if(b!=0x08)
     return -1;
     
   delay(20);
   
-#ifdef DEBUG
-  sprintf_P(str, PSTR("Wait 0x08"));
-  lcd.cls();
-  lcd.print(str);
-#endif
   b=iso_read_byte();
-#ifdef DEBUG
-  sprintf_P(str, PSTR("Got3 0x%02X"), b);
-  lcd.cls();
-  lcd.print(str);
-#endif
   if(b!=0x08)
     return -1;
 
   delay(25);
 
   // sent 0xF7 (which is ~0x08)
-#ifdef DEBUG
-  sprintf_P(str, PSTR("Send 0xF7"));
-  lcd.cls();
-  lcd.print(str);
-#endif
   iso_write_byte(0xF7);
   
   delay(25);
 
   // ECU answer by 0xCC
-#ifdef DEBUG
-  sprintf_P(str, PSTR("Wait 0xCC"));
-  lcd.cls();
-  lcd.print(str);
-#endif
   b=iso_read_byte();
-#ifdef DEBUG
-  sprintf_P(str, PSTR("Got4 0x%02X"), b);
-  lcd.cls();
-  lcd.print(str);
-#endif
   if(b!=0xCC)
     return -1;
 
@@ -412,10 +359,12 @@ byte iso_init()
   return 0;
 }
 
+/* ISO 14230 slow init */
 byte kwp_slow_init(void)
 {
   int i;
   char send_p[5]={0xc1,0x33,0xf1,0x81,0x66};
+  char recv_p[7]={0x83,0xf1,0x01,0xc1,0xe9,0x8f,0xae};
   byte b;
   char str[16];
   
@@ -424,12 +373,6 @@ byte kwp_slow_init(void)
   delay(300);
 
   // send 0x33 at 5 bauds
-#ifdef DEBUG
-  sprintf_P(str, PSTR("Send 0x33"));
-  lcd.cls();
-  lcd.print(str);
-#endif
-
   // start bit
   digitalWrite(K_OUT, LOW);
   delay(200);
@@ -456,21 +399,24 @@ byte kwp_slow_init(void)
     delay(20);	// inter character delay
   }
   
+  // receive answer
   for(i=0; i<7; i++)
   {
     b=iso_read_byte();
-    sprintf_P(str, PSTR("GotS 0x%02X"), b);
-    lcd.cls();
-    lcd.print(str);
+    if(b!=recv_p[i])
+      return -1;
   }
+  
+  return 0;
 }
 
+/* ISO 14230 fast init */
 byte kwp_fast_init(void)
 {
   int i;
   char send_p[5]={0xc1,0x33,0xf1,0x81,0x66};
+  char recv_p[7]={0x83,0xf1,0x01,0xc1,0xe9,0x8f,0xae};
   byte b;
-  char str[16];
   
   // drive K line high for 300ms
   digitalWrite(K_OUT, HIGH);
@@ -491,13 +437,15 @@ byte kwp_fast_init(void)
     delay(20);	// inter character delay
   }
   
+  // receive answer
   for(i=0; i<7; i++)
   {
     b=iso_read_byte();
-    sprintf_P(str, PSTR("GotF 0x%02X"), b);
-    lcd.cls();
-    lcd.print(str);
+    if(b!=recv_p[i])
+      return -1;
   }
+  
+  return 0;
 }
 
 // get value of a PID, return as a long value
@@ -919,44 +867,45 @@ void setup()                    // run once, when the sketch starts
 
   analogWrite(ContrastPin,parms[contrastIdx]);
   lcd.init();
-  sprintf_P(str, PSTR("OBD-II ISO9141-2"));
+  sprintf_P(str, PSTR("Initialization"));
   lcd.print(str);
-  delay(2000);
-
 #ifdef DEBUG
-  sprintf_P(str, PSTR("Initialization..."));
   Serial.println(str);
 #endif
 
-  while(1)
+  do // init loop
   {
-    kwp_fast_init();
-    kwp_slow_init();
-    
-    r=iso_init();
-#ifdef DEBUG
-  if(r==0)
-  {
-    sprintf_P(str, PSTR("Init OK!"));
-    Serial.println(str);
-  }
-  else
-  {
-    sprintf_P(str, PSTR("Init failed!"));
-    Serial.println(str);
-  }
-#endif
-    if(r==0)  // success!
-      break;
-    else
+    lcd.gotoXY(0,1);
+    sprintf_P(str, PSTR("ISO14230 fast"));
+    lcd.print(str);
+    r=kwp_fast_init();
+    if(r!=0)
     {
-      delay(2000);  // let display the received char
-      sprintf_P(str, PSTR("ISO Init Failed!"));
-      lcd.cls();
+      lcd.gotoXY(0,1);
+      sprintf_P(str, PSTR("ISO14230 slow"));
       lcd.print(str);
-      delay(2000);
-     }
-   }
+      r=kwp_slow_init();
+      if(r!=0)
+      {
+        lcd.gotoXY(0,1);
+        sprintf_P(str, PSTR("ISO9141       "));
+        lcd.print(str);
+        r=iso_init();
+      }
+    }
+   
+    if(r==0)
+      sprintf_P(str, PSTR("Successful!"));
+    else
+      sprintf_P(str, PSTR("Failed! "));
+
+    lcd.gotoXY(0,1);
+    lcd.print(str);
+#ifdef DEBUG
+    Serial.println(str);
+#endif
+    delay(1000);
+  } while(r!=0); // end init loop
 
   // check supported PIDs
   check_supported_pid();
