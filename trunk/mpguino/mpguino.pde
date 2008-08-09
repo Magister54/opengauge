@@ -1,4 +1,4 @@
-#define ver=690
+#define ver=700
 /*
 
 */
@@ -67,7 +67,7 @@ Keep the event functions SMALL!!!  This is an interrupt!
 
 */
 //event functions
-void enableVSS(){PCMSK1 |= (1 << PCINT8);}
+
 void enableLButton(){PCMSK1 |= (1 << PCINT11);}
 void enableMButton(){PCMSK1 |= (1 << PCINT12);}
 void enableRButton(){PCMSK1 |= (1 << PCINT13);}
@@ -187,23 +187,33 @@ void processInjClosed(void){
   tmpTrip.injPulses++;      
 }      
 
+volatile boolean vssFlop = 0;
+
+void enableVSS(){
+    tmpTrip.vssPulses++; 
+    vssFlop = !vssFlop;
+}
+
 unsigned volatile long lastVSS1;
 unsigned volatile long lastVSSTime;
 unsigned volatile long lastVSS2;
- 
+
+volatile boolean lastVssFlop = vssFlop;
+
 //attach the vss/buttons interrupt      
 ISR( PCINT1_vect ){   
   static byte vsspinstate=0;      
   byte p = PINC;//bypassing digitalRead for interrupt performance      
   if ((p & vssBit) != (vsspinstate & vssBit)){      
-    PCMSK1 &= (!(1 << PCINT8));
-    tmpTrip.vssPulses++;      
+    addEvent(enableVSSID,2 ); //check back in a couple milli
+  }     
+  if(lastVssFlop != vssFlop){
     lastVSS1=lastVSS2;
     unsigned long t = microSeconds();
     lastVSS2=elapsedMicroseconds(lastVSSTime,t);
     lastVSSTime=t;
-    addEvent(enableVSSID,4);
-  }      
+    lastVssFlop = vssFlop;
+  }
   vsspinstate = p;      
   buttonState &= p;      
 }       
@@ -261,7 +271,7 @@ void setup (void){
   LCD::gotoXY(0,0); 
   LCD::print(getStr(PSTR("OpenGauge       ")));      
   LCD::gotoXY(0,1);      
-  LCD::print(getStr(PSTR("  MPGuino  v0.69")));      
+  LCD::print(getStr(PSTR("  MPGuino  v0.70")));      
 
   pinMode(InjectorOpenPin, INPUT);       
   pinMode(InjectorClosedPin, INPUT);       
@@ -281,7 +291,7 @@ void setup (void){
 //  digitalWrite( VSSPin, HIGH);       
  
   //low level interrupt enable stuff      
-  enableVSS();
+  PCMSK1 |= (1 << PCINT8);
   enableLButton();
   enableMButton();
   enableRButton();
@@ -617,7 +627,9 @@ unsigned long tmp2[2];
 unsigned long tmp3[2];
 
 unsigned long instantmph(){      
+  cli();
   unsigned long vssPulseTimeuS = (lastVSS1 + lastVSS2) / 2;
+  sei();
   init64(tmp1,0,1000000000ul);
   init64(tmp2,0,parms[vssPulsesPerMileIdx]);
   div64(tmp1,tmp2);
@@ -628,8 +640,36 @@ unsigned long instantmph(){
   return tmp1[1];
 }
 
+unsigned long instantmpg(){      
+  cli();
+  unsigned long vssPulseTimeuS = (lastVSS1 + lastVSS2) / 2;
+  sei();
+  init64(tmp1,0,1000000000ul); 
+  init64(tmp2,0,parms[vssPulsesPerMileIdx]);
+  div64(tmp1,tmp2);
+  init64(tmp2,0,3600);
+  mul64(tmp1,tmp2);
+  init64(tmp2,0,vssPulseTimeuS);
+  div64(tmp1,tmp2);
+//  return tmp1[1];
+  
+  
+    init64(tmp1,0,instant.injHiSec);
+  init64(tmp2,0,1000000);
+  mul64(tmp1,tmp2);
+  init64(tmp2,0,instant.injHius);
+  add64(tmp1,tmp2); 
+  init64(tmp2,0,1000);
+  mul64(tmp1,tmp2);
+  init64(tmp2,0,parms[microSecondsPerGallonIdx]);
+  div64(tmp1,tmp2);
+  return tmp1[1];      
 
- 
+  
+  
+}
+
+
 unsigned long Trip::miles(){      
   init64(tmp1,0,vssPulses);
   init64(tmp2,0,1000);
