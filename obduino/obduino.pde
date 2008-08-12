@@ -1,3 +1,12 @@
+/*
+ * TODO
+ *
+ * Test it!
+ * Implement buttons/menu configuration
+ * read/save params from the EEPROM
+ *
+ */
+
 /* OBDuino
 
  Copyright (C) 2008
@@ -20,9 +29,6 @@
  this program; if not, write to the Free Software Foundation, Inc.,
  59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
  */
-
-// uncomment to send debug on serial port at 115200 bauds
-#define DEBUG
 
 #undef int    // bug from Arduino IDE 0011
 #include <stdio.h>
@@ -336,9 +342,9 @@ byte iso_init()
   b=iso_read_byte();
   if(b!=0x08)
     return -1;
-    
+
   delay(20);
-  
+
   b=iso_read_byte();
   if(b!=0x08)
     return -1;
@@ -356,95 +362,6 @@ byte iso_init()
     return -1;
 
   // init OK!
-  return 0;
-}
-
-/* ISO 14230 slow init */
-byte kwp_slow_init(void)
-{
-  int i;
-  char send_p[5]={0xc1,0x33,0xf1,0x81,0x66};
-  char recv_p[7]={0x83,0xf1,0x01,0xc1,0xe9,0x8f,0xae};
-  byte b;
-  char str[16];
-  
-  // drive K line high for 300ms
-  digitalWrite(K_OUT, HIGH);
-  delay(300);
-
-  // send 0x33 at 5 bauds
-  // start bit
-  digitalWrite(K_OUT, LOW);
-  delay(200);
-  // data
-  b=0x33;
-  for (byte mask = 0x01; mask; mask <<= 1)
-  {
-    if (b & mask) // choose bit
-      digitalWrite(K_OUT, HIGH); // send 1
-    else
-      digitalWrite(K_OUT, LOW); // send 1
-    delay(200);
-  }
-  // stop bit
-  digitalWrite(K_OUT, HIGH);
-  delay(200); 
-  
-  delay(50);
-  
-  // send command
-  for(i=0; i<5; i++)
-  {
-    iso_write_byte(send_p[i]);
-    delay(20);	// inter character delay
-  }
-  
-  // receive answer
-  for(i=0; i<7; i++)
-  {
-    b=iso_read_byte();
-    if(b!=recv_p[i])
-      return -1;
-  }
-  
-  return 0;
-}
-
-/* ISO 14230 fast init */
-byte kwp_fast_init(void)
-{
-  int i;
-  char send_p[5]={0xc1,0x33,0xf1,0x81,0x66};
-  char recv_p[7]={0x83,0xf1,0x01,0xc1,0xe9,0x8f,0xae};
-  byte b;
-  
-  // drive K line high for 300ms
-  digitalWrite(K_OUT, HIGH);
-  delay(300);
-
-  // pull K line low for 25ms
-  digitalWrite(K_OUT, LOW);
-  delay(25);
-
-  // rise K line high for 25ms
-  digitalWrite(K_OUT, HIGH);
-  delay(25);
-  
-  // send command
-  for(i=0; i<5; i++)
-  {
-    iso_write_byte(send_p[i]);
-    delay(20);	// inter character delay
-  }
-  
-  // receive answer
-  for(i=0; i<7; i++)
-  {
-    b=iso_read_byte();
-    if(b!=recv_p[i])
-      return -1;
-  }
-  
   return 0;
 }
 
@@ -580,11 +497,7 @@ long get_pid(byte pid, char *retbuf)
     break;
   }
 
-#ifdef DEBUG
-  Serial.println(retbuf);
-#endif
-
-    return ret;
+  return ret;
 }
 
 void get_cons(char *retbuf)
@@ -628,10 +541,6 @@ void get_cons(char *retbuf)
       cons=(vss*7107L)/maf;
     sprintf_P(retbuf, PSTR("%ld.%ld %s"), cons/10, (cons - ((cons/10)*10)), (vss==0)?"GPH":"MPG" );
   }
-
-#ifdef DEBUG
-  Serial.println(retbuf);
-#endif
 }
 
 void get_dist(char *retbuf)
@@ -646,10 +555,6 @@ void get_dist(char *retbuf)
     cdist=(cdist*621UL)/1000UL;
 
   sprintf_P(retbuf, PSTR("DIST:%lu.%lu"), cdist/10L, (cdist - ((cdist/10L)*10L)) );
-
-#ifdef DEBUG
-  Serial.println(retbuf);
-#endif
 }
 
 void accu_dist(void)
@@ -729,12 +634,6 @@ void check_supported_pid(void)
 
   n=get_pid(PID_SUPPORT20, str);
   pid01to20_support=n;
-#ifdef DEBUG
-  sprintf_P(str, PSTR("SUP:0x%02X"), n);
-  lcd.cls();
-  lcd.print(str);
-  delay(2000);
-#endif
 
   // do we support pid 21 to 40?
   if( (1L<<(PID_SUPPORT40-1) & pid01to20_support) == 0)
@@ -773,9 +672,6 @@ void check_mil_code(void)
     lcd.gotoXY(0,1);
     sprintf_P(str, PSTR("%d CODE(S) IN ECU"), nb);
     lcd.print(str);
-#ifdef DEBUG
-    Serial.println(str);
-#endif
     delay(2000);
 
     // retrieve code
@@ -813,9 +709,6 @@ void check_mil_code(void)
         str[k++]='0' + (buf[j*2 +1] & 0x0F);
       }
       str[k]='\0';  // make asciiz
-#ifdef DEBUG
-      Serial.println(str);
-#endif
       lcd.print(str);
       lcd.gotoXY(0, 1);  // go to next line to display the 3 next
     }
@@ -829,7 +722,6 @@ void setup()                    // run once, when the sketch starts
 
   // init pinouts
   pinMode(K_OUT, OUTPUT);
-  digitalWrite( K_OUT, HIGH);
   pinMode(K_IN, INPUT);
 
   // buttons init
@@ -858,41 +750,17 @@ void setup()                    // run once, when the sketch starts
   pinMode(DB7Pin,OUTPUT);       
   delay(500);      
 
-#ifdef DEBUG
-  Serial.begin(115200);  // for debugging
-  sprintf_P(str, PSTR("bytes free:"));
-  Serial.print(str);
-  Serial.println(memoryTest());
-#endif
-
   analogWrite(ContrastPin,parms[contrastIdx]);
   lcd.init();
   sprintf_P(str, PSTR("Initialization"));
   lcd.print(str);
-#ifdef DEBUG
-  Serial.println(str);
-#endif
 
   do // init loop
   {
+    sprintf_P(str, PSTR("ISO9141 Init"));
     lcd.gotoXY(0,1);
-    sprintf_P(str, PSTR("ISO14230 fast"));
     lcd.print(str);
-    r=kwp_fast_init();
-    if(r!=0)
-    {
-      lcd.gotoXY(0,1);
-      sprintf_P(str, PSTR("ISO14230 slow"));
-      lcd.print(str);
-      r=kwp_slow_init();
-      if(r!=0)
-      {
-        lcd.gotoXY(0,1);
-        sprintf_P(str, PSTR("ISO9141       "));
-        lcd.print(str);
-        r=iso_init();
-      }
-    }
+    r=iso_init();
    
     if(r==0)
       sprintf_P(str, PSTR("Successful!"));
@@ -901,9 +769,6 @@ void setup()                    // run once, when the sketch starts
 
     lcd.gotoXY(0,1);
     lcd.print(str);
-#ifdef DEBUG
-    Serial.println(str);
-#endif
     delay(1000);
   } while(r!=0); // end init loop
 
