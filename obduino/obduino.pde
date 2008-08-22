@@ -7,11 +7,15 @@
  *
  */
 
+// comment to use MC33290 ISO K line chip
+// uncomment to use ELM327
+#define ELM 0
+
 /* OBDuino
 
  Copyright (C) 2008
 
- Main coding/ISO: Frédéric (aka Magister on ecomodder.com)
+ Main coding/ISO/ELM: Frédéric (aka Magister on ecomodder.com)
  Buttons/LCD/params: Dave (aka dcb on ecomodder.com)
  Soon:
  PWM: Nathan (aka n8thegr8 on ecomodder.com)
@@ -92,6 +96,11 @@ unsigned long  parms[]={
   15UL, 1UL};  //default values
 #define parmsLength (sizeof(parms)/sizeof(unsigned long)) //array size
 
+#ifdef ELM
+#define NUL     '\0'
+#define CR      '\r'  // carriage return = 0x0d = 13
+#define PROMPT  '>'
+#else
 /*
  * OBD-II ISO9141-2 Protocol
  */
@@ -99,6 +108,7 @@ unsigned long  parms[]={
 #define K_OUT   3
 // bit period for 10400 bauds = 1000000/10400 = 96
 #define _bitPeriod 1000000L/10400L
+#endif
 
 /* PID stuff */
 
@@ -158,10 +168,10 @@ prog_uchar pid_reslen[] PROGMEM=
 };
 
 // for the 4 display corners
-byte topleft=FUEL_CONS;
-byte topright=VEHICLE_SPEED;
-byte bottomleft=ENGINE_RPM;
-byte bottomright=LOAD_VALUE;
+byte topleft;
+byte topright;
+byte bottomleft;
+byte bottomright;
 
 // for distance
 unsigned long delta_time;
@@ -175,6 +185,76 @@ ISR(PCINT1_vect)
   buttonState &= p;
 }
 
+#ifdef ELM
+/* each ELM response ends with '\r' followed at the end by the prompt
+so read com port until we find a prompt */
+void elm_read(char *buf, byte size)
+{
+  int b;
+  byte i;
+  
+  // wait for something on com port
+  while(Serial.available()==0)
+  {
+     // nothing, maybe we should sleep?
+  }
+
+  i=0;
+  while((b=Serial.read())!=PROMPT && i<size)
+  {
+    if(b!=-1)
+      buf[i++]=b;
+  }
+    
+  // replace CR/prompt by 0 to make the string ASCIIZ
+  buf[i-1]=NUL;
+}
+
+byte elm_compact_response(char *buf)
+{
+    byte i;
+    char *newb=buf;
+    char c;
+    
+    // start at 6 which is the first hex byte after header
+    // ex: 41 0C 1A F8
+    // return string: 1AF8
+    
+    i=0;
+    buf+=6;
+    while((c=*buf++)!=NUL)
+      if(c!=' ')
+        newb[i++]=c;
+    
+    newb[i]=NUL;
+    
+    return 0;
+}
+
+int elm_init()
+{
+#define BUFLEN  16
+  char buf[BUFLEN];
+  
+  Serial.begin(9600);
+  
+  // wait for something, at least a prompt
+  elm_read(buf, BUFLEN);
+  Serial.print("ATI\r");
+  elm_read(buf, BUFLEN);
+  lcd.gotoXY(0,1);
+  lcd.print(buf);
+  delay(1000);
+  
+  /*
+  send ATI1 or AT@1 or whatever string to get some info
+  send ATDPN to get protocol number
+  if connected return 0
+  */
+
+  return 0;
+}
+#else
 int iso_read_byte()
 {
   int val = 0;
@@ -364,13 +444,19 @@ byte iso_init()
   // init OK!
   return 0;
 }
+#endif
 
 // get value of a PID, return as a long value
 // and also formatted for output in the return buffer
 long get_pid(byte pid, char *retbuf)
 {
+  byte i;
   byte cmd[2];    // to send the command
+#ifdef ELM
+  char buf[40];   // to receive the result
+#else
   byte buf[10];   // to receive the result
+#endif
   long ret;       // return value
   byte reslen;
 
@@ -385,8 +471,15 @@ long get_pid(byte pid, char *retbuf)
   cmd[0]=0x01;    // ISO cmd 1, get PID
   cmd[1]=pid;
 
+#ifdef ELM
+  // use retbuf to send the command
+  // it will be scrapped after
+  sprintf_P(retbuf, PSTR("%02x%02x\r"), cmd[0], cmd[1]);
+  Serial.print(retbuf);
+#else
   // send command, length 2
   iso_write_data(cmd, 2);
+#endif
 
   // receive length depends on pid
   if(pid<=LAST_PID)
@@ -394,18 +487,30 @@ long get_pid(byte pid, char *retbuf)
   else
     reslen=0;
 
+#ifdef ELM
+  elm_read(buf, 40);
+  // first 2 bytes should be 0x41 and command, skip them
+  // and remove spaces by calling a function
+  elm_compact_response(buf);
+  Serial.print("(");
+  Serial.print(buf[0], HEX);
+  if(buf[1]!=NUL)
+    Serial.print(buf[1], HEX);
+  Serial.print(")");
+#else
   // read requested length, n bytes received in buf
   iso_read_data(buf, reslen);
+#endif
 
   // formula and unit
   switch(pid)
   {
   case ENGINE_RPM:
-    ret=(buf[1]<<8 + buf[0])/4;
+    ret=(buf[0]<<8L + buf[1])/4L;
     sprintf_P(retbuf, PSTR("%ld RPM"), ret);
     break;
   case MAF_AIR_FLOW:
-    ret=(buf[1]<<8 + buf[0]);  // not divided by 100 for return value!!
+    ret=(buf[0]<<8 + buf[1]);  // not divided by 100 for return value!!
     sprintf_P(retbuf, PSTR("%ld.%ld g/s"), ret/100, ret - ((ret/100)*100));
     break;
   case LOAD_VALUE:
@@ -481,17 +586,16 @@ long get_pid(byte pid, char *retbuf)
   case FUEL_STATUS:
   case PID_SUPPORT40:
   default:
-    ret=0L;
     switch(reslen)
     {
         case 4:
-          ret+=buf[3]<<24;
+          ret=buf[0]<<24+buf[1]<<16+buf[2]<<8+buf[3];
         case 3:
-          ret+=buf[2]<<16;
+          ret=buf[0]<<16+buf[1]<<8+buf[2];
         case 2:
-          ret+=buf[1]<<8;
+          ret=buf[0]<<8+buf[1];
         case 1:
-          ret+=buf[0];
+          ret=buf[0];
     }
     sprintf_P(retbuf, PSTR("%2X:0x%08X"), pid, buf);
     break;
@@ -676,14 +780,21 @@ void check_mil_code(void)
 
     // retrieve code
     cmd[0]=0x03;
+#ifdef ELM
+    Serial.print(cmd[0], HEX);
+#else
     iso_write_data(cmd, 1);
+#endif
 
     // we display only the first 6 codes
     // if you have more than 6 in your ECU
     // your car is obviously wrong :-/
     for(i=0;i<nb/3;i++)  // each received packet contain 3 codes
     {
+#ifdef ELM
+#else
       iso_read_data(buf, 6);
+#endif
       k=0;  // to build the string
       for(j=0;j<3;j++)  // the 3 codes
       {
@@ -720,9 +831,11 @@ void setup()                    // run once, when the sketch starts
   byte r;
   char str[20];
 
+#ifndef ELM
   // init pinouts
   pinMode(K_OUT, OUTPUT);
   pinMode(K_IN, INPUT);
+#endif
 
   // buttons init
   pinMode( lbuttonPin, INPUT );
@@ -757,11 +870,17 @@ void setup()                    // run once, when the sketch starts
 
   do // init loop
   {
+#ifdef ELM
+    sprintf_P(str, PSTR("ELM Init"));
+    lcd.gotoXY(0,1);
+    lcd.print(str);
+    r=elm_init();
+#else
     sprintf_P(str, PSTR("ISO9141 Init"));
     lcd.gotoXY(0,1);
     lcd.print(str);
     r=iso_init();
-   
+#endif   
     if(r==0)
       sprintf_P(str, PSTR("Successful!"));
     else
@@ -776,11 +895,11 @@ void setup()                    // run once, when the sketch starts
   check_supported_pid();
 
   // check if we have MIL code
-  check_mil_code();
+//  check_mil_code();
 
-  topleft=FUEL_CONS;
+  topleft=ENGINE_RPM;
   topright=VEHICLE_SPEED;
-  bottomleft=ENGINE_RPM;
+  bottomleft=FUEL_CONS;
   bottomright=LOAD_VALUE;
 
   delta_time=millis();
