@@ -12,23 +12,23 @@
 #define ELM 0
 
 /* OBDuino
-
+ 
  Copyright (C) 2008
-
+ 
  Main coding/ISO/ELM: Frédéric (aka Magister on ecomodder.com)
  Buttons/LCD/params: Dave (aka dcb on ecomodder.com)
  Soon:
  PWM: Nathan (aka n8thegr8 on ecomodder.com)
-
+ 
  This program is free software; you can redistribute it and/or modify it under
  the terms of the GNU General Public License as published by the Free Software
  Foundation; either version 2 of the License, or (at your option) any later
  version.
-
+ 
  This program is distributed in the hope that it will be useful, but WITHOUT
  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-
+ 
  You should have received a copy of the GNU General Public License along with
  this program; if not, write to the Free Software Foundation, Inc.,
  59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
@@ -168,6 +168,10 @@ prog_uchar pid_reslen[] PROGMEM=
 };
 
 // for the 4 display corners
+#define TOPLEFT  1
+#define TOPRIGHT 2
+#define BOTTOMLEFT  3
+#define BOTTOMRIGHT 4
 byte topleft;
 byte topright;
 byte bottomleft;
@@ -187,16 +191,16 @@ ISR(PCINT1_vect)
 
 #ifdef ELM
 /* each ELM response ends with '\r' followed at the end by the prompt
-so read com port until we find a prompt */
-void elm_read(char *buf, byte size)
+ so read com port until we find a prompt */
+void elm_read(byte *buf, byte size)
 {
   int b;
   byte i;
-  
+
   // wait for something on com port
   while(Serial.available()==0)
   {
-     // nothing, maybe we should sleep?
+    // nothing, maybe we should sleep?
   }
 
   i=0;
@@ -205,52 +209,50 @@ void elm_read(char *buf, byte size)
     if(b!=-1)
       buf[i++]=b;
   }
-    
+
   // replace CR/prompt by 0 to make the string ASCIIZ
   buf[i-1]=NUL;
 }
 
-byte elm_compact_response(char *buf)
+byte elm_compact_response(byte *buf)
 {
-    byte i;
-    char *newb=buf;
-    char c;
-    
-    // start at 6 which is the first hex byte after header
-    // ex: 41 0C 1A F8
-    // return string: 1AF8
-    
-    i=0;
-    buf+=6;
-    while((c=*buf++)!=NUL)
-      if(c!=' ')
-        newb[i++]=c;
-    
-    newb[i]=NUL;
-    
-    return 0;
+  byte i;
+  byte *newb=buf;
+
+  // start at 6 which is the first hex byte after header
+  // ex: 41 0C 1A F8
+  // return buf: 0x1AF8
+
+  i=0;
+  buf+=6;
+  while(*buf!=NUL)
+    newb[i++]=strtol((const char *)buf, (char **)&buf, 16);
+
+  newb[i]=NUL;
+
+  return 0;
 }
 
 int elm_init()
 {
 #define BUFLEN  16
-  char buf[BUFLEN];
-  
+  byte buf[BUFLEN];
+
   Serial.begin(9600);
-  
+
   // wait for something, at least a prompt
   elm_read(buf, BUFLEN);
   Serial.print("ATI\r");
   elm_read(buf, BUFLEN);
   lcd.gotoXY(0,1);
-  lcd.print(buf);
+  lcd.print((char*)buf);
   delay(1000);
-  
+
   /*
   send ATI1 or AT@1 or whatever string to get some info
-  send ATDPN to get protocol number
-  if connected return 0
-  */
+   send ATDPN to get protocol number
+   if connected return 0
+   */
 
   return 0;
 }
@@ -260,7 +262,7 @@ int iso_read_byte()
   int val = 0;
   int bitDelay = _bitPeriod - clockCyclesToMicroseconds(50);
   unsigned long timeout;
-  
+
   // one byte of serial data (LSB first)
   // ...--\    /--\/--\/--\/--\/--\/--\/--\/--\/--...
   //	 \--/\--/\--/\--/\--/\--/\--/\--/\--/
@@ -269,8 +271,8 @@ int iso_read_byte()
   timeout=millis();
   while (digitalRead(K_IN))    // wait for start bit
   {
-      if((millis()-timeout) > 300L)  // timeout after 300ms
-        return -1;
+    if((millis()-timeout) > 300L)  // timeout after 300ms
+      return -1;
   }
 
   // confirm that this is a real start bit, not line noise
@@ -279,14 +281,14 @@ int iso_read_byte()
     // frame start indicated by a falling edge and low start bit
     // jump to the middle of the low start bit
     delayMicroseconds(bitDelay / 2 - clockCyclesToMicroseconds(50));
-	
+
     // offset of the bit in the byte: from 0 (LSB) to 7 (MSB)
     for (int offset = 0; offset < 8; offset++)
     {
-	// jump to middle of next bit
-	delayMicroseconds(bitDelay);
-	// read bit
-	val |= digitalRead(K_IN) << offset;
+      // jump to middle of next bit
+      delayMicroseconds(bitDelay);
+      // read bit
+      val |= digitalRead(K_IN) << offset;
     }
     delayMicroseconds(_bitPeriod);
     return val;
@@ -312,7 +314,7 @@ void iso_write_byte(byte b)
   digitalWrite(K_OUT, HIGH);
   delayMicroseconds(bitDelay); 
 }
-  
+
 // inspired by SternOBDII\code\checksum.c
 byte iso_checksum(byte *data, byte len)
 {
@@ -366,7 +368,7 @@ byte iso_read_data(byte *data, byte len)
   // data 1+len bytes: [40+cmd0] [result0]
   // checksum 1 bytes: [sum(header)+sum(data)]
 
-  for(i=0; i<3+1+1+len; i++)
+    for(i=0; i<3+1+1+len; i++)
     buf[i]=iso_read_byte();
 
   // test, skip header comparison
@@ -433,7 +435,7 @@ byte iso_init()
 
   // sent 0xF7 (which is ~0x08)
   iso_write_byte(0xF7);
-  
+
   delay(25);
 
   // ECU answer by 0xCC
@@ -453,7 +455,7 @@ long get_pid(byte pid, char *retbuf)
   byte i;
   byte cmd[2];    // to send the command
 #ifdef ELM
-  char buf[40];   // to receive the result
+  byte buf[40];   // to receive the result
 #else
   byte buf[10];   // to receive the result
 #endif
@@ -506,11 +508,12 @@ long get_pid(byte pid, char *retbuf)
   switch(pid)
   {
   case ENGINE_RPM:
-    ret=(buf[0]<<8L + buf[1])/4L;
+    ret=(buf[0]*256+buf[1])/4;
     sprintf_P(retbuf, PSTR("%ld RPM"), ret);
     break;
   case MAF_AIR_FLOW:
-    ret=(buf[0]<<8 + buf[1]);  // not divided by 100 for return value!!
+    ret=buf[0]*256+buf[1];
+    // not divided by 100 for return value!!
     sprintf_P(retbuf, PSTR("%ld.%ld g/s"), ret/100, ret - ((ret/100)*100));
     break;
   case LOAD_VALUE:
@@ -521,13 +524,13 @@ long get_pid(byte pid, char *retbuf)
   case COOLANT_TEMP:
   case INT_AIR_TEMP:
     ret=buf[0]-40;
-    sprintf_P(retbuf, PSTR("%ld °C"), ret);
+    sprintf_P(retbuf, PSTR("%ld C"), ret);
     break;
   case STF_BANK1:
   case LTR_BANK1:
   case STF_BANK2:
   case LTR_BANK2:
-    ret=(buf[0]-128)*7812L;  // not divided by 10000
+    ret=(buf[0]-128)*7812;  // not divided by 10000
     sprintf_P(retbuf, PSTR("%ld.%ld %%"), ret/10000, ret-((ret/10000)*10000));
     break;
   case FUEL_PRESSURE:
@@ -542,62 +545,58 @@ long get_pid(byte pid, char *retbuf)
     ret=buf[0];
     if(parms[useMetricIdx]==0)  // convert to MPH for display
     {
-      ret=(ret*621L)/1000L;
+      ret=(ret*621)/1000;
       sprintf_P(retbuf, PSTR("%ld mph"), ret);
     }
     else
-      sprintf_P(retbuf, PSTR("%ld km/h"), ret);
+      sprintf_P(retbuf, PSTR("%ld \003\004"), ret);
     break;
   case TIMING_ADV:
     ret=(buf[0]/2)-64;
-    sprintf_P(retbuf, PSTR("%ld °"), ret);
+    sprintf_P(retbuf, PSTR("%ld \u00b0"), ret);
     break;
   case OBD_STD:
     ret=buf[0];
     switch(buf[0])
     {
-      case 0x01:
-        sprintf_P(retbuf, PSTR("OBD2-CARB"));
-        break;
-      case 0x02:
-        sprintf_P(retbuf, PSTR("OBD2-EPA"));
-        break;
-      case 0x03:
-        sprintf_P(retbuf, PSTR("OBD1&2"));
-        break;
-      case 0x04:
-        sprintf_P(retbuf, PSTR("OBD1"));
-        break;
-      case 0x05:
-        sprintf_P(retbuf, PSTR("NOT OBD"));
-        break;
-      case 0x06:
-        sprintf_P(retbuf, PSTR("EOBD"));
-        break;
-      default:
-        sprintf_P(retbuf, PSTR("OBD:%02X"), buf[0]);
-        break;
+    case 0x01:
+      sprintf_P(retbuf, PSTR("OBD2-CARB"));
+      break;
+    case 0x02:
+      sprintf_P(retbuf, PSTR("OBD2-EPA"));
+      break;
+    case 0x03:
+      sprintf_P(retbuf, PSTR("OBD1&2"));
+      break;
+    case 0x04:
+      sprintf_P(retbuf, PSTR("OBD1"));
+      break;
+    case 0x05:
+      sprintf_P(retbuf, PSTR("NOT OBD"));
+      break;
+    case 0x06:
+      sprintf_P(retbuf, PSTR("EOBD"));
+      break;
+    default:
+      sprintf_P(retbuf, PSTR("OBD:%02X"), buf[0]);
+      break;
     }
     break;
-  // for the moment, everything else, display the raw answer
+    // for the moment, everything else, display the raw answer  
   case PID_SUPPORT20:
   case MIL_CODE:
   case FREEZE_DTC:
   case FUEL_STATUS:
   case PID_SUPPORT40:
   default:
-    switch(reslen)
+    // transform buffer to an integer value
+    ret=0;
+    for(i=0; i<reslen; i++)
     {
-        case 4:
-          ret=buf[0]<<24+buf[1]<<16+buf[2]<<8+buf[3];
-        case 3:
-          ret=buf[0]<<16+buf[1]<<8+buf[2];
-        case 2:
-          ret=buf[0]<<8+buf[1];
-        case 1:
-          ret=buf[0];
+      ret<<=8L;
+      ret+=buf[i];
     }
-    sprintf_P(retbuf, PSTR("%2X:0x%08X"), pid, buf);
+    sprintf_P(retbuf, PSTR("%2X:0x%08X"), pid, ret);
     break;
   }
 
@@ -617,7 +616,7 @@ void get_cons(char *retbuf)
     return;
   }
   else  // request it
-    maf=get_pid(MAF_AIR_FLOW, retbuf);
+  maf=get_pid(MAF_AIR_FLOW, retbuf);
 
   // retbuf will be scrapped and re-used to display fuel consumption
   vss=get_pid(VEHICLE_SPEED, retbuf);
@@ -627,7 +626,7 @@ void get_cons(char *retbuf)
   // divide MAF by 100 because our function return MAF*100
   // formula: (3600 * MAF/100) / (14.7 * 730 * VSS)
   // multipled by 100 for double digits precision
-  
+
   if(parms[useMetricIdx]==1)
   {
     if(vss==0)
@@ -690,7 +689,7 @@ void save(void)
 {
   // signature at address 0x00
   eeprom_write_byte((uint8_t*)0, obduinosig);
-  
+
   // parameters are all long, align and start at address 0x04
   eeprom_write_block(parms, (void*)0x04, sizeof(parms));
 }
@@ -707,7 +706,7 @@ byte load(void)
   return 0;
 }
 
-void display(byte pid)
+void display(byte corner, byte pid)
 {
   long n;
   char str[16];
@@ -728,6 +727,24 @@ void display(byte pid)
     break;
   }
 
+  // left corners are left aligned
+  // right corners are right aligned
+  switch(corner)
+  {
+    case TOPLEFT:
+      lcd.gotoXY(0,0);
+      break;
+    case TOPRIGHT:
+      lcd.gotoXY(16-strlen(str), 0);
+      break;
+    case BOTTOMLEFT:
+      lcd.gotoXY(0,1);
+      break;
+    case BOTTOMRIGHT:
+      lcd.gotoXY(16-strlen(str), 1);
+      break;
+  }
+  
   lcd.print(str);
 }
 
@@ -800,18 +817,18 @@ void check_mil_code(void)
       {
         switch(buf[j*2] & 0xC0)
         {
-          case 0x00:
-            str[k]='P';  // powertrain
-            break;
-          case 0x40:
-            str[k]='C';  // chassis
-            break;
-          case 0x80:
-            str[k]='B';  // body
-            break;
-          case 0xC0:
-            str[k]='U';  // network
-            break;
+        case 0x00:
+          str[k]='P';  // powertrain
+          break;
+        case 0x40:
+          str[k]='C';  // chassis
+          break;
+        case 0x80:
+          str[k]='B';  // body
+          break;
+        case 0xC0:
+          str[k]='U';  // network
+          break;
         }
         k++;
         str[k++]='0' + (buf[j*2] & 0x30)>>4;   // first digit is 0-3 only
@@ -849,9 +866,7 @@ void setup()                    // run once, when the sketch starts
   // low level interrupt enable stuff
   // interrupt 1 for the 3 buttons
   PCICR |= (1 << PCIE1);
-  PCMSK1 |= (1 << PCINT11);
-  PCMSK1 |= (1 << PCINT12);
-  PCMSK1 |= (1 << PCINT13);
+  PCMSK1 |= (1 << PCINT11) | (1 << PCINT12) | (1 << PCINT13);
 
   // LCD init
   analogWrite(BrightnessPin,255-brightness[brightnessIdx]);      
@@ -889,13 +904,14 @@ void setup()                    // run once, when the sketch starts
     lcd.gotoXY(0,1);
     lcd.print(str);
     delay(1000);
-  } while(r!=0); // end init loop
+  } 
+  while(r!=0); // end init loop
 
   // check supported PIDs
   check_supported_pid();
 
   // check if we have MIL code
-//  check_mil_code();
+  //  check_mil_code();
 
   topleft=ENGINE_RPM;
   topright=VEHICLE_SPEED;
@@ -903,7 +919,7 @@ void setup()                    // run once, when the sketch starts
   bottomright=LOAD_VALUE;
 
   delta_time=millis();
-  
+
   lcd.cls();
 }
 
@@ -917,23 +933,19 @@ void loop()                     // run over and over again
   n=get_pid(ENGINE_RPM, str);
   if(n==0)
   {
-      // test if it was running before
-      
-      // calculate that if we are at 0 for x seconds then
-      // save current data (especially distance) in eeprom ONCE
-      // and shutdown brightness?
+    // test if it was running before
+
+    // calculate that if we are at 0 for x seconds then
+    // save current data (especially distance) in eeprom ONCE
+    // and shutdown brightness?
   }
 #endif
 
   // display on LCD
-  lcd.gotoXY(0,0);
-  display(topleft);
-  lcd.gotoXY(8,0);
-  display(topright);
-  lcd.gotoXY(0,1);
-  display(bottomleft);
-  lcd.gotoXY(8,1);
-  display(bottomright);
+  display(TOPLEFT, topleft);
+  display(TOPRIGHT, topright);
+  display(BOTTOMLEFT, bottomleft);
+  display(BOTTOMRIGHT, bottomright);
 
   accu_dist();    // accumulate distance
 
@@ -965,7 +977,7 @@ int memoryTest()
 //LCD functions
 LCD::LCD()
 {
-    // nothing here, move along
+  // nothing here, move along
 }
 //x=0..16, y= 0..1
 void LCD::gotoXY(byte x, byte y)
@@ -1008,23 +1020,24 @@ void LCD::init()
   //creating the custom fonts (8 char max)
   // char 0 is not used
   // 1&2 is the L/100 datagram in 2 chars only
-#define NB_CHAR  2
+  // 3&4 is the km/h datagram in 2 chars only
+#define NB_CHAR  4
   // set cg ram to address 0x08 (B001000) to skip the
   // first 8 rows as we do not use char 0
   LcdCommandWrite(B01001000);
   static byte chars[] PROGMEM ={
-    B10000,B00000,
-    B10000,B00000,
-    B11001,B00000,
-    B00010,B00000,
-    B00100,B00000,
-    B01001,B11011,
-    B00001,B11011,
-    B00001,B11011};
+    B10000,B00000,B10000,B00010,
+    B10000,B00000,B10100,B00100,
+    B11001,B00000,B11000,B01000,
+    B00010,B00000,B10100,B10000,
+    B00100,B00000,B00000,B00100,
+    B01001,B11011,B11111,B00100,
+    B00001,B11011,B10101,B00111,
+    B00001,B11011,B10101,B00101  };
 
   for(byte x=0;x<NB_CHAR;x++)
     for(byte y=0;y<8;y++)  // 8 rows
-        LcdDataWrite(pgm_read_byte(&chars[y*NB_CHAR+x])); //write the character data to the character generator ram
+      LcdDataWrite(pgm_read_byte(&chars[y*NB_CHAR+x])); //write the character data to the character generator ram
 
   cls();
   LcdCommandWrite(B10000000);  // set dram to zero
@@ -1034,7 +1047,7 @@ void LCD::cls()
 {
   LcdCommandWrite(B00000001);  // Clear Display
   LcdCommandWrite(B00000010);  // Return Home
- }
+}
 
 void LCD::tickleEnable()
 {
@@ -1056,12 +1069,9 @@ void LCD::cmdWriteSet()
 void LCD::pushNibble(byte value)
 {
   digitalWrite(DB7Pin, value & 128);
-  value <<= 1;
-  digitalWrite(DB6Pin, value & 128);
-  value <<= 1;
-  digitalWrite(DB5Pin, value & 128);
-  value <<= 1;
-  digitalWrite(DB4Pin, value & 128);
+  digitalWrite(DB6Pin, value & 64);
+  digitalWrite(DB5Pin, value & 32);
+  digitalWrite(DB4Pin, value & 16);
 }
 
 void LCD::LcdCommandWrite(byte value)
