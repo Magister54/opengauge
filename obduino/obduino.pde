@@ -38,6 +38,7 @@
 #include <stdio.h>
 #include <avr/eeprom.h>
 #include <avr/pgmspace.h>
+#include <avr/sleep.h>
 
 #define obduinosig B11001100
 
@@ -180,7 +181,7 @@ byte bottomright;
 
 // for distance
 unsigned long delta_time;
-float tank_dist=0.0;  // in meter, need to be read/write in the eeprom at o
+float tank_dist=0.0;  // in meter, need to be read/write in the eeprom sometimes I guess
 
 //attach the buttons interrupt
 ISR(PCINT1_vect)
@@ -193,20 +194,18 @@ ISR(PCINT1_vect)
 #ifdef ELM
 /* each ELM response ends with '\r' followed at the end by the prompt
  so read com port until we find a prompt */
-byte elm_read(byte *buf, byte size)
+byte elm_read(char *buf, byte size)
 {
   int b;
   byte i;
   byte *pos;
 
   // wait for something on com port
-  while(Serial.available()==0)
-  {
-    // nothing, maybe we should sleep?
-  }
+  while(serialAvailable()==0)
+    sleep_mode();  // macro that enable/sleep/disable
 
   i=0;
-  while((b=Serial.read())!=PROMPT && i<size)
+  while((b=serialRead())!=PROMPT && i<size)
   {
     if(b!=-1)
       buf[i++]=b;
@@ -223,16 +222,23 @@ byte elm_read(byte *buf, byte size)
   }
 }
 
+// buf must be ASCIIZ
+void elm_write(char *buf)
+{
+  while(*buf!=NUL)
+    serialWrite(*buf++);
+}
+
 // check header byte
-byte elm_check_response(byte *cmd, byte *buf)
+byte elm_check_response(byte *cmd, char *buf)
 {
   return 0;  // no error
 }
 
-byte elm_compact_response(byte *buf)
+byte elm_compact_response(char *buf)
 {
   byte i;
-  byte *newb=buf;
+  char *newb=buf;
 
   // start at 6 which is the first hex byte after header
   // ex: 41 0C 1A F8
@@ -241,9 +247,9 @@ byte elm_compact_response(byte *buf)
   i=0;
   buf+=6;
   while(*buf!=NUL)
-    newb[i++]=strtol((const char *)buf, (char **)&buf, 16);
+    newb[i++]=strtol(buf, &buf, 16);
 
-  return 0;
+  return i;
 }
 
 int elm_init()
@@ -251,23 +257,25 @@ int elm_init()
 #define BUFLEN  16
   char buf[BUFLEN];
 
-  Serial.begin(9600);
+  set_sleep_mode(SLEEP_MODE_IDLE);
+
+  beginSerial(9600);
 
   // wait for something and display it
-  elm_read((byte*)buf, BUFLEN);
+  elm_read(buf, BUFLEN);
   lcd.gotoXY(0,1);
   lcd.print(buf);
   delay(1000);
 
   // turn echo off
   sprintf_P(buf, PSTR("ATE0\r"));
-  Serial.print(buf);
-  elm_read((byte*)buf, BUFLEN);  // read the ok
+  elm_write(buf);
+  elm_read(buf, BUFLEN);  // read the ok
 
   // keep in memory the protocol used
   sprintf_P(buf, PSTR("ATM1\r"));
-  Serial.print(buf);
-  elm_read((byte*)buf, BUFLEN);  // read the ok
+  elm_write(buf);
+  elm_read(buf, BUFLEN);  // read the ok
 
   /*
    send ATDPN to get protocol number?
@@ -477,7 +485,7 @@ long get_pid(byte pid, char *retbuf)
   byte i;
   byte cmd[2];    // to send the command
 #ifdef ELM
-  byte buf[40];   // to receive the result
+  char buf[40];   // to receive the result
 #else
   byte buf[10];   // to receive the result
 #endif
@@ -497,10 +505,8 @@ long get_pid(byte pid, char *retbuf)
   cmd[1]=pid;
 
 #ifdef ELM
-  // use retbuf to send the command
-  // it will be scrapped after
-  sprintf_P(retbuf, PSTR("%02x%02x\r"), cmd[0], cmd[1]);
-  Serial.print(retbuf);
+  sprintf_P(buf, PSTR("%02x%02x\r"), cmd[0], cmd[1]);
+  elm_write(buf);
 #else
   // send command, length 2
   iso_write_data(cmd, 2);
@@ -652,6 +658,7 @@ void int_to_dec_str(long value, char *decs, byte prec)
 {
   byte pos;
   
+  // sprintf_P does not allow %*ld ?!?
   if(prec==1)
 	sprintf_P(decs, PSTR("%02ld"), value);
   else
@@ -659,6 +666,7 @@ void int_to_dec_str(long value, char *decs, byte prec)
 	sprintf_P(decs, PSTR("%03ld"), value);
 
   pos=strlen(decs)+1;  // move the \0 too
+  // a simple loop takes less space than memmove()
   for(byte i=0; i<=prec; i++)
   {
     decs[pos]=decs[pos-1];
@@ -682,7 +690,6 @@ void get_cons(char *retbuf)
   }
   else // request it
     maf=get_pid(MAF_AIR_FLOW, retbuf);
-
 
   // retbuf will be scrapped and re-used to display fuel consumption
   vss=get_pid(VEHICLE_SPEED, retbuf);
@@ -823,13 +830,18 @@ void check_supported_pid(void)
   pid21to40_support=n;
 }
 
+// might be incomplete
 void check_mil_code(void)
 {
   unsigned long n;
   char str[16];
   byte nb;
   byte cmd[2];
+#ifdef ELM
+  char buf[40];
+#else
   byte buf[6];
+#endif
   byte i, j, k;
 
   n=get_pid(MIL_CODE, str);
@@ -859,7 +871,7 @@ void check_mil_code(void)
     cmd[0]=0x03;
 #ifdef ELM
     sprintf_P(str, PSTR("%02x\r"), cmd[0]);
-    Serial.print(str);
+    elm_write(str);
 #else
     iso_write_data(cmd, 1);
 #endif
@@ -870,6 +882,8 @@ void check_mil_code(void)
     for(i=0;i<nb/3;i++)  // each received packet contain 3 codes
     {
 #ifdef ELM
+      elm_read(buf, 16);
+      elm_compact_response(buf);
 #else
       iso_read_data(buf, 6);
 #endif
@@ -907,7 +921,7 @@ void check_mil_code(void)
 void setup()                    // run once, when the sketch starts
 {
   byte r;
-  char str[20];
+  char str[16];
 
 #ifndef ELM
   // init pinouts
@@ -974,6 +988,7 @@ void setup()                    // run once, when the sketch starts
   // check if we have MIL code
   //  check_mil_code();
 
+  // must go in the configutation and EEPROM parameter
   topleft=FUEL_CONS;
   topright=VEHICLE_SPEED;
   bottomleft=ENGINE_RPM;
