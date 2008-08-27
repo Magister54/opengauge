@@ -100,6 +100,7 @@ unsigned long  parms[]={
 #define NUL     '\0'
 #define CR      '\r'  // carriage return = 0x0d = 13
 #define PROMPT  '>'
+#define DATA    1  // data with no cr/prompt
 #else
 /*
  * OBD-II ISO9141-2 Protocol
@@ -179,7 +180,7 @@ byte bottomright;
 
 // for distance
 unsigned long delta_time;
-unsigned long tank_dist=0UL;  // in cm, need to be read/write in the eeprom
+float tank_dist=0.0;  // in meter, need to be read/write in the eeprom at o
 
 //attach the buttons interrupt
 ISR(PCINT1_vect)
@@ -192,10 +193,11 @@ ISR(PCINT1_vect)
 #ifdef ELM
 /* each ELM response ends with '\r' followed at the end by the prompt
  so read com port until we find a prompt */
-void elm_read(byte *buf, byte size)
+byte elm_read(byte *buf, byte size)
 {
   int b;
   byte i;
+  byte *pos;
 
   // wait for something on com port
   while(Serial.available()==0)
@@ -210,8 +212,21 @@ void elm_read(byte *buf, byte size)
       buf[i++]=b;
   }
 
-  // replace CR/prompt by 0 to make the string ASCIIZ
-  buf[i-1]=NUL;
+  if(i!=size)  // we got a prompt
+  {
+    buf[i]=NUL;  // replace CR by NUL
+    return PROMPT;
+  }
+  else
+  {
+    return DATA;
+  }
+}
+
+// check header byte
+byte elm_check_response(byte *cmd, byte *buf)
+{
+  return 0;  // no error
 }
 
 byte elm_compact_response(byte *buf)
@@ -228,29 +243,36 @@ byte elm_compact_response(byte *buf)
   while(*buf!=NUL)
     newb[i++]=strtol((const char *)buf, (char **)&buf, 16);
 
-  newb[i]=NUL;
-
   return 0;
 }
 
 int elm_init()
 {
 #define BUFLEN  16
-  byte buf[BUFLEN];
+  char buf[BUFLEN];
 
   Serial.begin(9600);
 
-  // wait for something, at least a prompt
-  elm_read(buf, BUFLEN);
-  Serial.print("ATI\r");
-  elm_read(buf, BUFLEN);
+  // wait for something and display it
+  elm_read((byte*)buf, BUFLEN);
   lcd.gotoXY(0,1);
-  lcd.print((char*)buf);
+  lcd.print(buf);
   delay(1000);
 
+  // turn echo off
+  sprintf_P(buf, PSTR("ATE0\r"));
+  Serial.print(buf);
+  elm_read((byte*)buf, BUFLEN);  // read the ok
+
+  // keep in memory the protocol used
+  sprintf_P(buf, PSTR("ATM1\r"));
+  Serial.print(buf);
+  elm_read((byte*)buf, BUFLEN);  // read the ok
+
   /*
-  send ATI1 or AT@1 or whatever string to get some info
-   send ATDPN to get protocol number
+   send ATDPN to get protocol number?
+   
+   send 01 00 to see if we are connected or not
    if connected return 0
    */
 
@@ -461,9 +483,10 @@ long get_pid(byte pid, char *retbuf)
 #endif
   long ret;       // return value
   byte reslen;
+  char decs[8];
 
   // check if PID is supported
-  if( (1L<<(pid-1) & pid01to20_support) == 0)
+  if( pid!=PID_SUPPORT20 && (1L<<(pid-1) & pid01to20_support) == 0 )
   {
     // nope
     retbuf[0]='\0';
@@ -493,12 +516,9 @@ long get_pid(byte pid, char *retbuf)
   elm_read(buf, 40);
   // first 2 bytes should be 0x41 and command, skip them
   // and remove spaces by calling a function
+  if(elm_check_response(cmd, buf)!=0)
+    return -255;
   elm_compact_response(buf);
-  Serial.print("(");
-  Serial.print(buf[0], HEX);
-  if(buf[1]!=NUL)
-    Serial.print(buf[1], HEX);
-  Serial.print(")");
 #else
   // read requested length, n bytes received in buf
   iso_read_data(buf, reslen);
@@ -514,7 +534,8 @@ long get_pid(byte pid, char *retbuf)
   case MAF_AIR_FLOW:
     ret=buf[0]*256+buf[1];
     // not divided by 100 for return value!!
-    sprintf_P(retbuf, PSTR("%ld.%ld g/s"), ret/100, ret - ((ret/100)*100));
+    int_to_dec_str(ret, decs, 2);
+    sprintf_P(retbuf, PSTR("%s g/s"), decs);
     break;
   case LOAD_VALUE:
   case THROTTLE_POS:
@@ -531,7 +552,8 @@ long get_pid(byte pid, char *retbuf)
   case STF_BANK2:
   case LTR_BANK2:
     ret=(buf[0]-128)*7812;  // not divided by 10000
-    sprintf_P(retbuf, PSTR("%ld.%ld %%"), ret/10000, ret-((ret/10000)*10000));
+    int_to_dec_str(ret/100, decs, 2);
+    sprintf_P(retbuf, PSTR("%s %%"), decs);
     break;
   case FUEL_PRESSURE:
     ret=buf[0]*3;
@@ -553,17 +575,17 @@ long get_pid(byte pid, char *retbuf)
     break;
   case TIMING_ADV:
     ret=(buf[0]/2)-64;
-    sprintf_P(retbuf, PSTR("%ld \u00b0"), ret);
+    sprintf_P(retbuf, PSTR("%ld deg"), ret);
     break;
   case OBD_STD:
     ret=buf[0];
     switch(buf[0])
     {
     case 0x01:
-      sprintf_P(retbuf, PSTR("OBD2-CARB"));
+      sprintf_P(retbuf, PSTR("OBD2CARB"));
       break;
     case 0x02:
-      sprintf_P(retbuf, PSTR("OBD2-EPA"));
+      sprintf_P(retbuf, PSTR("OBD2EPA"));
       break;
     case 0x03:
       sprintf_P(retbuf, PSTR("OBD1&2"));
@@ -576,6 +598,27 @@ long get_pid(byte pid, char *retbuf)
       break;
     case 0x06:
       sprintf_P(retbuf, PSTR("EOBD"));
+      break;
+    case 0x07:
+      sprintf_P(retbuf, PSTR("EOBD&2"));
+      break;
+    case 0x08:
+      sprintf_P(retbuf, PSTR("EOBD&1"));
+      break;
+    case 0x09:
+      sprintf_P(retbuf, PSTR("EOBD&1&2"));
+      break;
+    case 0x0a:
+      sprintf_P(retbuf, PSTR("JOBD"));
+      break;
+    case 0x0b:
+      sprintf_P(retbuf, PSTR("JOBD&2"));
+      break;
+    case 0x0c:
+      sprintf_P(retbuf, PSTR("JOBD&1"));
+      break;
+    case 0x0d:
+      sprintf_P(retbuf, PSTR("JOBD&1&2"));
       break;
     default:
       sprintf_P(retbuf, PSTR("OBD:%02X"), buf[0]);
@@ -603,10 +646,32 @@ long get_pid(byte pid, char *retbuf)
   return ret;
 }
 
+// ex: get a long as 687 with prec 2 and output the string "6.87"
+// precision is 1 or 2
+void int_to_dec_str(long value, char *decs, byte prec)
+{
+  byte pos;
+  
+  if(prec==1)
+	sprintf_P(decs, PSTR("%02ld"), value);
+  else
+  if(prec==2)
+	sprintf_P(decs, PSTR("%03ld"), value);
+
+  pos=strlen(decs)+1;  // move the \0 too
+  for(byte i=0; i<=prec; i++)
+  {
+    decs[pos]=decs[pos-1];
+    pos--;
+  }
+  decs[pos]='.';  
+}
+
 void get_cons(char *retbuf)
 {
   long maf, vss, cons;
-
+  char decs[8];
+  
   // check if MAF is supported
   if((1L<<(MAF_AIR_FLOW-1) & pid01to20_support) == 0)
   {
@@ -615,8 +680,9 @@ void get_cons(char *retbuf)
     sprintf_P(retbuf, PSTR("NO MAF"));
     return;
   }
-  else  // request it
-  maf=get_pid(MAF_AIR_FLOW, retbuf);
+  else // request it
+    maf=get_pid(MAF_AIR_FLOW, retbuf);
+
 
   // retbuf will be scrapped and re-used to display fuel consumption
   vss=get_pid(VEHICLE_SPEED, retbuf);
@@ -633,31 +699,35 @@ void get_cons(char *retbuf)
       cons=(maf*3355L)/100L;
     else
       cons=(maf*3355L)/(vss*100L);
-    sprintf_P(retbuf, PSTR("%ld.%02ld %s"), cons/100L, cons-((cons/100L)*100L), (vss==0)?"L/h":"\001\002" );
+    int_to_dec_str(cons, decs, 2);
+    sprintf_P(retbuf, PSTR("%s %s"), decs, (vss==0)?"L/h":"\001\002" );
   }
   else
   {
     // single digit precision for MPG
     if(vss==0)
-      cons=maf/7107L;  // gallon per hour
+      cons=maf/7107L; // gallon per hour
     else
       cons=(vss*7107L)/maf;
-    sprintf_P(retbuf, PSTR("%ld.%ld %s"), cons/10, (cons - ((cons/10)*10)), (vss==0)?"GPH":"MPG" );
+    int_to_dec_str(cons, decs, 1);
+    sprintf_P(retbuf, PSTR("%s %s"), decs, (vss==0)?"GPH":"MPG" );
   }
 }
 
 void get_dist(char *retbuf)
 {
-  unsigned long  cdist;
+  float cdist;
+  char decs[8];
 
-  // convert in hundreds of meter
-  cdist=tank_dist/10000UL;
+  // convert from meters to hundreds of meter
+  cdist=tank_dist/100.0;
 
   // convert in miles if requested
   if(parms[useMetricIdx]==0)
-    cdist=(cdist*621UL)/1000UL;
+    cdist*=0.621;
 
-  sprintf_P(retbuf, PSTR("DIST:%lu.%lu"), cdist/10L, (cdist - ((cdist/10L)*10L)) );
+  int_to_dec_str((long)cdist, decs, 1);
+  sprintf_P(retbuf, PSTR("DIST:%s"), decs );
 }
 
 void accu_dist(void)
@@ -668,20 +738,9 @@ void accu_dist(void)
   vss=get_pid(VEHICLE_SPEED, str);
 
   // acumulate distance for this tank
-
-  // in centimeter because for instance at 3km/h the car does
-  // 0.83m/s and as we do not use float, we need to multiply by
-  // 100 to have a better approximation, so in this example the
-  // car does 83cm/s. As the function can be called more than one
-  // time per second, the calculation is done in cm/ms
-
-  // the car do VSS*100'000 cm/hour
-  // =(VSS*100'000)/3600 cm/second (or cm/1000ms)
-  // =(VSS*100'000)/3600*delta_time/1000 cm/delta_time ms
-  // = VSS*delta_time/36
-
   delta_time = millis() - delta_time;
-  tank_dist+=(vss*delta_time)/36UL;
+  // distance in meters
+  tank_dist+=((float)vss*(float)delta_time)/3600.0;
 }
 
 // we have 512 bytes of EEPROM
@@ -731,20 +790,20 @@ void display(byte corner, byte pid)
   // right corners are right aligned
   switch(corner)
   {
-    case TOPLEFT:
-      lcd.gotoXY(0,0);
-      break;
-    case TOPRIGHT:
-      lcd.gotoXY(16-strlen(str), 0);
-      break;
-    case BOTTOMLEFT:
-      lcd.gotoXY(0,1);
-      break;
-    case BOTTOMRIGHT:
-      lcd.gotoXY(16-strlen(str), 1);
-      break;
+  case TOPLEFT:
+    lcd.gotoXY(0,0);
+    break;
+  case TOPRIGHT:
+    lcd.gotoXY(16-strlen(str), 0);
+    break;
+  case BOTTOMLEFT:
+    lcd.gotoXY(0,1);
+    break;
+  case BOTTOMRIGHT:
+    lcd.gotoXY(16-strlen(str), 1);
+    break;
   }
-  
+
   lcd.print(str);
 }
 
@@ -788,6 +847,7 @@ void check_mil_code(void)
   {
     // we have MIL on
     nb=(n>>24) & 0x7F;
+    lcd.gotoXY(0,0);
     sprintf_P(str, PSTR("CHECK ENGINE ON"));
     lcd.print(str);
     lcd.gotoXY(0,1);
@@ -798,7 +858,8 @@ void check_mil_code(void)
     // retrieve code
     cmd[0]=0x03;
 #ifdef ELM
-    Serial.print(cmd[0], HEX);
+    sprintf_P(str, PSTR("%02x\r"), cmd[0]);
+    Serial.print(str);
 #else
     iso_write_data(cmd, 1);
 #endif
@@ -913,9 +974,9 @@ void setup()                    // run once, when the sketch starts
   // check if we have MIL code
   //  check_mil_code();
 
-  topleft=ENGINE_RPM;
+  topleft=FUEL_CONS;
   topright=VEHICLE_SPEED;
-  bottomleft=FUEL_CONS;
+  bottomleft=ENGINE_RPM;
   bottomright=LOAD_VALUE;
 
   delta_time=millis();
@@ -1033,7 +1094,7 @@ void LCD::init()
     B00100,B00000,B00000,B00100,
     B01001,B11011,B11111,B00100,
     B00001,B11011,B10101,B00111,
-    B00001,B11011,B10101,B00101  };
+    B00001,B11011,B10101,B00101    };
 
   for(byte x=0;x<NB_CHAR;x++)
     for(byte y=0;y<8;y++)  // 8 rows
