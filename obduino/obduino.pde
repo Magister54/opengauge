@@ -9,7 +9,7 @@
 
 // comment to use MC33290 ISO K line chip
 // uncomment to use ELM327
-#define ELM 0
+//#define ELM
 
 /* OBDuino
  
