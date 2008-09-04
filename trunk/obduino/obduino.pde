@@ -3,7 +3,6 @@
  *
  * Test it!
  * Implement buttons/menu configuration
- * read/save params from the EEPROM
  *
  */
 
@@ -89,12 +88,14 @@ byte brightnessIdx=1;
 byte buttonState = buttonsUp;
 
 // parms mngt from mpguino.pde too
-#define contrastIdx 0  //do contrast first to get display dialed in
+#define contrastIdx  0  //do contrast first to get display dialed in
 #define useMetricIdx 1
+#define MetersIdx    2
+#define GramsIdx     3
 char *parmLabels[]={
-  "Contrast", "Use Metric"};
+  "Contrast", "Use Metric", "Distance (m)", "Fuel (g)"};
 unsigned long  parms[]={
-  15UL, 1UL};  //default values
+  15UL, 1UL, 0UL, 0UL};  //default values
 #define parmsLength (sizeof(parms)/sizeof(unsigned long)) //array size
 
 #ifdef ELM
@@ -155,7 +156,8 @@ unsigned long  pid21to40_support=0;
 /* our internal fake PIDs */
 #define NO_DISPLAY    0xF0
 #define FUEL_CONS     0xF1
-#define TANK_DIST     0xF2
+#define AVG_CONS      0xF2
+#define TRIP_DIST     0xF3
 
 // returned length of the PID response.
 // constants so put in flash
@@ -181,7 +183,12 @@ byte bottomright;
 
 // for distance
 unsigned long delta_time;
-float tank_dist=0.0;  // in meter, need to be read/write in the eeprom sometimes I guess
+float trip_dist=0.0;  // trip in meters
+float trip_fuel=0.0;  // fuel used in grams
+
+// flag used to save distance/average consumption in eeprom
+byte engine_started;
+byte param_saved;
 
 //attach the buttons interrupt
 ISR(PCINT1_vect)
@@ -201,14 +208,12 @@ byte elm_read(char *buf, byte size)
   byte *pos;
 
   // wait for something on com port
-  while(serialAvailable()==0)
-    sleep_mode();  // macro that enable/sleep/disable
-
   i=0;
   while((b=serialRead())!=PROMPT && i<size)
   {
     if(b!=-1)
       buf[i++]=b;
+    sleep_mode();  // macro that enable/sleep/disable
   }
 
   if(i!=size)  // we got a prompt
@@ -232,6 +237,15 @@ void elm_write(char *buf)
 // check header byte
 byte elm_check_response(byte *cmd, char *buf)
 {
+  // cmd is something like "010D"
+  // buf should be "41 0D blabla"
+  
+  if(cmd[0]+4 != buf[0]
+  || cmd[1]!=buf[1]
+  || cmd[2]!=buf[3]
+  || cmd[3]!=buf[4])
+    return 1;
+  
   return 0;  // no error
 }
 
@@ -520,10 +534,13 @@ long get_pid(byte pid, char *retbuf)
 
 #ifdef ELM
   elm_read(buf, 40);
-  // first 2 bytes should be 0x41 and command, skip them
-  // and remove spaces by calling a function
   if(elm_check_response(cmd, buf)!=0)
+  {
+    sprintf_P(retbuf, PSTR("ERROR"));
     return -255;
+  }
+  // first 2 bytes are 0x41 and command, skip them
+  // and remove spaces by calling a function
   elm_compact_response(buf);
 #else
   // read requested length, n bytes received in buf
@@ -711,7 +728,11 @@ void get_cons(char *retbuf)
   }
   else
   {
-    // single digit precision for MPG
+    // MPG
+    // 6.17 pounds per gallon
+    // 454 g in a pound
+    // 14.7 * 6.17 * 454 * (VSS * 0.621371) / (3600 * MAF / 100)
+    // multipled by 10 for single digit precision
     if(vss==0)
       cons=maf/7107L; // gallon per hour
     else
@@ -721,20 +742,43 @@ void get_cons(char *retbuf)
   }
 }
 
+void get_avg_cons(char *retbuf)
+{
+  float avg_cons;  // takes same size if I use long, so keep precision
+  char decs[8];
+  
+  if(parms[useMetricIdx]==1)
+  {
+    // from g/m to L/100 so divide by 730 to have L and mul by 100000 for km
+    // multiply by 100 to have 2 digits precision
+    avg_cons=(trip_fuel/trip_dist)*13698.63;
+    int_to_dec_str((long)avg_cons, decs, 2);
+    sprintf_P(retbuf, PSTR("%s \001\002"), decs);
+  }
+  else
+  {
+    // from m/g to MPG so * by 6.17*454 to have gallon and * by 0.621371 for mile
+    // multiply by 10 to have a digit precision
+    avg_cons=(trip_dist/trip_fuel)*17405.7;
+    int_to_dec_str((long)avg_cons, decs, 1);
+    sprintf_P(retbuf, PSTR("%s MPG"), decs);
+  }
+}
+
 void get_dist(char *retbuf)
 {
-  float cdist;
+  float cdist;  // takes 20 bytes more if I use unsigned long
   char decs[8];
 
   // convert from meters to hundreds of meter
-  cdist=tank_dist/100.0;
+  cdist=trip_dist/100.0;
 
   // convert in miles if requested
   if(parms[useMetricIdx]==0)
-    cdist*=0.621;
+    cdist*=0.621731;
 
   int_to_dec_str((long)cdist, decs, 1);
-  sprintf_P(retbuf, PSTR("DIST:%s"), decs );
+  sprintf_P(retbuf, PSTR("%s km"), decs );
 }
 
 void accu_dist(void)
@@ -744,32 +788,27 @@ void accu_dist(void)
 
   vss=get_pid(VEHICLE_SPEED, str);
 
-  // acumulate distance for this tank
+  // acumulate distance for this trip
   delta_time = millis() - delta_time;
   // distance in meters
-  tank_dist+=((float)vss*(float)delta_time)/3600.0;
+  trip_dist+=((float)vss*(float)delta_time)/3600.0;
 }
 
-// we have 512 bytes of EEPROM
-void save(void)
+void accu_fuel(void)
 {
-  // signature at address 0x00
-  eeprom_write_byte((uint8_t*)0, obduinosig);
-
-  // parameters are all long, align and start at address 0x04
-  eeprom_write_block(parms, (void*)0x04, sizeof(parms));
-}
-
-//return 1 if loaded ok
-byte load(void)
-{
-  byte b = eeprom_read_byte((const uint8_t*)0);
-  if(b==obduinosig)
-  {
-    eeprom_read_block(parms, (void*)0x04, sizeof(parms));
-    return 1;
-  }
-  return 0;
+  long maf;
+  char str[16];
+  
+  maf=get_pid(MAF_AIR_FLOW, str);
+  
+  // acumulate fuel consumption of this trip
+  delta_time = millis() - delta_time;
+  // fuel used in g
+  // maf gives grams of air per second
+  // divide by 14.7 (a/f ratio) to have grams of fuel
+  // divide by 100 because our MAF return is not divided!
+  // divide by 1000 because delta_time is in ms
+  trip_fuel+=((float)maf*(float)delta_time)/1470000.0;
 }
 
 void display(byte corner, byte pid)
@@ -785,7 +824,7 @@ void display(byte corner, byte pid)
   case FUEL_CONS:
     get_cons(str);
     break;
-  case TANK_DIST:
+  case TRIP_DIST:
     get_dist(str);
     break;
   default:
@@ -918,6 +957,10 @@ void check_mil_code(void)
   }
 }
 
+/****************\
+* Initialization *
+\****************/
+
 void setup()                    // run once, when the sketch starts
 {
   byte r;
@@ -995,38 +1038,50 @@ void setup()                    // run once, when the sketch starts
   bottomright=LOAD_VALUE;
 
   delta_time=millis();
+  
+  engine_started=0;
+  param_saved=0;
 
   lcd.cls();
 }
 
+/***********\
+* Main loop *
+\***********/
+
 void loop()                     // run over and over again
 {
-  long n;
+  long rpm;
   char str[16];
 
-#if 0
-  // if RPM are 0 then the engine is shutdowned
-  n=get_pid(ENGINE_RPM, str);
-  if(n==0)
+  // test if engine has started
+  rpm=get_pid(ENGINE_RPM, str);
+  if(engine_started==0 && rpm!=0)
   {
-    // test if it was running before
-
-    // calculate that if we are at 0 for x seconds then
-    // save current data (especially distance) in eeprom ONCE
-    // and shutdown brightness?
+    engine_started=1;
+    param_saved=0;
   }
-#endif
-
+  
+  // if engine was started but RPM is now 0
+  // save param only once, by flopping param_saved
+  if(param_saved==0 && engine_started!=0 && rpm==0)
+  {
+    save();
+    param_saved=1;
+    engine_started=0;
+  }
+  
   // display on LCD
   display(TOPLEFT, topleft);
   display(TOPRIGHT, topright);
   display(BOTTOMLEFT, bottomleft);
   display(BOTTOMRIGHT, bottomright);
 
-  accu_dist();    // accumulate distance
+  accu_dist();    // accumulate distance in meters
+  accu_fuel();    // accumulate fuel used in grams
 
   // test buttons
-  // need a button command to reset distance trip (tank)
+  // need a button command to reset distance trip
   // need to save in eeprom one day :)
   if(!(buttonState&mbuttonBit))
   {
@@ -1035,6 +1090,36 @@ void loop()                     // run over and over again
     analogWrite(BrightnessPin, 255-brightness[brightnessIdx]);
   }
   buttonState=buttonsUp;
+}
+
+/*************************\
+* Memory relatedfunctions *
+\*************************/
+
+// we have 512 bytes of EEPROM
+void save(void)
+{
+  // signature at address 0x00
+  eeprom_write_byte((uint8_t*)0, obduinosig);
+
+  parms[MetersIdx]=(long)trip_dist;
+  parms[GramsIdx]=(long)trip_fuel;
+  // parameters are all long, align and start at address 0x04
+  eeprom_write_block(parms, (void*)0x04, sizeof(parms));
+}
+
+//return 1 if loaded ok
+byte load(void)
+{
+  byte b = eeprom_read_byte((const uint8_t*)0);
+  if(b==obduinosig)
+  {
+    eeprom_read_block(parms, (void*)0x04, sizeof(parms));
+    trip_dist=(long)parms[MetersIdx];
+    trip_fuel=(long)parms[GramsIdx];
+    return 1;
+  }
+  return 0;
 }
 
 // this function will return the number of bytes currently free in RAM
@@ -1050,7 +1135,9 @@ int memoryTest()
   return free_memory;
 }
 
-//LCD functions
+/***************\
+* LCD functions *
+\***************/
 LCD::LCD()
 {
   // nothing here, move along
