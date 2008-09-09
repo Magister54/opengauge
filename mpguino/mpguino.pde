@@ -1,4 +1,4 @@
-#define ver=700
+#define ver=701
 /*
 
 */
@@ -24,7 +24,7 @@ char *  parmLabels[]={"Contrast","VSS Pulses/Mile", "MicroSec/Gallon","Pulses/2 
 unsigned long  parms[]={15ul,10000ul,304409714ul,4ul,420000000ul,13300ul,500ul,2400ul,0ul,};//default values
 #define parmsLength (sizeof(parms)/sizeof(unsigned long)) //array size      
 
-
+#define nil 3999999999ul
  
 #define guinosig B10100101
 #include <EEPROM.h>
@@ -145,6 +145,7 @@ public:
   unsigned long injHiSec;// seconds the injector has been open      
   unsigned long injHius;// microseconds, fractional part of the injectors open       
   unsigned long vssPulses;//from the speedo      
+  unsigned long vssPulseLength; // only used by instant
   //these functions actually return in thousandths,       
   unsigned long miles();        
   unsigned long gallons();      
@@ -175,9 +176,24 @@ Trip tmpTrip;
 Trip instant;      
 Trip current;      
 Trip tank;      
+
+
+unsigned volatile long instInjStart=nil; 
+unsigned volatile long tmpInstInjStart=nil; 
+unsigned volatile long instInjEnd; 
+unsigned volatile long tmpInstInjEnd; 
+unsigned volatile long instInjTot; 
+unsigned volatile long tmpInstInjTot;     
+unsigned volatile long instInjCount; 
+unsigned volatile long tmpInstInjCount;     
+
+
  
 void processInjOpen(void){      
-  injHiStart = microSeconds();      
+  injHiStart = microSeconds();  
+  if (tmpInstInjStart == nil)
+    tmpInstInjStart=injHiStart;
+  tmpInstInjEnd=injHiStart;
 }      
  
 void processInjClosed(void){      
@@ -185,12 +201,18 @@ void processInjClosed(void){
   if(x >0)
     tmpTrip.injHius += x;       
   tmpTrip.injPulses++;      
+
+  if (tmpInstInjStart != nil){
+    if(x >0)
+      tmpInstInjTot += x;     
+      tmpInstInjCount++;
+  }  
 }      
 
 volatile boolean vssFlop = 0;
 
 void enableVSS(){
-    tmpTrip.vssPulses++; 
+//    tmpTrip.vssPulses++; 
     vssFlop = !vssFlop;
 }
 
@@ -206,12 +228,14 @@ ISR( PCINT1_vect ){
   byte p = PINC;//bypassing digitalRead for interrupt performance      
   if ((p & vssBit) != (vsspinstate & vssBit)){      
     addEvent(enableVSSID,2 ); //check back in a couple milli
-  }     
+  }
   if(lastVssFlop != vssFlop){
     lastVSS1=lastVSS2;
     unsigned long t = microSeconds();
     lastVSS2=elapsedMicroseconds(lastVSSTime,t);
     lastVSSTime=t;
+    tmpTrip.vssPulses++; 
+    tmpTrip.vssPulseLength += lastVSS2;
     lastVssFlop = vssFlop;
   }
   vsspinstate = p;      
@@ -220,11 +244,14 @@ ISR( PCINT1_vect ){
  
  
 pFunc displayFuncs[] ={ 
+  doDisplayCustom, 
   doDisplayInstantCurrent, 
   doDisplayInstantTank, 
+#ifndef debuguino  //need to make room for Serial, so BigNums is out in debug mode
   doDisplayBigInstant, 
   doDisplayBigCurrent, 
   doDisplayBigTank, 
+#endif  
   doDisplay2, 
   doDisplay3, 
   doDisplay4, 
@@ -241,17 +268,21 @@ void setup (void){
   Serial.println("OpenGauge MPGuino online");  
   #endif      
   newRun = load();//load the default parameters
-  displayFuncNames[0]=  PSTR("Instant/Current "); 
-  displayFuncNames[1]=  PSTR("Instant/Tank "); 
-  displayFuncNames[2]=  PSTR("BIG Instant "); 
-  displayFuncNames[3]=  PSTR("BIG Current "); 
-  displayFuncNames[4]=  PSTR("BIG Tank "); 
-  displayFuncNames[5]=  PSTR("Current "); 
-  displayFuncNames[6]=  PSTR("Tank "); 
-  displayFuncNames[7]=  PSTR("Instant raw Data"); 
-  displayFuncNames[8]=  PSTR("Current raw Data"); 
-  displayFuncNames[9]=  PSTR("Tank raw Data "); 
-  displayFuncNames[10]= PSTR("CPU Monitor ");      
+  byte x = 0;
+  displayFuncNames[x++]=  PSTR("Custom "); 
+  displayFuncNames[x++]=  PSTR("Instant/Current "); 
+  displayFuncNames[x++]=  PSTR("Instant/Tank "); 
+#ifndef debuguino  
+  displayFuncNames[x++]=  PSTR("BIG Instant "); 
+  displayFuncNames[x++]=  PSTR("BIG Current "); 
+  displayFuncNames[x++]=  PSTR("BIG Tank "); 
+#endif
+  displayFuncNames[x++]=  PSTR("Current "); 
+  displayFuncNames[x++]=  PSTR("Tank "); 
+  displayFuncNames[x++]=  PSTR("Instant raw Data"); 
+  displayFuncNames[x++]=  PSTR("Current raw Data"); 
+  displayFuncNames[x++]=  PSTR("Tank raw Data "); 
+  displayFuncNames[x++]= PSTR("CPU Monitor ");      
  
   pinMode(BrightnessPin,OUTPUT);      
   analogWrite(BrightnessPin,255-brightness[brightnessIdx]);      
@@ -271,7 +302,7 @@ void setup (void){
   LCD::gotoXY(0,0); 
   LCD::print(getStr(PSTR("OpenGauge       ")));      
   LCD::gotoXY(0,1);      
-  LCD::print(getStr(PSTR("  MPGuino  v0.70")));      
+  LCD::print(getStr(PSTR("  MPGuino  v0.71")));      
 
   pinMode(InjectorOpenPin, INPUT);       
   pinMode(InjectorClosedPin, INPUT);       
@@ -303,6 +334,8 @@ void setup (void){
 byte screen=0;      
 byte holdDisplay = 0; 
 
+
+
 #define looptime 1000000ul/loopsPerSecond //1/2 second      
 void loop (void){       
   if(newRun !=1)
@@ -315,27 +348,36 @@ void loop (void){
     cli();
     instant.update(tmpTrip);   //"copy" of tmpTrip in instant now      
     tmpTrip.reset();           //reset tmpTrip first so we don't lose too many interrupts      
-    sei();
+    instInjStart=tmpInstInjStart; 
+    instInjEnd=tmpInstInjEnd; 
+    instInjTot=tmpInstInjTot;     
+    instInjCount=tmpInstInjCount;
     
+    tmpInstInjStart=nil; 
+    tmpInstInjEnd=nil; 
+    tmpInstInjTot=0;     
+    tmpInstInjCount=0;
+
+    sei();
     #ifdef debuguino  
-    Serial.print("instant: ");Serial.print(instant.injHiSec);Serial.print(",");Serial.print(instant.injHius);  
-    Serial.print(",");Serial.print(instant.injPulses);Serial.print(",");Serial.println(instant.vssPulses);      
+//    Serial.print("instant: ");Serial.print(instant.injHiSec);Serial.print(",");Serial.print(instant.injHius);  
+//    Serial.print(",");Serial.print(instant.injPulses);Serial.print(",");Serial.println(instant.vssPulses);      
     #endif  
     current.update(instant);   //use instant to update current      
     tank.update(instant);      //use instant to update tank      
     #ifdef debuguino  
-    Serial.print("current: ");Serial.print(current.injHiSec);Serial.print(",");Serial.print(current.injHius);  
-    Serial.print(",");Serial.print(current.injPulses);Serial.print(",");Serial.println(current.vssPulses);      
+//    Serial.print("current: ");Serial.print(current.injHiSec);Serial.print(",");Serial.print(current.injHius);  
+//    Serial.print(",");Serial.print(current.injPulses);Serial.print(",");Serial.println(current.vssPulses);      
     #endif  
 
 //currentTripResetTimeoutUS
     if(instant.vssPulses == 0 && instant.injPulses == 0 && holdDisplay==0){
-      if(elapsedMicroseconds(lastActivity) > parms[currentTripResetTimeoutUSIdx] && lastActivity != 3999999999ul){
+      if(elapsedMicroseconds(lastActivity) > parms[currentTripResetTimeoutUSIdx] && lastActivity != nil){
         analogWrite(BrightnessPin,255-brightness[0]);    //nitey night
-        lastActivity = 3999999999ul;
+        lastActivity = nil;
       }
     }else{
-      if(lastActivity == 3999999999ul){//wake up!!!
+      if(lastActivity == nil){//wake up!!!
         analogWrite(BrightnessPin,255-brightness[brightnessIdx]);    
         lastActivity=loopStart;
         current.reset();
@@ -449,13 +491,16 @@ char * getStr(prog_char * str){
 
  
  
-void doDisplayInstantCurrent(){displayTripCombo('I','M',instant.mpg(),'S',instantmph(),'C','M',current.mpg(),'D',current.miles());}      
+void doDisplayCustom(){displayTripCombo('I','M',instantmpg(),'S',instantmph(),'R','P',instantrpm(),'C',current.mpg());}      
+void doDisplayInstantCurrent(){displayTripCombo('I','M',instantmpg(),'S',instantmph(),'C','M',current.mpg(),'D',current.miles());}      
  
-void doDisplayInstantTank(){displayTripCombo('I','M',instant.mpg(),'S',instantmph(),'T','M',tank.mpg(),'D',tank.miles());}      
- 
+void doDisplayInstantTank(){displayTripCombo('I','M',instantmpg(),'S',instantmph(),'T','M',tank.mpg(),'D',tank.miles());}      
+
+#ifndef debuguino  
 void doDisplayBigInstant() {bigNum(instant.mpg(),"INST","MPG ");}      
 void doDisplayBigCurrent() {bigNum(current.mpg(),"CURR","MPG ");}      
 void doDisplayBigTank()    {bigNum(tank.mpg(),"TANK","MPG ");}      
+#endif 
  
 void doDisplay2(void){tDisplay(&current);}   //display current trip formatted data.        
 void doDisplay3(void){tDisplay(&tank);}      //display tank trip formatted data.        
@@ -536,7 +581,7 @@ void LCD::init(){
   LcdCommandWrite(B00101000);   // 4-bit interface, 2 display lines, 5x8 font
   LcdCommandWrite(B00001100);   // display control:
   LcdCommandWrite(B00000110);   // entry mode set: increment automatically, no display shift
-
+#ifndef debuguino 
 //creating the custom fonts:
   LcdCommandWrite(B01001000);  // set cgram
   static byte chars[] PROGMEM ={
@@ -552,7 +597,7 @@ void LCD::init(){
     for(byte x=0;x<5;x++)
       for(byte y=0;y<8;y++)
           LcdDataWrite(pgm_read_byte(&chars[y*5+x])); //write the character data to the character generator ram
-
+#endif
   LcdCommandWrite(B00000001);  // clear display, set cursor position to zero
   LcdCommandWrite(B10000000);  // set dram to zero
 
@@ -627,9 +672,9 @@ unsigned long tmp2[2];
 unsigned long tmp3[2];
 
 unsigned long instantmph(){      
-  cli();
-  unsigned long vssPulseTimeuS = (lastVSS1 + lastVSS2) / 2;
-  sei();
+  //unsigned long vssPulseTimeuS = (lastVSS1 + lastVSS2) / 2;
+  unsigned long vssPulseTimeuS = instant.vssPulseLength/instant.vssPulses;
+  
   init64(tmp1,0,1000000000ul);
   init64(tmp2,0,parms[vssPulsesPerMileIdx]);
   div64(tmp1,tmp2);
@@ -640,34 +685,58 @@ unsigned long instantmph(){
   return tmp1[1];
 }
 
-unsigned long instantmpg(){      
-  cli();
-  unsigned long vssPulseTimeuS = (lastVSS1 + lastVSS2) / 2;
-  sei();
-  init64(tmp1,0,1000000000ul); 
-  init64(tmp2,0,parms[vssPulsesPerMileIdx]);
-  div64(tmp1,tmp2);
-  init64(tmp2,0,3600);
+unsigned long instantmpg(){     
+  unsigned long imph=instantmph();
+  unsigned long igph=instantgph();
+  init64(tmp1,0,1000ul);
+  init64(tmp2,0,imph);
   mul64(tmp1,tmp2);
-  init64(tmp2,0,vssPulseTimeuS);
+  init64(tmp2,0,igph);
   div64(tmp1,tmp2);
-//  return tmp1[1];
+  return tmp1[1];
+}
+
+
+unsigned long instantgph(){      
+//  unsigned long vssPulseTimeuS = instant.vssPulseLength/instant.vssPulses;
   
-  
-    init64(tmp1,0,instant.injHiSec);
-  init64(tmp2,0,1000000);
+//  unsigned long instInjStart=nil; 
+//unsigned long instInjEnd; 
+//unsigned long instInjTot; 
+  init64(tmp1,0,instInjTot);
+  init64(tmp2,0,3600000000ul);
   mul64(tmp1,tmp2);
-  init64(tmp2,0,instant.injHius);
-  add64(tmp1,tmp2); 
-  init64(tmp2,0,1000);
+  init64(tmp2,0,1000ul);
   mul64(tmp1,tmp2);
   init64(tmp2,0,parms[microSecondsPerGallonIdx]);
   div64(tmp1,tmp2);
+  init64(tmp2,0,instInjEnd-instInjStart);
+  div64(tmp1,tmp2);
   return tmp1[1];      
-
-  
-  
 }
+
+unsigned long instantrpm(){      
+//    instInjCount=tmpInstInjCount;
+
+  //  unsigned long vssPulseTimeuS = instant.vssPulseLength/instant.vssPulses;
+  
+//  unsigned long instInjStart=nil; 
+//unsigned long instInjEnd; 
+//unsigned long instInjTot; 
+  init64(tmp1,0,instInjCount);
+  init64(tmp2,0,120000000ul);
+  mul64(tmp1,tmp2);
+  init64(tmp2,0,1000ul);
+  mul64(tmp1,tmp2);
+  init64(tmp2,0,parms[injPulsesPer2Revolutions]);
+  div64(tmp1,tmp2);
+  init64(tmp2,0,instInjEnd-instInjStart);
+  div64(tmp1,tmp2);
+  return tmp1[1];      
+}
+
+
+
 
 
 unsigned long Trip::miles(){      
@@ -744,12 +813,14 @@ void Trip::reset(){
   injPulses=0;      
   injHius=0;      
   injHiSec=0;      
-  vssPulses=0;      
+  vssPulses=0;  
+  vssPulseLength=0;
 }      
  
 void Trip::update(Trip t){     
   loopCount++;  //we call update once per loop     
   vssPulses+=t.vssPulses;      
+  vssPulseLength+=t.vssPulseLength;
   if(t.injPulses > 2 && t.injHius<500000){//chasing ghosts      
     injPulses+=t.injPulses;      
     injHius+=t.injHius;      
@@ -762,7 +833,7 @@ void Trip::update(Trip t){
  
  
  
- 
+#ifndef debuguino  
 char bignumchars1[]={4,1,4,0, 1,4,32,0, 3,3,4,0, 1,3,4,0, 4,2,4,0,   4,3,3,0, 4,3,3,0, 1,1,4,0,   4,3,4,0, 4,3,4,0}; 
 char bignumchars2[]={4,2,4,0, 2,4,2,0,  4,2,2,0, 2,2,4,0, 32,32,4,0, 2,2,4,0, 4,2,4,0, 32,4,32,0, 4,2,4,0, 2,2,4,0};  
  
@@ -799,7 +870,7 @@ void bigNum (unsigned long t, char * txt1, char * txt2){
   LCD::print(" "); 
   LCD::print(txt2); 
 }      
- 
+#endif 
 //the standard 64 bit math brings in  5000+ bytes
 //these bring in 1214 bytes, and everything is pass by reference
 unsigned long zero64[]={0,0};
@@ -958,7 +1029,7 @@ unsigned long rformat(char * val){
 } 
 
 
-
+#ifndef debuguino
 void editParm(byte parmIdx){
   unsigned long v = parms[parmIdx];
   byte p=9;  //right end of 10 digit number
@@ -1033,14 +1104,16 @@ void editParm(byte parmIdx){
   }      
   
 }
+#endif
 
 void initGuino(){ //edit all the parameters
+#ifndef debuguino
   for(int x = 0;x<parmsLength;x++)
     editParm(x);
   save();
   holdDisplay=1;
+#endif
 }  
-
 
 unsigned long millis2(){
 	return timer2_overflow_count * 64UL * 2 / (16000000UL / 128000UL);
