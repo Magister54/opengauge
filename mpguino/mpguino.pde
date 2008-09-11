@@ -1,11 +1,11 @@
-#define ver=701
+#define ver=720
 /*
 
 */
 //GPL Software    
 //#define debuguino youbetyourbippy  
 #include <avr/pgmspace.h>  
-byte brightness[]={0,42,85,128}; //middle button cycles through these brightness settings      
+byte brightness[]={255,214,171,128}; //middle button cycles through these brightness settings      
 #define brightnessLength (sizeof(brightness)/sizeof(byte)) //array size      
 byte brightnessIdx=1;      
 
@@ -21,7 +21,7 @@ byte brightnessIdx=1;
 #define scratchpadIdx 8
 char *  parmLabels[]={"Contrast","VSS Pulses/Mile", "MicroSec/Gallon","Pulses/2 revs","Timout(microSec)","Tank Gal * 1000","Injector DelayuS","Weight (lbs)","scratchpad(odo?)"};
 //unsigned long  parms[]={15ul,16408ul,684968626ul,3ul,420000000ul,13300ul,500ul};//default values
-unsigned long  parms[]={15ul,10000ul,304409714ul,4ul,420000000ul,13300ul,500ul,2400ul,0ul,};//default values
+unsigned long  parms[]={95ul,8208ul,500000000ul,3ul,420000000ul,10300ul,500ul,2400ul,0ul};//default values
 #define parmsLength (sizeof(parms)/sizeof(unsigned long)) //array size      
 
 #define nil 3999999999ul
@@ -144,7 +144,10 @@ public:
   unsigned long injPulses; //rpm      
   unsigned long injHiSec;// seconds the injector has been open      
   unsigned long injHius;// microseconds, fractional part of the injectors open       
+  unsigned long injIdleHiSec;// seconds the injector has been open      
+  unsigned long injIdleHius;// microseconds, fractional part of the injectors open       
   unsigned long vssPulses;//from the speedo      
+  unsigned long vssEOCPulses;//from the speedo      
   unsigned long vssPulseLength; // only used by instant
   //these functions actually return in thousandths,       
   unsigned long miles();        
@@ -152,6 +155,8 @@ public:
   unsigned long mpg();        
   unsigned long mph();        
   unsigned long time(); //mmm.ss        
+  unsigned long eocMiles();  //how many "free" miles?        
+  unsigned long idleGallons();  //how many gallons spent at 0 mph?        
   void update(Trip t);      
   void reset();      
   Trip();      
@@ -252,12 +257,11 @@ pFunc displayFuncs[] ={
   doDisplayBigCurrent, 
   doDisplayBigTank, 
 #endif  
-  doDisplay2, 
-  doDisplay3, 
-  doDisplay4, 
-  doDisplay5, 
-  doDisplay6, 
-  doDisplay7};      
+  doDisplayCurrentTripData, 
+  doDisplayTankTripData, 
+  doDisplayEOCIdleData, 
+  doDisplaySystemInfo,
+};      
 #define displayFuncSize (sizeof(displayFuncs)/sizeof(pFunc)) //array size      
 prog_char  * displayFuncNames[displayFuncSize]; 
 byte newRun = 0;
@@ -269,7 +273,7 @@ void setup (void){
   #endif      
   newRun = load();//load the default parameters
   byte x = 0;
-  displayFuncNames[x++]=  PSTR("Custom "); 
+  displayFuncNames[x++]=  PSTR("Custom  "); 
   displayFuncNames[x++]=  PSTR("Instant/Current "); 
   displayFuncNames[x++]=  PSTR("Instant/Tank "); 
 #ifndef debuguino  
@@ -279,13 +283,11 @@ void setup (void){
 #endif
   displayFuncNames[x++]=  PSTR("Current "); 
   displayFuncNames[x++]=  PSTR("Tank "); 
-  displayFuncNames[x++]=  PSTR("Instant raw Data"); 
-  displayFuncNames[x++]=  PSTR("Current raw Data"); 
-  displayFuncNames[x++]=  PSTR("Tank raw Data "); 
-  displayFuncNames[x++]= PSTR("CPU Monitor ");      
+  displayFuncNames[x++]=  PSTR("EOC mi/Idle gal "); 
+  displayFuncNames[x++]=  PSTR("CPU Monitor ");      
  
   pinMode(BrightnessPin,OUTPUT);      
-  analogWrite(BrightnessPin,255-brightness[brightnessIdx]);      
+  analogWrite(BrightnessPin,brightness[brightnessIdx]);      
   pinMode(EnablePin,OUTPUT);       
   pinMode(DIPin,OUTPUT);       
   pinMode(DB4Pin,OUTPUT);       
@@ -298,11 +300,11 @@ void setup (void){
   analogWrite(ContrastPin,parms[contrastIdx]);  
   LCD::init();      
   LCD::LcdCommandWrite(B00000001);  // clear display, set cursor position to zero         
-  LCD::LcdCommandWrite(B10000000);  // set dram to zero
+  LCD::LcdCommandWrite(B10000);  // set dram to zero
   LCD::gotoXY(0,0); 
   LCD::print(getStr(PSTR("OpenGauge       ")));      
   LCD::gotoXY(0,1);      
-  LCD::print(getStr(PSTR("  MPGuino  v0.71")));      
+  LCD::print(getStr(PSTR("  MPGuino  v0.72")));      
 
   pinMode(InjectorOpenPin, INPUT);       
   pinMode(InjectorClosedPin, INPUT);       
@@ -373,12 +375,12 @@ void loop (void){
 //currentTripResetTimeoutUS
     if(instant.vssPulses == 0 && instant.injPulses == 0 && holdDisplay==0){
       if(elapsedMicroseconds(lastActivity) > parms[currentTripResetTimeoutUSIdx] && lastActivity != nil){
-        analogWrite(BrightnessPin,255-brightness[0]);    //nitey night
+        analogWrite(BrightnessPin,brightness[0]);    //nitey night
         lastActivity = nil;
       }
     }else{
       if(lastActivity == nil){//wake up!!!
-        analogWrite(BrightnessPin,255-brightness[brightnessIdx]);    
+        analogWrite(BrightnessPin,brightness[brightnessIdx]);    
         lastActivity=loopStart;
         current.reset();
         tank.loopCount = tankHold;
@@ -398,7 +400,7 @@ void loop (void){
     LCD::gotoXY(0,0);        
     
 //see if any buttons were pressed, display a brief message if so      
-      if(!(buttonState&lbuttonBit) && !(buttonState&mbuttonBit)&& !(buttonState&rbuttonBit)){// left and middle and right = initialize      
+      if(!(buttonState&lbuttonBit) && !(buttonState&rbuttonBit)){// left and right = initialize      
           LCD::print(getStr(PSTR("Setup ")));    
           initGuino();  
       //}else if(!(buttonState&lbuttonBit) && !(buttonState&rbuttonBit)){// left and right = run lcd init = tank reset      
@@ -418,7 +420,7 @@ void loop (void){
         LCD::print(getStr(displayFuncNames[screen]));      
       }else if(!(buttonState&mbuttonBit)){ //middle is cycle through brightness settings      
         brightnessIdx = (brightnessIdx + 1) % brightnessLength;      
-        analogWrite(BrightnessPin,255-brightness[brightnessIdx]);      
+        analogWrite(BrightnessPin,brightness[brightnessIdx]);      
         LCD::print(getStr(PSTR("Brightness ")));      
         LCD::LcdDataWrite('0' + brightnessIdx);      
         LCD::print(" ");      
@@ -443,15 +445,43 @@ void loop (void){
 }       
  
  
-char fBuff[7];//used by format      
+char fBuff[7];//used by format    
+
+char* format(unsigned long num){
+  byte dp = 3;
+
+  while(num > 999999){
+    num /= 10;
+    dp++;
+    if( dp == 5 ) break; // We'll lose the top numbers like an odometer
+  }
+  if(dp == 5) dp = 99; // We don't need a decimal point here.
+
+// Round off the non-printed value.
+  if((num % 10) > 4)
+    num += 10;
+  num /= 10;
+  byte x = 6;
+  while(x > 0){
+    x--;
+    if(x==dp){ //time to poke in the decimal point?{
+      fBuff[x]='.';
+    }else{
+      fBuff[x]= '0' + (num % 10);//poke the ascii character for the digit.
+      num /= 10;
+    } 
+  }
+  fBuff[6] = 0;
+  return fBuff;
+}
+
 //format a number into NNN.NN  the number should already be representing thousandths      
-char* format(unsigned long num){      
+/*char* format(unsigned long num){      
   unsigned long d = 10000;      
   long t;      
   byte dp=3;      
   byte l=6;      
  
-  //123456 = 123.46      
   if(num>9999999){      
     d=100000;      
     dp=99;      
@@ -477,8 +507,7 @@ char* format(unsigned long num){
   }      
   fBuff[6]= 0;         //good old zero terminated strings       
   return fBuff;      
-}  
- 
+} */  
  
 //get a string from flash 
 char mBuff[17];//used by getStr 
@@ -490,24 +519,23 @@ char * getStr(prog_char * str){
  
 
  
- 
 void doDisplayCustom(){displayTripCombo('I','M',instantmpg(),'S',instantmph(),'R','P',instantrpm(),'C',current.mpg());}      
+//void doDisplayCustom(){displayTripCombo('I','M',instantmpg(),'S',instantgph(),'R','P',instantrpm(),'C',current.injIdleHiSec*1000);}      
+//void doDisplayCustom(){displayTripCombo('I','M',995,'S',994,'R','P',999994,'C',999995);}      
+void doDisplayEOCIdleData(){displayTripCombo('C','E',current.eocMiles(),'G',current.idleGallons(),'T','E',tank.eocMiles(),'G',tank.idleGallons());}      
 void doDisplayInstantCurrent(){displayTripCombo('I','M',instantmpg(),'S',instantmph(),'C','M',current.mpg(),'D',current.miles());}      
  
 void doDisplayInstantTank(){displayTripCombo('I','M',instantmpg(),'S',instantmph(),'T','M',tank.mpg(),'D',tank.miles());}      
 
 #ifndef debuguino  
-void doDisplayBigInstant() {bigNum(instant.mpg(),"INST","MPG ");}      
+void doDisplayBigInstant() {bigNum(instantmpg(),"INST","MPG ");}      
 void doDisplayBigCurrent() {bigNum(current.mpg(),"CURR","MPG ");}      
 void doDisplayBigTank()    {bigNum(tank.mpg(),"TANK","MPG ");}      
 #endif 
  
-void doDisplay2(void){tDisplay(&current);}   //display current trip formatted data.        
-void doDisplay3(void){tDisplay(&tank);}      //display tank trip formatted data.        
-void doDisplay4(void){rawDisplay(&instant);} //display instant trip "raw" injector and vss data.        
-void doDisplay5(void){rawDisplay(&current);} //display current trip "raw" injector and vss data.        
-void doDisplay6(void){rawDisplay(&tank);}    //display tank trip "raw" injector and vss data.        
-void doDisplay7(void){      
+void doDisplayCurrentTripData(void){tDisplay(&current);}   //display current trip formatted data.        
+void doDisplayTankTripData(void){tDisplay(&tank);}      //display tank trip formatted data.        
+void doDisplaySystemInfo(void){      
   LCD::gotoXY(0,0);LCD::print("C%");LCD::print(format(maxLoopLength*1000/(looptime/100)));LCD::print(" T"); LCD::print(format(tank.time()));     
   unsigned long mem = memoryTest();      
   mem*=1000;      
@@ -528,11 +556,6 @@ void tDisplay( void * r){ //display trip functions.
   LCD::gotoXY(0,1);LCD::print("MI");LCD::print(format(t->miles()));LCD::print("GA");LCD::print(format(t->gallons()));      
 }      
  
-void rawDisplay(void * r){      
-  Trip *t = (Trip *)r;      
-  LCD::gotoXY(0,0);LCD::print("IJ");LCD::print(format(t->injHiSec*1000));LCD::print("uS");LCD::print(format(t->injHius*1000));      
-  LCD::gotoXY(0,1);LCD::print("IC");LCD::print(format(t->injPulses*1000));LCD::print("VC");LCD::print(format(t->vssPulses*1000));      
-}      
  
  
     
@@ -593,6 +616,7 @@ void LCD::init(){
     B00000,B11111,B11111,B11111,B01110,
     B00000,B11111,B11111,B11111,B01110,
     B00000,B11111,B11111,B11111,B01110};
+
 
     for(byte x=0;x<5;x++)
       for(byte y=0;y<8;y++)
@@ -688,6 +712,8 @@ unsigned long instantmph(){
 unsigned long instantmpg(){     
   unsigned long imph=instantmph();
   unsigned long igph=instantgph();
+  if(imph == 0) return 0;
+  if(igph == 0) return 999999000;
   init64(tmp1,0,1000ul);
   init64(tmp2,0,imph);
   mul64(tmp1,tmp2);
@@ -748,6 +774,15 @@ unsigned long Trip::miles(){
   return tmp1[1];      
 }      
  
+unsigned long Trip::eocMiles(){      
+  init64(tmp1,0,vssEOCPulses);
+  init64(tmp2,0,1000);
+  mul64(tmp1,tmp2);
+  init64(tmp2,0,parms[vssPulsesPerMileIdx]);
+  div64(tmp1,tmp2);
+  return tmp1[1];      
+}       
+ 
 unsigned long Trip::mph(){      
   if(loopCount == 0)     
      return 0;     
@@ -775,6 +810,22 @@ unsigned long  Trip::gallons(){
   div64(tmp1,tmp2);
   return tmp1[1];      
 }      
+
+unsigned long  Trip::idleGallons(){      
+  init64(tmp1,0,injIdleHiSec);
+  init64(tmp2,0,1000000);
+  mul64(tmp1,tmp2);
+  init64(tmp2,0,injIdleHius);
+  add64(tmp1,tmp2);
+  init64(tmp2,0,1000);
+  mul64(tmp1,tmp2);
+  init64(tmp2,0,parms[microSecondsPerGallonIdx]);
+  div64(tmp1,tmp2);
+  return tmp1[1];      
+}      
+
+//eocMiles
+//idleGallons
  
 unsigned long  Trip::mpg(){      
   if(vssPulses==0) return 0;      
@@ -815,22 +866,35 @@ void Trip::reset(){
   injHiSec=0;      
   vssPulses=0;  
   vssPulseLength=0;
+  injIdleHiSec=0;
+  injIdleHius=0;
+  vssEOCPulses=0;
 }      
  
 void Trip::update(Trip t){     
   loopCount++;  //we call update once per loop     
   vssPulses+=t.vssPulses;      
   vssPulseLength+=t.vssPulseLength;
+  if(t.injPulses ==0 )  //track distance traveled with engine off
+    vssEOCPulses+=t.vssPulses;
+  
   if(t.injPulses > 2 && t.injHius<500000){//chasing ghosts      
     injPulses+=t.injPulses;      
     injHius+=t.injHius;      
     if (injHius>=1000000){  //rollover into the injHiSec counter      
       injHiSec++;      
       injHius-=1000000;      
-    }      
+    }
+    if(t.vssPulses == 0){    //track gallons spent sitting still
+      
+      injIdleHius+=t.injHius;      
+      if (injIdleHius>=1000000){  //r
+        injIdleHiSec++;
+        injIdleHius-=1000000;      
+      }      
+    }
   }      
 }   
- 
  
  
 #ifndef debuguino  
@@ -844,7 +908,7 @@ void bigNum (unsigned long t, char * txt1, char * txt2){
 //  char * txt2="MPG "; 
   char  dp = 32; 
  
-  char * r = "009.99"; //"009.99" "000.99" "000.09" 
+  char * r;// = "009.99"; //"009.99" "000.99" "000.09" 
   if(t<=99500){ 
     r=format(t/10); //009.86 
     dp=5; 
@@ -871,6 +935,9 @@ void bigNum (unsigned long t, char * txt1, char * txt2){
   LCD::print(txt2); 
 }      
 #endif 
+
+
+
 //the standard 64 bit math brings in  5000+ bytes
 //these bring in 1214 bytes, and everything is pass by reference
 unsigned long zero64[]={0,0};
@@ -1006,6 +1073,7 @@ byte load(){ //return 1 if loaded ok
   return 0;
 }
 
+#ifndef debuguino
 
 char * uformat(unsigned long val){ 
   unsigned long d = 1000000000ul;
@@ -1029,7 +1097,6 @@ unsigned long rformat(char * val){
 } 
 
 
-#ifndef debuguino
 void editParm(byte parmIdx){
   unsigned long v = parms[parmIdx];
   byte p=9;  //right end of 10 digit number
@@ -1165,3 +1232,4 @@ void init2(){
 	// disable timer 0 overflow interrupt
 	TIMSK0&=!(1<<TOIE0);
 }
+
