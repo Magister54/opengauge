@@ -1,7 +1,6 @@
 /*
  * TODO
  *
- * Test it!
  * Implement buttons/menu configuration
  *
  */
@@ -15,7 +14,7 @@
  Copyright (C) 2008
  
  Main coding/ISO/ELM: Frédéric (aka Magister on ecomodder.com)
- Buttons/LCD/params: Dave (aka dcb on ecomodder.com)
+ Buttons/LCD/params: Dave (aka dcb on ecomodder.com), Frédéric
  
  This program is free software; you can redistribute it and/or modify it under
  the terms of the GNU General Public License as published by the Free Software
@@ -31,16 +30,14 @@
  59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
  */
 
-#undef int    // bug from Arduino IDE 0011
+#undef int   // bug from Arduino IDE 0011
 #include <stdio.h>
 #include <avr/eeprom.h>
 #include <avr/pgmspace.h>
-#include <avr/sleep.h>
 
 #define obduinosig B11001100
 
-// buttons/contrast/brightness management from mpguino.pde
-//LCD Pins
+//LCD Pins from mpguino
 #define DIPin 4 // register select RS
 #define DB4Pin 7
 #define DB5Pin 8
@@ -62,7 +59,7 @@ void lcd_DataWrite(byte value);
 void lcd_pushNibble(byte value);
 
 byte brightness[]={
-  0,42,85,128}; //middle button cycles through these brightness settings
+  0,42,85,128}; // right button cycles through these brightness settings
 #define brightnessLength (sizeof(brightness)/sizeof(byte)) //array size
 byte brightnessIdx=1;
 
@@ -80,16 +77,21 @@ byte buttonState = buttonsUp;
 // parms mngt from mpguino.pde too
 #define contrastIdx  0  //do contrast first to get display dialed in
 #define useMetricIdx 1
-#define MetersIdx    2
-#define GramsIdx     3
+#define MetersIdx    2  // can be reset to 0, not edited
+#define GramsIdx     3  // can be reset to 0, not edited
+#define screen0Idx   4  // screen 0 4 PIDs
+#define screenBaseIdx screen0Idx  // an alias
+#define screen1Idx   5  // screen 1 4 PIDs
+#define screen2Idx   6  // screen 2 4 PIDs
+// careful, some parms have no labels
 char *parmLabels[]={
-  "Contrast", "Use Metric", "Distance (m)", "Fuel (g)"};
+  "LCD Contrast", "Use Metric Units", "Distance (m)", "Fuel (g)", "Screen"};
 unsigned long  parms[]={
-  15UL, 1UL, 0UL, 0UL};  //default values
+  15UL, 1UL, 0UL, 0UL, 0xF10D0C04 /*fuel,speed,rpm,load*/, 0x0c04f10d, 0x0df1040c};  //default values
 #define parmsLength (sizeof(parms)/sizeof(unsigned long)) //array size
 
-#ifdef ELM
 #define STRLEN  40
+#ifdef ELM
 #define NUL     '\0'
 #define CR      '\r'  // carriage return = 0x0d = 13
 #define PROMPT  '>'
@@ -167,17 +169,16 @@ prog_uchar pid_reslen[] PROGMEM=
 #define TOPRIGHT 2
 #define BOTTOMLEFT  3
 #define BOTTOMRIGHT 4
-byte topleft;    // contains PID we want to display
-byte topright;
-byte bottomleft;
-byte bottomright;
+#define NBSCREEN  3
+byte active_screen;  // we have NBSCREEN screens: 0,1,2,... selected by left button
+char blkstr[]={"        "}; // 8 spaces
 
 // for distance
 unsigned long delta_time;
 float trip_dist=0.0;  // trip in meters
 float trip_fuel=0.0;  // fuel used in grams
 
-// flag used to save distance/average consumption in eeprom
+// flag used to save distance/average consumption in eeprom only if required
 byte engine_started;
 byte param_saved;
 
@@ -196,16 +197,13 @@ byte elm_read(char *str, byte size)
 {
   int b;
   byte i;
-  byte *pos;
+  char str2[8];
 
   // wait for something on com port
   i=0;
   while((b=serialRead())!=PROMPT && i<size)
-  {
     if(/*b!=-1 &&*/ b>=' ')
       str[i++]=b;
-    sleep_mode();  // macro that enable/sleep/disable
-  }
 
   if(i!=size)  // we got a prompt
   {
@@ -213,9 +211,7 @@ byte elm_read(char *str, byte size)
     return PROMPT;
   }
   else
-  {
     return DATA;
-  }
 }
 
 // buf must be ASCIIZ
@@ -228,15 +224,16 @@ void elm_write(char *str)
 // check header byte
 byte elm_check_response(byte *cmd, char *str)
 {
+  return 0;
+
   // cmd is something like "010D"
   // str should be "41 0D blabla"
-#if 0  
   if(cmd[0]+4 != str[0]
     || cmd[1]!=str[1]
     || cmd[2]!=str[3]
     || cmd[3]!=str[4])
     return 1;
-#endif  
+
   return 0;  // no error
 }
 
@@ -251,24 +248,27 @@ byte elm_compact_response(byte *buf, char *str)
   i=0;
   str+=6;
   while(*str!=NUL)
-    buf[i++]=strtol(str, &str, 16);
+    buf[i++]=strtoul(str, &str, 16);
 
   return i;
+}
+
+byte elm_command(char *str, char *cmd)
+{
+  sprintf_P(str, cmd);
+  elm_write(str);
+  return elm_read(str, STRLEN);
 }
 
 int elm_init()
 {
   char str[STRLEN];
 
-  set_sleep_mode(SLEEP_MODE_IDLE);
-
   beginSerial(9600);
 
   serialFlush();
   // reset, wait for something and display it
-  sprintf_P(str, PSTR("ATZ\r"));
-  elm_write(str);
-  elm_read(str, STRLEN);
+  elm_command(str, PSTR("ATWS\r")); 
   lcd_gotoXY(0,1);
   lcd_print(str);
   delay(1000);
@@ -282,15 +282,14 @@ int elm_init()
 
   // init connection
   sprintf_P(str, PSTR("0100\r"));
-  elm_write(str);
-  elm_read(str, STRLEN);  // read the ok
-
-  sprintf_P(str, PSTR("ATDPN\r"));
-  elm_write(str);
-  elm_read(str, STRLEN);
-  lcd_gotoXY(0,1);
-  lcd_print(str);
-  delay(1000);
+  do
+  {
+    elm_write(str);
+    elm_read(str, STRLEN);  // read the ok
+    lcd_gotoXY(0,1);
+    lcd_print(str);
+    delay(2000);
+  } while(elm_check_response((byte*)"0100", str)!=0);
 
   return 0;
 }
@@ -504,7 +503,7 @@ long get_pid(byte pid, char *retbuf)
   if( pid!=PID_SUPPORT20 && (1L<<(32-pid) & pid01to20_support) == 0 )
   {
     // nope
-    sprintf_P(retbuf, PSTR("N/A"));
+    sprintf_P(retbuf, PSTR("0x%02X N/A"), pid);
     return -1;
   }
 
@@ -738,12 +737,12 @@ void get_cons(char *retbuf)
 
   if(parms[useMetricIdx]==1)
   {
-    if(vss==0)
+    if(vss<10)
       cons=(maf*3355L)/10000L;  // do not use float so mul first then divide
     else
       cons=(maf*3355L)/(vss*100L); // 100 comes from the /10000*100
     int_to_dec_str(cons, decs, 2);
-    sprintf_P(retbuf, PSTR("%s %s"), decs, (vss==0)?"L/h":"\001\002" );
+    sprintf_P(retbuf, PSTR("%s %s"), decs, (vss==0)?"L\004":"\001\002" );
   }
   else
   {
@@ -752,7 +751,7 @@ void get_cons(char *retbuf)
     // 454 g in a pound
     // 14.7 * 6.17 * 454 * (VSS * 0.621371) / (3600 * MAF / 100)
     // multipled by 10 for single digit precision
-    if(vss==0)
+    if(vss<10)
       cons=maf/124L; // gallon per hour
     else if(maf!=0)
       cons=(vss*7107L)/maf;
@@ -835,8 +834,6 @@ void accu_fuel(void)
 
 void display(byte corner, byte pid)
 {
-  byte i;
-  char blkstr[9];
   char str[16];
 
   /* check if it's a real PID or our internal one */
@@ -857,11 +854,6 @@ void display(byte corner, byte pid)
     (void)get_pid(pid, str);
     break;
   }
-
-  // create a blank string
-  for(i=0; i<8; i++)
-    blkstr[i]=' ';
-  blkstr[i]='\0';
 
   // left corners are left aligned
   // right corners are right aligned
@@ -992,9 +984,93 @@ void check_mil_code(void)
   }
 }
 
+void config_menu(void)
+{
+  char str[STRLEN];
+  byte i;
+  long p;
+  
+  // go through all the configurable items
+  
+  // first one is contrast
+  lcd_cls();
+  lcd_print(parmLabels[contrastIdx]);
+  p=(parms[contrastIdx]*9)/255;
+  // set value with left/right and set with middle
+  do
+  {
+    if(!(buttonState&lbuttonBit))
+    {
+      if(--p<0)
+        p=0;
+    }
+    else if(!(buttonState&rbuttonBit))
+    {
+      if(++p>9)
+        p=9;
+    }
+
+    lcd_gotoXY(6,1);
+    sprintf_P(str, PSTR("- %d +"), p);
+    lcd_print(str);
+    analogWrite(ContrastPin,(p*255)/9);  // change dynamicaly
+    buttonState=buttonsUp;
+    delay(100);
+  } while(buttonState&mbuttonBit);
+  parms[contrastIdx]=(p*255)/9;
+
+  // then the use of metric
+  lcd_cls();
+  lcd_print(parmLabels[useMetricIdx]);
+  p=parms[useMetricIdx];
+  // set value with left/right and set with middle
+  do
+  {
+    if(!(buttonState&lbuttonBit))
+      p=0;
+    else if(!(buttonState&rbuttonBit))
+      p=1;
+
+    lcd_gotoXY(4,1);
+    if(p==0)
+      sprintf_P(str, PSTR("(NO) YES"));
+    else
+      sprintf_P(str, PSTR("NO (YES)"));
+    lcd_print(str);
+    buttonState=buttonsUp;
+    delay(100);
+  } while(buttonState&mbuttonBit);
+  parms[useMetricIdx]=p;
+
+  // save params in EEPROM
+  save();
+}
+
+void test_buttons(void)
+{
+  // need a button command to reset distance trip
+  
+  // left is cycle through active screen
+  if(!(buttonState&lbuttonBit))
+  {
+    active_screen = (active_screen+1) % NBSCREEN;
+  }
+  // right is cycle through brightness settings
+  else if(!(buttonState&rbuttonBit))
+  {
+    brightnessIdx = (brightnessIdx + 1) % brightnessLength;
+    analogWrite(BrightnessPin, 255-brightness[brightnessIdx]);
+  }
+  // middle is go into menu
+  else if(!(buttonState&mbuttonBit))
+    config_menu();
+
+  buttonState=buttonsUp;
+}
+
 /****************\
- * Initialization *
- \****************/
+* Initialization *
+\****************/
 
 void setup()                    // run once, when the sketch starts
 {
@@ -1018,12 +1094,13 @@ void setup()                    // run once, when the sketch starts
 
   // low level interrupt enable stuff
   // interrupt 1 for the 3 buttons
-  PCICR |= (1 << PCIE1);
   PCMSK1 |= (1 << PCINT11) | (1 << PCINT12) | (1 << PCINT13);
+  PCICR |= (1 << PCIE1);       
 
   // load parameters
   load();
-  // in case a trip is 0, put a small value to not have a div by zero
+  
+  // in case trip is 0, put a small value to not have a div by zero
   if(trip_dist<0.01)
     trip_dist=0.01;
   if(trip_fuel<0.01)
@@ -1041,6 +1118,7 @@ void setup()                    // run once, when the sketch starts
 
   analogWrite(ContrastPin,parms[contrastIdx]);
   lcd_init();
+
   sprintf_P(str, PSTR("Initialization"));
   lcd_print(str);
 
@@ -1074,11 +1152,7 @@ void setup()                    // run once, when the sketch starts
   // check if we have MIL code
   //check_mil_code();
 
-  // must go in the configuration and EEPROM parameter
-  topleft=FUEL_CONS;
-  topright=VEHICLE_SPEED;
-  bottomleft=ENGINE_RPM;
-  bottomright=LOAD_VALUE;
+  active_screen=0;
 
   delta_time=millis();
 
@@ -1089,8 +1163,8 @@ void setup()                    // run once, when the sketch starts
 }
 
 /***********\
- * Main loop *
- \***********/
+* Main loop *
+\***********/
 
 void loop()                     // run over and over again
 {
@@ -1116,31 +1190,26 @@ void loop()                     // run over and over again
     lcd_print("TRIP SAVED!");
     delay(5000);
   }
-
+#if 0  
+  if(rpm!=0)
+  {
+    accu_dist();    // accumulate distance in metres
+    accu_fuel();    // accumulate fuel used in grams
+  }
+#endif
   // display on LCD
-  display(TOPLEFT, topleft);
-  display(TOPRIGHT, topright);
-  display(BOTTOMLEFT, bottomleft);
-  display(BOTTOMRIGHT, bottomright);
-
-  accu_dist();    // accumulate distance in metres
-  accu_fuel();    // accumulate fuel used in grams
+  display(TOPLEFT, parms[screen0Idx+active_screen]>>24);
+  display(TOPRIGHT, parms[screen0Idx+active_screen]>>16 & 0xff);
+  display(BOTTOMLEFT, parms[screen0Idx+active_screen]>>8 & 0xff);
+  display(BOTTOMRIGHT, parms[screen0Idx+active_screen] & 0xff);
 
   // test buttons
-  // need a button command to reset distance trip
-  // need to save params in eeprom one day :)
-  if(!(buttonState&mbuttonBit))
-  {
-    // middle is cycle through brightness settings
-    brightnessIdx = (brightnessIdx + 1) % brightnessLength;
-    analogWrite(BrightnessPin, 255-brightness[brightnessIdx]);
-  }
-  buttonState=buttonsUp;
+  test_buttons();
 }
 
 /**************************\
- * Memory related functions *
- \**************************/
+* Memory related functions *
+\**************************/
 
 // we have 512 bytes of EEPROM
 void save(void)
