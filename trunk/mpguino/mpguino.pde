@@ -1,7 +1,7 @@
-#define ver=720
-/*
+/* YOU NEED TO USE ARDUINO VERSION 0011 !!!!!!  */
+//it won't fit with the new math libraries that come with 0012, sorry.
 
-*/
+#define ver=730
 //GPL Software    
 //#define debuguino youbetyourbippy  
 #include <avr/pgmspace.h>  
@@ -19,14 +19,16 @@ byte brightnessIdx=1;
 #define injectorSettleTimeIdx 6
 #define weightIdx 7
 #define scratchpadIdx 8
-char *  parmLabels[]={"Contrast","VSS Pulses/Mile", "MicroSec/Gallon","Pulses/2 revs","Timout(microSec)","Tank Gal * 1000","Injector DelayuS","Weight (lbs)","scratchpad(odo?)"};
+#define vsspause 9
+char *  parmLabels[]={"Contrast","VSS Pulses/Mile", "MicroSec/Gallon","Pulses/2 revs","Timout(microSec)","Tank Gal * 1000","Injector DelayuS","Weight (lbs)","Scratchpad(odo?)","VSS Delay ms"};
 //unsigned long  parms[]={15ul,16408ul,684968626ul,3ul,420000000ul,13300ul,500ul};//default values
-unsigned long  parms[]={95ul,8208ul,500000000ul,3ul,420000000ul,10300ul,500ul,2400ul,0ul};//default values
+unsigned long  parms[]={95ul,8208ul,500000000ul,3ul,420000000ul,10300ul,500ul,2400ul,0ul,2ul};//default values
 #define parmsLength (sizeof(parms)/sizeof(unsigned long)) //array size      
 
 #define nil 3999999999ul
  
-#define guinosig B10100101
+#define guinosigold B10100101 
+#define guinosig B11100111 
 #include <EEPROM.h>
 //Vehicle Interface Pins      
 #define InjectorOpenPin 2      
@@ -84,7 +86,10 @@ unsigned int eventFuncCounts[eventFuncSize];
 
 //schedule an event to occur ms milliseconds from now
 void addEvent(byte eventID, unsigned int ms){
-  eventFuncCounts[eventID]=ms;
+  if( ms == 0)
+    eventFuncs[eventID]();
+  else
+    eventFuncCounts[eventID]=ms;
 }
 
 /* this ISR gets called every 1.024 milliseconds, we will call that a millisecond for our purposes
@@ -232,7 +237,7 @@ ISR( PCINT1_vect ){
   static byte vsspinstate=0;      
   byte p = PINC;//bypassing digitalRead for interrupt performance      
   if ((p & vssBit) != (vsspinstate & vssBit)){      
-    addEvent(enableVSSID,2 ); //check back in a couple milli
+    addEvent(enableVSSID,parms[vsspause] ); //check back in a couple milli
   }
   if(lastVssFlop != vssFlop){
     lastVSS1=lastVSS2;
@@ -304,7 +309,7 @@ void setup (void){
   LCD::gotoXY(0,0); 
   LCD::print(getStr(PSTR("OpenGauge       ")));      
   LCD::gotoXY(0,1);      
-  LCD::print(getStr(PSTR("  MPGuino  v0.72")));      
+  LCD::print(getStr(PSTR("  MPGuino  v0.73")));      
 
   pinMode(InjectorOpenPin, INPUT);       
   pinMode(InjectorClosedPin, INPUT);       
@@ -519,7 +524,7 @@ char * getStr(prog_char * str){
  
 
  
-void doDisplayCustom(){displayTripCombo('I','M',instantmpg(),'S',instantmph(),'R','P',instantrpm(),'C',current.mpg());}      
+void doDisplayCustom(){displayTripCombo('M','G',instantmpg(),'S',instantmph(),'G','H',instantgph(),'C',current.mpg());}      
 //void doDisplayCustom(){displayTripCombo('I','M',instantmpg(),'S',instantgph(),'R','P',instantrpm(),'C',current.injIdleHiSec*1000);}      
 //void doDisplayCustom(){displayTripCombo('I','M',995,'S',994,'R','P',999994,'C',999995);}      
 void doDisplayEOCIdleData(){displayTripCombo('C','E',current.eocMiles(),'G',current.idleGallons(),'T','E',tank.eocMiles(),'G',tank.idleGallons());}      
@@ -740,15 +745,8 @@ unsigned long instantgph(){
   div64(tmp1,tmp2);
   return tmp1[1];      
 }
-
+/*
 unsigned long instantrpm(){      
-//    instInjCount=tmpInstInjCount;
-
-  //  unsigned long vssPulseTimeuS = instant.vssPulseLength/instant.vssPulses;
-  
-//  unsigned long instInjStart=nil; 
-//unsigned long instInjEnd; 
-//unsigned long instInjTot; 
   init64(tmp1,0,instInjCount);
   init64(tmp2,0,120000000ul);
   mul64(tmp1,tmp2);
@@ -759,7 +757,7 @@ unsigned long instantrpm(){
   init64(tmp2,0,instInjEnd-instInjStart);
   div64(tmp1,tmp2);
   return tmp1[1];      
-}
+} */
 
 
 
@@ -908,7 +906,7 @@ void bigNum (unsigned long t, char * txt1, char * txt2){
 //  char * txt2="MPG "; 
   char  dp = 32; 
  
-  char * r;// = "009.99"; //"009.99" "000.99" "000.09" 
+  char * r = "009.99"; //default to 999
   if(t<=99500){ 
     r=format(t/10); //009.86 
     dp=5; 
@@ -1044,6 +1042,7 @@ void mul64(unsigned long an[], unsigned long ann[]){
   
 void save(){
   EEPROM.write(0,guinosig);
+  EEPROM.write(1,parmsLength);
   byte p = 0;
   for(int x=4; p < parmsLength; x+= 4){
     unsigned long v = parms[p];
@@ -1057,10 +1056,14 @@ void save(){
 
 byte load(){ //return 1 if loaded ok
   byte b = EEPROM.read(0);
-  if(b == guinosig){
+  byte c = EEPROM.read(1);
+  if(b == guinosigold)
+    c=9; //before fancy parameter counter
+
+  if(b == guinosig || b == guinosigold){
     byte p = 0;
 
-    for(int x=4; p < parmsLength; x+= 4){
+    for(int x=4; p < c; x+= 4){
       unsigned long v = EEPROM.read(x);
       v = (v << 8) + EEPROM.read(x+1);
       v = (v << 8) + EEPROM.read(x+2);
@@ -1130,7 +1133,16 @@ void editParm(byte parmIdx){
       LCD::gotoXY(14,1);   
 
      if(keyLock == 0){ 
-       if(!(buttonState&lbuttonBit)){// left
+        if(!(buttonState&lbuttonBit) && !(buttonState&rbuttonBit)){// left & right
+            if(p<10)p=10;
+            else if(p==10) p=11;
+            else{
+              for(int x=9 ; x>=0 ;x--){ //do a nice thing and put the cursor at the first non zero number
+                if(fmtv[x] != '0')
+               p=x; 
+              }
+            }
+        }else  if(!(buttonState&lbuttonBit)){// left
             p=p-1;
             if(p==255)p=11;
         }else if(!(buttonState&rbuttonBit)){// right
