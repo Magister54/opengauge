@@ -1,10 +1,3 @@
-/*
- * TODO
- *
- * Implement buttons/menu configuration
- *
- */
-
 // comment to use MC33290 ISO K line chip
 // uncomment to use ELM327
 #define ELM
@@ -14,7 +7,7 @@
  Copyright (C) 2008
  
  Main coding/ISO/ELM: Frédéric (aka Magister on ecomodder.com)
- Buttons/LCD/params: Dave (aka dcb on ecomodder.com), Frédéric
+ LCD part: Dave (aka dcb on ecomodder.com), optimized by Frédéric
  
  This program is free software; you can redistribute it and/or modify it under
  the terms of the GNU General Public License as published by the Free Software
@@ -30,12 +23,9 @@
  59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
  */
 
-#undef int   // bug from Arduino IDE 0011
 #include <stdio.h>
 #include <avr/eeprom.h>
 #include <avr/pgmspace.h>
-
-#define obduinosig B11001100
 
 //LCD Pins from mpguino
 #define DIPin 4 // register select RS
@@ -49,6 +39,7 @@
 
 //LCD prototype
 void lcd_gotoXY(byte x, byte y);
+void lcd_print_P(char *string);  // to work with string in flash and PSTR()
 void lcd_print(char *string);
 void lcd_cls();
 void lcd_init();
@@ -60,7 +51,7 @@ void lcd_pushNibble(byte value);
 
 byte brightness[]={
   0,42,85,128}; // right button cycles through these brightness settings
-#define brightnessLength (sizeof(brightness)/sizeof(byte)) //array size
+#define brightnessLength 4 //array size
 byte brightnessIdx=1;
 
 // use analog pins as digital pins
@@ -74,23 +65,32 @@ byte brightnessIdx=1;
 #define buttonsUp   lbuttonBit + mbuttonBit + rbuttonBit  // start with the buttons in the right state
 byte buttonState = buttonsUp;
 
-// parms mngt from mpguino.pde too
-#define contrastIdx  0  //do contrast first to get display dialed in
-#define useMetricIdx 1
-#define MetersIdx    2  // can be reset to 0, not edited
-#define GramsIdx     3  // can be reset to 0, not edited
-#define screen0Idx   4  // screen 0 4 PIDs
-#define screenBaseIdx screen0Idx  // an alias
-#define screen1Idx   5  // screen 1 4 PIDs
-#define screen2Idx   6  // screen 2 4 PIDs
-// careful, some parms have no labels
-char *parmLabels[]={
-  "LCD Contrast", "Use Metric Units", "Distance (m)", "Fuel (g)", "Screen"};
-unsigned long  parms[]={
-  15UL, 1UL, 0UL, 0UL, 0xF10D0C04 /*fuel,speed,rpm,load*/, 0x0c04f10d, 0x0df1040c};  //default values
-#define parmsLength (sizeof(parms)/sizeof(unsigned long)) //array size
+// parameters
+#define NBSCREEN  3
+typedef struct
+{
+  byte contrast;  // we only use 0-100 value in step 20
+  byte useMetric;
+  byte perHourSpeed;
+  long metres;
+  long grams;
+  long screen[NBSCREEN];
+} params_t;
+
+// default values
+params_t params=
+{
+  20,
+  1,
+  10,
+  0,
+  0,
+  0xF10D0C04, /*fuel,speed,rpm,load*/
+  0xf2f3050f,
+  0x111f200e};  //default parameters values
 
 #define STRLEN  40
+
 #ifdef ELM
 #define NUL     '\0'
 #define CR      '\r'  // carriage return = 0x0d = 13
@@ -98,7 +98,7 @@ unsigned long  parms[]={
 #define DATA    1  // data with no cr/prompt
 #else
 /*
- * OBD-II ISO9141-2 Protocol
+ * for ISO9141-2 Protocol
  */
 #define K_IN    2
 #define K_OUT   3
@@ -110,6 +110,7 @@ unsigned long  parms[]={
 
 unsigned long  pid01to20_support=0;
 unsigned long  pid21to40_support=0;
+unsigned long  pid41to60_support=0;
 #define PID_SUPPORT20 0x00
 #define MIL_CODE      0x01
 #define FREEZE_DTC    0x02
@@ -130,26 +131,58 @@ unsigned long  pid21to40_support=0;
 #define THROTTLE_POS  0x11
 #define SEC_AIR_STAT  0x12
 #define OXY_SENSORS1  0x13
-#define B1S1OXY_SENS_SFT 0x14
-#define B1S2OXY_SENS_SFT 0x15
-#define B1S3OXY_SENS_SFT 0x16
-#define B1S4OXY_SENS_SFT 0x17
-#define B2S1OXY_SENS_SFT 0x18
-#define B2S2OXY_SENS_SFT 0x19
-#define B2S3OXY_SENS_SFT 0x1A
-#define B2S4OXY_SENS_SFT 0x1B
+#define B1S1_O2_V     0x14
+#define B1S2_O2_V     0x15
+#define B1S3_O2_V     0x16
+#define B1S4_O2_V     0x17
+#define B2S1_O2_V     0x18
+#define B2S2_O2_V     0x19
+#define B2S3_O2_V     0x1A
+#define B2S4_O2_V     0x1B
 #define OBD_STD       0x1C
 #define OXY_SENSORS2  0x1D
 #define AUX_INPUT     0x1E
 #define RUNTIME_START 0x1F
 #define PID_SUPPORT40 0x20
+#define DIST_MIL      0x21
+#define FUEL_RAIL_P   0x22
+#define FUEL_RAIL_DIESEL 0x23
+#define O2S1_WR1_V   0x24
+#define O2S2_WR1_V   0x25
+#define O2S3_WR1_V   0x26
+#define O2S4_WR1_V   0x27
+#define O2S5_WR1_V   0x28
+#define O2S6_WR1_V   0x29
+#define O2S7_WR1_V   0x2A
+#define O2S8_WR1_V   0x2B
+#define EGR          0x2C
+#define EGR_ERROR    0x2D
+#define EVAP_PURGE   0x2E
+#define FUEL_LEVEL   0x2F
+#define WARM_UPS     0x30
+#define DIST_CLEARED 0x31
+#define EVAP_PRESSURE 0x32
+#define BARO_PRESSURE 0x33
+#define O2S1_WR1_C    0x34
+#define O2S2_WR1_C    0x35
+#define O2S3_WR1_C    0x36
+#define O2S4_WR1_C    0x37
+#define O2S5_WR1_C    0x38
+#define O2S6_WR1_C    0x39
+#define O2S7_WR1_C    0x3A
+#define O2S8_WR1_C    0x3B
+#define CAT_TEMP_B1S1 0x3C
+#define CAT_TEMP_B2S1 0x3D
+#define CAT_TEMP_B1S2 0x3E
+#define CAT_TEMP_B1S2 0x3F
+#define PID_SUPPORT60 0x40
 
-#define LAST_PID      0x20  // same as the last one defined above
+#define LAST_PID      0x40  // same as the last one defined above
 
 /* our internal fake PIDs */
 #define NO_DISPLAY    0xF0
 #define FUEL_CONS     0xF1
-#define AVG_CONS      0xF2
+#define TRIP_CONS     0xF2
 #define TRIP_DIST     0xF3
 
 // returned length of the PID response.
@@ -160,7 +193,11 @@ prog_uchar pid_reslen[] PROGMEM=
   4,4,8,2,1,1,1,1,1,1,1,1,2,1,1,1,
   2,1,1,1,2,2,2,2,2,2,2,2,1,1,1,2,
 
-  // pid 0x20 to whatever
+  // pid 0x20 to 0x3F
+  4,2,2,2,4,4,4,4,4,4,4,4,1,1,1,1,
+  1,2,2,1,4,4,4,4,4,4,4,4,2,2,2,2,
+  
+  // pid 0x40 to whatever
   4
 };
 
@@ -169,13 +206,12 @@ prog_uchar pid_reslen[] PROGMEM=
 #define TOPRIGHT 2
 #define BOTTOMLEFT  3
 #define BOTTOMRIGHT 4
-#define NBSCREEN  3
 byte active_screen;  // we have NBSCREEN screens: 0,1,2,... selected by left button
-char blkstr[]={"        "}; // 8 spaces
+prog_char blkstr[] PROGMEM="        "; // 8 spaces, used to clear part of screen
 
-// for distance
-unsigned long delta_time;
-float trip_dist=0.0;  // trip in meters
+// for trip
+unsigned long old_time;
+float trip_dist=0.0;  // trip in metres
 float trip_fuel=0.0;  // fuel used in grams
 
 // flag used to save distance/average consumption in eeprom only if required
@@ -197,13 +233,14 @@ byte elm_read(char *str, byte size)
 {
   int b;
   byte i;
-  char str2[8];
 
   // wait for something on com port
   i=0;
   while((b=serialRead())!=PROMPT && i<size)
+  {
     if(/*b!=-1 &&*/ b>=' ')
       str[i++]=b;
+  }
 
   if(i!=size)  // we got a prompt
   {
@@ -222,10 +259,8 @@ void elm_write(char *str)
 }
 
 // check header byte
-byte elm_check_response(byte *cmd, char *str)
+byte elm_check_response(char *cmd, char *str)
 {
-  return 0;
-
   // cmd is something like "010D"
   // str should be "41 0D blabla"
   if(cmd[0]+4 != str[0]
@@ -248,11 +283,12 @@ byte elm_compact_response(byte *buf, char *str)
   i=0;
   str+=6;
   while(*str!=NUL)
-    buf[i++]=strtoul(str, &str, 16);
+    buf[i++]=strtoul(str, &str, 16);  // 16 = hex
 
   return i;
 }
 
+// write simple string to ELM and return read result
 byte elm_command(char *str, char *cmd)
 {
   sprintf_P(str, cmd);
@@ -265,31 +301,32 @@ int elm_init()
   char str[STRLEN];
 
   beginSerial(9600);
-
   serialFlush();
+
   // reset, wait for something and display it
   elm_command(str, PSTR("ATWS\r")); 
+  lcd_gotoXY(0,1);
+  lcd_print_P(blkstr);
+  lcd_print_P(blkstr);
   lcd_gotoXY(0,1);
   lcd_print(str);
   delay(1000);
 
   // turn echo off
-  sprintf_P(str, PSTR("ATE0\r"));
-  elm_write(str);
-  elm_read(str, STRLEN);  // read the ok
+  elm_command(str, PSTR("ATE0\r"));
 
   // send 01 00 to see if we are connected or not
-
-  // init connection
-  sprintf_P(str, PSTR("0100\r"));
   do
   {
-    elm_write(str);
-    elm_read(str, STRLEN);  // read the ok
-    lcd_gotoXY(0,1);
-    lcd_print(str);
-    delay(2000);
-  } while(elm_check_response((byte*)"0100", str)!=0);
+    elm_command(str, PSTR("0100\r"));
+    delay(1000);
+  } while(elm_check_response("0100", str)!=0);
+
+  // ask protocol, if it's CAN 11 bit, set header to 7e0
+  // if it's 29 bits set it to da 01 f1
+
+  // talk directly to ECU#1
+  elm_command(str, PSTR("ATSH7E0\r"));
 
   return 0;
 }
@@ -492,27 +529,33 @@ long get_pid(byte pid, char *retbuf)
   byte i;
   byte cmd[2];    // to send the command
 #ifdef ELM
-  char str[STRLEN];   // to send/receive
+  char cmd_str[6];   // to send to ELM
+  char str[STRLEN];   // to receive from ELM
 #endif
   byte buf[10];   // to receive the result
   long ret;       // return value
   byte reslen;
-  char decs[8];
+  char decs[16];
 
   // check if PID is supported
-  if( pid!=PID_SUPPORT20 && (1L<<(32-pid) & pid01to20_support) == 0 )
+  if( pid!=PID_SUPPORT20 )
   {
-    // nope
-    sprintf_P(retbuf, PSTR("0x%02X N/A"), pid);
-    return -1;
+    if( (pid<=0x20 && ( 1L<<(0x20-pid) & pid01to20_support ) == 0 )
+    ||  (pid>0x20 && pid<=0x40 && ( 1L<<(0x40-pid) & pid21to40_support ) == 0 )
+    ||  (pid>0x40 && pid<=0x60 && ( 1L<<(0x60-pid) & pid41to60_support ) == 0 ) )
+    {
+      // nope
+      sprintf_P(retbuf, PSTR("%02X N/A"), pid);
+      return -1;
+    }
   }
 
   cmd[0]=0x01;    // ISO cmd 1, get PID
   cmd[1]=pid;
 
 #ifdef ELM
-  sprintf_P(str, PSTR("%02x%02x\r"), cmd[0], cmd[1]);
-  elm_write(str);
+  sprintf_P(cmd_str, PSTR("01%02X\r"), pid);
+  elm_write(cmd_str);
 #else
   // send command, length 2
   iso_write_data(cmd, 2);
@@ -526,14 +569,13 @@ long get_pid(byte pid, char *retbuf)
 
 #ifdef ELM
   elm_read(str, STRLEN);
-  if(elm_check_response(cmd, str)!=0)
+  if(elm_check_response(cmd_str, str)!=0)
   {
     sprintf_P(retbuf, PSTR("ERROR"));
     return -255;
   }
   // first 2 bytes are 0x41 and command, skip them
-  // and remove spaces by calling a function,
-  // convert in hex and return in buf
+  // convert response in hex and return in buf
   elm_compact_response(buf, str);
 #else
   // read requested length, n bytes received in buf
@@ -567,7 +609,7 @@ long get_pid(byte pid, char *retbuf)
       sprintf_P(retbuf, PSTR("CLSEBADF"));  // Closed loop, using at least one oxygen sensor but there is a fault in the feedback system
       break;
     default:
-      sprintf_P(retbuf, PSTR("%04X"), ret);
+      sprintf_P(retbuf, PSTR("%04lX"), ret);
       break;
     }
     break;
@@ -604,7 +646,7 @@ long get_pid(byte pid, char *retbuf)
     break;
   case VEHICLE_SPEED:
     ret=buf[0];
-    if(parms[useMetricIdx]==0)  // convert to MPH for display
+    if(params.useMetric==0)  // convert to MPH for display
     {
       ret=(ret*621L)/1000L;
       sprintf_P(retbuf, PSTR("%ld mph"), ret);
@@ -665,10 +707,6 @@ long get_pid(byte pid, char *retbuf)
     }
     break;
     // for the moment, everything else, display the raw answer  
-  case PID_SUPPORT20:
-  case MIL_CODE:
-  case FREEZE_DTC:
-  case PID_SUPPORT40:
   default:
     // transform buffer to an integer value
     ret=0;
@@ -677,7 +715,7 @@ long get_pid(byte pid, char *retbuf)
       ret*=256L;
       ret+=buf[i];
     }
-    sprintf_P(retbuf, PSTR("%08X"), ret);
+    sprintf_P(retbuf, PSTR("%08lX"), ret);
     break;
   }
 
@@ -693,9 +731,8 @@ void int_to_dec_str(long value, char *decs, byte prec)
   // sprintf_P does not allow * for the width ?!?
   if(prec==1)
     sprintf_P(decs, PSTR("%02ld"), value);
-  else
-    if(prec==2)
-      sprintf_P(decs, PSTR("%03ld"), value);
+  else if(prec==2)
+    sprintf_P(decs, PSTR("%03ld"), value);
 
   pos=strlen(decs)+1;  // move the \0 too
   // a simple loop takes less space than memmove()
@@ -710,7 +747,7 @@ void int_to_dec_str(long value, char *decs, byte prec)
 void get_cons(char *retbuf)
 {
   long maf, vss, cons;
-  char decs[8];
+  char decs[16];
 
   // check if MAF is supported
   if((1L<<(32-MAF_AIR_FLOW) & pid01to20_support) == 0)
@@ -735,14 +772,14 @@ void get_cons(char *retbuf)
   // = maf*0.3355/vss L/km
   // mul by 100 to have L/100km
 
-  if(parms[useMetricIdx]==1)
+  if(params.useMetric==1)
   {
-    if(vss<10)
+    if(vss<params.perHourSpeed)
       cons=(maf*3355L)/10000L;  // do not use float so mul first then divide
     else
       cons=(maf*3355L)/(vss*100L); // 100 comes from the /10000*100
     int_to_dec_str(cons, decs, 2);
-    sprintf_P(retbuf, PSTR("%s %s"), decs, (vss==0)?"L\004":"\001\002" );
+    sprintf_P(retbuf, PSTR("%s %s"), decs, (vss<params.perHourSpeed)?"L\004":"\001\002" );
   }
   else
   {
@@ -751,79 +788,72 @@ void get_cons(char *retbuf)
     // 454 g in a pound
     // 14.7 * 6.17 * 454 * (VSS * 0.621371) / (3600 * MAF / 100)
     // multipled by 10 for single digit precision
-    if(vss<10)
+    if(vss<(params.perHourSpeed*1609L)/1000L)
       cons=maf/124L; // gallon per hour
     else if(maf!=0)
       cons=(vss*7107L)/maf;
     else
       cons=0;
     int_to_dec_str(cons, decs, 1);
-    sprintf_P(retbuf, PSTR("%s %s"), decs, (vss==0)?"GPH":"MPG" );
+    sprintf_P(retbuf, PSTR("%s %s"), decs, (vss<(params.perHourSpeed*1609L)/1000L)?"GPH":"MPG" );
   }
 }
 
-void get_avg_cons(char *retbuf)
+void get_trip_cons(char *retbuf)
 {
-  float avg_cons;  // takes same size if I use long, so keep precision
-  char decs[8];
+  float trip_cons;  // takes same size if I use long, so keep precision
+  char decs[16];
 
-  if(parms[useMetricIdx]==1)
+  if(params.useMetric==1)
   {
     // from g/m to L/100 so divide by 730 to have L and mul by 100000 for km
     // multiply by 100 to have 2 digits precision
-    avg_cons=(trip_fuel/trip_dist)*13698.63;
-    int_to_dec_str((long)avg_cons, decs, 2);
+    trip_cons=(trip_fuel/trip_dist)*13698.63;
+    int_to_dec_str((long)trip_cons, decs, 2);
     sprintf_P(retbuf, PSTR("%s \001\002"), decs);
   }
   else
   {
     // from m/g to MPG so * by 6.17*454 to have gallon and * by 0.621371 for mile
     // multiply by 10 to have a digit precision
-    avg_cons=(trip_dist/trip_fuel)*17405.7;
-    int_to_dec_str((long)avg_cons, decs, 1);
+    trip_cons=(trip_dist/trip_fuel)*17405.7;
+    int_to_dec_str((long)trip_cons, decs, 1);
     sprintf_P(retbuf, PSTR("%s MPG"), decs);
   }
 }
 
-void get_dist(char *retbuf)
+void get_trip_dist(char *retbuf)
 {
   float cdist;  // takes 20 bytes more if I use unsigned long
-  char decs[8];
+  char decs[16];
 
   // convert from meters to hundreds of meter
   cdist=trip_dist/100.0;
 
   // convert in miles if requested
-  if(parms[useMetricIdx]==0)
+  if(params.useMetric==0)
     cdist*=0.621731;
 
   int_to_dec_str((long)cdist, decs, 1);
-  sprintf_P(retbuf, PSTR("%s %s"), decs, (parms[useMetricIdx]==0)?"miles":"km" );
+  sprintf_P(retbuf, PSTR("%s %s"), decs, (params.useMetric==0)?"miles":"km" );
 }
 
-void accu_dist(void)
+void accu_trip(void)
 {
   long vss;
-  char str[16];
+  long maf;
+  char str[STRLEN];
+  unsigned long time_now, delta_time;
 
   vss=get_pid(VEHICLE_SPEED, str);
-
-  // acumulate distance for this trip
-  delta_time = millis() - delta_time;
-  // distance in meters
-  trip_dist+=((float)vss*(float)delta_time)/3600.0;
-}
-
-// will this work?
-void accu_fuel(void)
-{
-  long maf;
-  char str[16];
-
   maf=get_pid(MAF_AIR_FLOW, str);
 
-  // acumulate fuel consumption of this trip
-  delta_time = millis() - delta_time;
+  // acumulate for this trip
+  time_now = millis();
+  delta_time = time_now - old_time;
+  old_time = time_now;
+  // distance in meters
+  trip_dist+=((float)vss*(float)delta_time)/3600.0;
   // fuel used in g
   // maf gives grams of air per second
   // divide by 14.7 (a/f ratio) to have grams of fuel
@@ -834,7 +864,7 @@ void accu_fuel(void)
 
 void display(byte corner, byte pid)
 {
-  char str[16];
+  char str[STRLEN];
 
   /* check if it's a real PID or our internal one */
   switch(pid)
@@ -844,11 +874,11 @@ void display(byte corner, byte pid)
   case FUEL_CONS:
     get_cons(str);
     break;
-  case AVG_CONS:
-    get_avg_cons(str);
+  case TRIP_CONS:
+    get_trip_cons(str);
     break;
   case TRIP_DIST:
-    get_dist(str);
+    get_trip_dist(str);
     break;
   default:
     (void)get_pid(pid, str);
@@ -861,22 +891,22 @@ void display(byte corner, byte pid)
   {
   case TOPLEFT:
     lcd_gotoXY(0,0);
-    lcd_print(blkstr);
+    lcd_print_P(blkstr);
     lcd_gotoXY(0,0);
     break;
   case TOPRIGHT:
     lcd_gotoXY(8, 0);
-    lcd_print(blkstr);
-    lcd_gotoXY(16-strlen(str), 0);
+    lcd_print_P(blkstr);
+    lcd_gotoXY(16-strlen(str), 0);  // 16 = screen width
     break;
   case BOTTOMLEFT:
     lcd_gotoXY(0,1);
-    lcd_print(blkstr);
+    lcd_print_P(blkstr);
     lcd_gotoXY(0,1);
     break;
   case BOTTOMRIGHT:
     lcd_gotoXY(8, 1);
-    lcd_print(blkstr);
+    lcd_print_P(blkstr);
     lcd_gotoXY(16-strlen(str), 1);
     break;
   }
@@ -887,20 +917,22 @@ void display(byte corner, byte pid)
 void check_supported_pid(void)
 {
   unsigned long n;
-  char str[16];
+  char str[STRLEN];
 
-  n=get_pid(PID_SUPPORT20, str);
-  pid01to20_support=n; 
-
-  // do we support pid 21 to 40?
-  if( (1L<<(32-PID_SUPPORT40) & pid01to20_support) == 0)
-    return;  //nope
-
-  n=get_pid(PID_SUPPORT40, str);
-  pid21to40_support=n;
+  pid01to20_support=get_pid(PID_SUPPORT20, str);
+  
+  pid21to40_support=get_pid(PID_SUPPORT40, str);
+  // if not supported, get_pid return -1
+  if(pid21to40_support==-1)
+    pid21to40_support=0;
+    
+  pid41to60_support=get_pid(PID_SUPPORT60, str);
+  if(pid41to60_support==-1)
+    pid41to60_support=0;
 }
 
 // might be incomplete
+
 void check_mil_code(void)
 {
   unsigned long n;
@@ -909,7 +941,7 @@ void check_mil_code(void)
   byte cmd[2];
   byte buf[6];
   byte i, j, k;
-
+  
   n=get_pid(MIL_CODE, str);
 
   /* A request for this PID returns 4 bytes of data. The first byte contains
@@ -925,9 +957,8 @@ void check_mil_code(void)
   {
     // we have MIL on
     nb=(n>>24) & 0x7F;
-    lcd_gotoXY(0,0);
-    sprintf_P(str, PSTR("CHECK ENGINE ON"));
-    lcd_print(str);
+    lcd_cls();
+    lcd_print_P(PSTR("CHECK ENGINE ON"));
     lcd_gotoXY(0,1);
     sprintf_P(str, PSTR("%d CODE(S) IN ECU"), nb);
     lcd_print(str);
@@ -936,7 +967,7 @@ void check_mil_code(void)
     // retrieve code
     cmd[0]=0x03;
 #ifdef ELM
-    sprintf_P(str, PSTR("%02x\r"), cmd[0]);
+    sprintf_P(str, PSTR("03\r"));
     elm_write(str);
 #else
     iso_write_data(cmd, 1);
@@ -953,6 +984,13 @@ void check_mil_code(void)
 #else
       iso_read_data(buf, 6);
 #endif
+
+// must rewrite so just display and quit for the moment
+lcd_gotoXY(0,1);
+lcd_print(str);
+delay(5000);
+return;
+
       k=0;  // to build the string
       for(j=0;j<3;j++)  // the 3 codes
       {
@@ -987,42 +1025,71 @@ void check_mil_code(void)
 void config_menu(void)
 {
   char str[STRLEN];
-  byte i;
-  long p;
+  byte p;
   
   // go through all the configurable items
   
   // first one is contrast
   lcd_cls();
-  lcd_print(parmLabels[contrastIdx]);
-  p=(parms[contrastIdx]*9)/255;
+  lcd_print_P(PSTR("LCD Contrast"));
+  // set value with left/right and set with middle
+  do
+  {
+    if(!(buttonState&lbuttonBit) && params.contrast!=0)
+      params.contrast-=20;
+    else if(!(buttonState&rbuttonBit) && params.contrast!=100)
+      params.contrast+=20;
+      
+    lcd_gotoXY(5,1);
+    sprintf_P(str, PSTR("- %d + "), params.contrast);
+    lcd_print(str);
+    analogWrite(ContrastPin, params.contrast);  // change dynamicaly
+    buttonState=buttonsUp;
+    delay(200);
+  } while(buttonState&mbuttonBit);
+
+  // then the use of metric
+  lcd_cls();
+  lcd_print_P(PSTR("Use metric unit"));
   // set value with left/right and set with middle
   do
   {
     if(!(buttonState&lbuttonBit))
-    {
-      if(--p<0)
-        p=0;
-    }
+      params.useMetric=0;
     else if(!(buttonState&rbuttonBit))
-    {
-      if(++p>9)
-        p=9;
-    }
+      params.useMetric=1;
 
-    lcd_gotoXY(6,1);
-    sprintf_P(str, PSTR("- %d +"), p);
-    lcd_print(str);
-    analogWrite(ContrastPin,(p*255)/9);  // change dynamicaly
+    lcd_gotoXY(4,1);
+    if(params.useMetric==0)
+      lcd_print_P(PSTR("(NO) YES"));
+    else
+      lcd_print_P(PSTR("NO (YES)"));
     buttonState=buttonsUp;
-    delay(100);
+    delay(200);
   } while(buttonState&mbuttonBit);
-  parms[contrastIdx]=(p*255)/9;
 
-  // then the use of metric
+  // speed from which we toggle to fuel/hour
   lcd_cls();
-  lcd_print(parmLabels[useMetricIdx]);
-  p=parms[useMetricIdx];
+  lcd_print_P(PSTR("Fuel/hour speed"));
+  // set value with left/right and set with middle
+  do
+  {
+    if(!(buttonState&lbuttonBit) && params.perHourSpeed!=0)
+      params.perHourSpeed--;
+    else if(!(buttonState&rbuttonBit) && params.perHourSpeed!=255)
+      params.perHourSpeed++;
+      
+    lcd_gotoXY(5,1);
+    sprintf_P(str, PSTR("- %d + "), params.perHourSpeed);
+    lcd_print(str);
+    buttonState=buttonsUp;
+    delay(200);
+  } while(buttonState&mbuttonBit);
+
+  // to reset trip
+  lcd_cls();
+  lcd_print_P(PSTR("Reset trip data"));
+  p=0;
   // set value with left/right and set with middle
   do
   {
@@ -1033,14 +1100,17 @@ void config_menu(void)
 
     lcd_gotoXY(4,1);
     if(p==0)
-      sprintf_P(str, PSTR("(NO) YES"));
+      lcd_print_P(PSTR("(NO) YES"));
     else
-      sprintf_P(str, PSTR("NO (YES)"));
-    lcd_print(str);
+      lcd_print_P(PSTR("NO (YES)"));
     buttonState=buttonsUp;
-    delay(100);
+    delay(200);
   } while(buttonState&mbuttonBit);
-  parms[useMetricIdx]=p;
+  if(p==1)
+  {
+    params.metres=0;
+    params.grams=0;
+  }
 
   // save params in EEPROM
   save();
@@ -1048,7 +1118,8 @@ void config_menu(void)
 
 void test_buttons(void)
 {
-  // need a button command to reset distance trip
+  // need a button command to reset distance trip?
+  // or do it in menu
   
   // left is cycle through active screen
   if(!(buttonState&lbuttonBit))
@@ -1075,7 +1146,7 @@ void test_buttons(void)
 void setup()                    // run once, when the sketch starts
 {
   byte r;
-  char str[16];
+  char str[STRLEN];
 
 #ifndef ELM
   // init pinouts
@@ -1116,32 +1187,28 @@ void setup()                    // run once, when the sketch starts
   pinMode(DB7Pin,OUTPUT);       
   delay(500);      
 
-  analogWrite(ContrastPin,parms[contrastIdx]);
+  analogWrite(ContrastPin, params.contrast);
   lcd_init();
 
-  sprintf_P(str, PSTR("Initialization"));
-  lcd_print(str);
+  lcd_print_P(PSTR("Initialization"));
 
   do // init loop
   {
 #ifdef ELM
-    sprintf_P(str, PSTR("ELM Init"));
     lcd_gotoXY(0,1);
-    lcd_print(str);
+    lcd_print_P(PSTR("ELM Init"));
     r=elm_init();
 #else
-    sprintf_P(str, PSTR("ISO9141 Init"));
     lcd_gotoXY(0,1);
-    lcd_print(str);
+    lcd_print_P(PSTR("ISO9141 Init"));
     r=iso_init();
 #endif   
-    if(r==0)
-      sprintf_P(str, PSTR("Successful!"));
-    else
-      sprintf_P(str, PSTR("Failed! "));
-
     lcd_gotoXY(0,1);
-    lcd_print(str);
+    if(r==0)
+      lcd_print_P(PSTR("Successful!"));
+    else
+      lcd_print_P(PSTR("Failed! "));
+
     delay(1000);
   } 
   while(r!=0); // end init loop
@@ -1153,13 +1220,12 @@ void setup()                    // run once, when the sketch starts
   //check_mil_code();
 
   active_screen=0;
-
-  delta_time=millis();
-
   engine_started=0;
   param_saved=0;
 
   lcd_cls();
+  
+  old_time=millis();  // epoch
 }
 
 /***********\
@@ -1168,12 +1234,12 @@ void setup()                    // run once, when the sketch starts
 
 void loop()                     // run over and over again
 {
-  long rpm;
-  char str[16];
+  byte has_rpm;
+  char str[STRLEN];
 
   // test if engine has started
-  rpm=get_pid(ENGINE_RPM, str);
-  if(engine_started==0 && rpm!=0)
+  has_rpm=get_pid(ENGINE_RPM, str)?1:0;
+  if(engine_started==0 && has_rpm!=0)
   {
     engine_started=1;
     param_saved=0;
@@ -1181,27 +1247,24 @@ void loop()                     // run over and over again
 
   // if engine was started but RPM is now 0
   // save param only once, by flopping param_saved
-  if(param_saved==0 && engine_started!=0 && rpm==0)
+  if(param_saved==0 && engine_started!=0 && has_rpm==0)
   {
     save();
     param_saved=1;
     engine_started=0;
     lcd_gotoXY(0,0);
-    lcd_print("TRIP SAVED!");
+    lcd_print_P(PSTR("TRIP SAVED!"));
     delay(5000);
   }
-#if 0  
-  if(rpm!=0)
-  {
-    accu_dist();    // accumulate distance in metres
-    accu_fuel();    // accumulate fuel used in grams
-  }
-#endif
+
+  if(has_rpm!=0)
+    accu_trip();
+
   // display on LCD
-  display(TOPLEFT, parms[screen0Idx+active_screen]>>24);
-  display(TOPRIGHT, parms[screen0Idx+active_screen]>>16 & 0xff);
-  display(BOTTOMLEFT, parms[screen0Idx+active_screen]>>8 & 0xff);
-  display(BOTTOMRIGHT, parms[screen0Idx+active_screen] & 0xff);
+  display(TOPLEFT,     params.screen[active_screen]>>24);
+  display(TOPRIGHT,    params.screen[active_screen]>>16 & 0xff);
+  display(BOTTOMLEFT,  params.screen[active_screen]>>8 & 0xff);
+  display(BOTTOMRIGHT, params.screen[active_screen] & 0xff);
 
   // test buttons
   test_buttons();
@@ -1214,27 +1277,52 @@ void loop()                     // run over and over again
 // we have 512 bytes of EEPROM
 void save(void)
 {
-  // signature at address 0x00
-  eeprom_write_byte((uint8_t*)0, obduinosig);
-
-  parms[MetersIdx]=(long)trip_dist;
-  parms[GramsIdx]=(long)trip_fuel;
-  // parameters are all long, align and start at address 0x04
-  eeprom_write_block(parms, (void*)0x04, sizeof(parms));
-}
+  uint16_t crc;
+  byte *p;
+  
+  params.metres=(long)trip_dist;
+  params.grams=(long)trip_fuel;
+  // start at address 0
+  eeprom_write_block((const void*)&params, (void*)0, sizeof(params_t));
+  
+  // CRC at the end
+  crc=0;
+  p=(byte*)&params;
+  for(byte i=0; i<sizeof(params_t); i++)
+    crc+=p[i];
+    
+  eeprom_write_word((uint16_t*)sizeof(params_t), crc);
+ }
 
 //return 1 if loaded ok
 byte load(void)
 {
-  byte b = eeprom_read_byte((const uint8_t*)0);
-  if(b==obduinosig)
+  params_t  params_temp;
+  uint16_t crc, crc_calc;
+  byte *p;
+  
+  // read params in a temp struct
+  eeprom_read_block((void*)&params_temp, (void*)0, sizeof(params_t));
+
+  // read crc
+  crc=eeprom_read_word((const uint16_t*)sizeof(params_t));
+
+  // calculate crc from read stuff
+  crc_calc=0;
+  p=(byte*)&params_temp;
+  for(byte i=0; i<sizeof(params_t); i++)
+    crc_calc+=p[i];
+
+  // compare CRC
+  if(crc!=crc_calc)
+    return 0;
+  else
   {
-    eeprom_read_block(parms, (void*)0x04, sizeof(parms));
-    trip_dist=(long)parms[MetersIdx];
-    trip_fuel=(long)parms[GramsIdx];
+    memcpy((void*)&params, (const void*)&params_temp, sizeof(params_t));
+    trip_dist=(long)params.metres;
+    trip_fuel=(long)params.grams;
     return 1;
   }
-  return 0;
 }
 
 // this function will return the number of bytes currently free in RAM
@@ -1251,8 +1339,8 @@ int memoryTest()
 }
 
 /***************\
- * LCD functions *
- \***************/
+* LCD functions *
+\***************/
 //x=0..16, y= 0..1
 void lcd_gotoXY(byte x, byte y)
 {
@@ -1260,6 +1348,14 @@ void lcd_gotoXY(byte x, byte y)
   if(y!=0)    // save 2 bytes compared to "if(y==1)"
     dr+=0x40;
   lcd_CommandWrite(dr);
+}
+
+void lcd_print_P(char *string)
+{
+  char str[STRLEN];
+
+  sprintf_P(str, string);
+  lcd_print(str);
 }
 
 void lcd_print(char *string)
