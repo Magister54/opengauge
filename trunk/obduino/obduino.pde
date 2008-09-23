@@ -65,29 +65,36 @@ byte brightnessIdx=1;
 #define buttonsUp   lbuttonBit + mbuttonBit + rbuttonBit  // start with the buttons in the right state
 byte buttonState = buttonsUp;
 
+// for the 4 display corners
+#define TOPLEFT  0
+#define TOPRIGHT 1
+#define BOTTOMLEFT  2
+#define BOTTOMRIGHT 3
+#define NBCORNER 4   // with a 16x4 display you can use 8 'corners'
+#define NBSCREEN  3  // 12 PIDs should be enough for everyone
+byte active_screen;  // 0,1,2,... selected by left button
+prog_char blkstr[] PROGMEM="        "; // 8 spaces, used to clear part of screen
+
 // parameters
-#define NBSCREEN  3
+#define BUTTON_DELAY  250
+// each screen contains n corners
+typedef struct
+{
+  byte corner[NBCORNER];
+} screen_t;
+
 typedef struct
 {
   byte contrast;  // we only use 0-100 value in step 20
   byte useMetric;
   byte perHourSpeed;
-  long metres;
-  long grams;
-  long screen[NBSCREEN];
+  float trip_dist;  // trip distance in km
+  float trip_fuel;  // trip fuel used in L
+  screen_t screen[NBSCREEN];
 } params_t;
 
-// default values
-params_t params=
-{
-  20,
-  1,
-  10,
-  0,
-  0,
-  0xF10D0C04, /*fuel,speed,rpm,load*/
-  0xf2f3050f,
-  0x111f200e};  //default parameters values
+// global
+params_t params;
 
 #define STRLEN  40
 
@@ -174,10 +181,24 @@ unsigned long  pid41to60_support=0;
 #define CAT_TEMP_B1S1 0x3C
 #define CAT_TEMP_B2S1 0x3D
 #define CAT_TEMP_B1S2 0x3E
-#define CAT_TEMP_B1S2 0x3F
+#define CAT_TEMP_B2S2 0x3F
 #define PID_SUPPORT60 0x40
+#define MONITOR_STAT  0x41
+#define CTRL_MOD_V    0x42
+#define ABS_LOAD_VAL  0x43
+#define CMD_EQUIV_R   0x44
+#define REL_THR_POS   0x45
+#define AMBIENT_TEMP  0x46
+#define ABS_THR_POS_B 0x47
+#define ABS_THR_POS_C 0x48
+#define ACCEL_PEDAL_D 0x49
+#define ACCEL_PEDAL_E 0x4A
+#define ACCEL_PEDAL_F 0x4B
+#define CMD_THR_ACTU  0x4C
+#define TIME_MIL_ON   0x4D
+#define TIME_MIL_CLR  0x4E
 
-#define LAST_PID      0x40  // same as the last one defined above
+#define LAST_PID      0x4E  // same as the last one defined above
 
 /* our internal fake PIDs */
 #define NO_DISPLAY    0xF0
@@ -197,22 +218,12 @@ prog_uchar pid_reslen[] PROGMEM=
   4,2,2,2,4,4,4,4,4,4,4,4,1,1,1,1,
   1,2,2,1,4,4,4,4,4,4,4,4,2,2,2,2,
   
-  // pid 0x40 to whatever
-  4
+  // pid 0x40 to 0x4E
+  4,8,2,2,2,1,1,1,1,1,1,1,1,2,2
 };
 
-// for the 4 display corners
-#define TOPLEFT  1
-#define TOPRIGHT 2
-#define BOTTOMLEFT  3
-#define BOTTOMRIGHT 4
-byte active_screen;  // we have NBSCREEN screens: 0,1,2,... selected by left button
-prog_char blkstr[] PROGMEM="        "; // 8 spaces, used to clear part of screen
-
-// for trip
+// for trip calculation
 unsigned long old_time;
-float trip_dist=0.0;  // trip in metres
-float trip_fuel=0.0;  // fuel used in grams
 
 // flag used to save distance/average consumption in eeprom only if required
 byte engine_started;
@@ -289,6 +300,7 @@ byte elm_compact_response(byte *buf, char *str)
 }
 
 // write simple string to ELM and return read result
+// cmd is a PSTR !!
 byte elm_command(char *str, char *cmd)
 {
   sprintf_P(str, cmd);
@@ -309,7 +321,10 @@ int elm_init()
   lcd_print_P(blkstr);
   lcd_print_P(blkstr);
   lcd_gotoXY(0,1);
-  lcd_print(str);
+  if(strncmp(str,"ATWS",4)==0)
+    lcd_print(str+4);
+  else
+    lcd_print(str);
   delay(1000);
 
   // turn echo off
@@ -320,10 +335,11 @@ int elm_init()
   {
     elm_command(str, PSTR("0100\r"));
     delay(1000);
-  } while(elm_check_response("0100", str)!=0);
+} while(elm_check_response("0100", str)!=0);
 
   // ask protocol, if it's CAN 11 bit, set header to 7e0
   // if it's 29 bits set it to da 01 f1
+  // if it's ISO (or others?) set to 10?
 
   // talk directly to ECU#1
   elm_command(str, PSTR("ATSH7E0\r"));
@@ -542,7 +558,8 @@ long get_pid(byte pid, char *retbuf)
   {
     if( (pid<=0x20 && ( 1L<<(0x20-pid) & pid01to20_support ) == 0 )
     ||  (pid>0x20 && pid<=0x40 && ( 1L<<(0x40-pid) & pid21to40_support ) == 0 )
-    ||  (pid>0x40 && pid<=0x60 && ( 1L<<(0x60-pid) & pid41to60_support ) == 0 ) )
+    ||  (pid>0x40 && pid<=0x60 && ( 1L<<(0x60-pid) & pid41to60_support ) == 0 )
+    ||  (pid>LAST_PID) )
     {
       // nope
       sprintf_P(retbuf, PSTR("%02X N/A"), pid);
@@ -621,12 +638,30 @@ long get_pid(byte pid, char *retbuf)
     break;
   case LOAD_VALUE:
   case THROTTLE_POS:
+  case REL_THR_POS:
+  case EGR:
+  case EGR_ERROR:
+  case FUEL_LEVEL:
+  case ABS_THR_POS_B:
+  case ABS_THR_POS_C:
+  case ACCEL_PEDAL_D:
+  case ACCEL_PEDAL_E:
+  case ACCEL_PEDAL_F:
+  case CMD_THR_ACTU:
     ret=(buf[0]*100)/255;
     sprintf_P(retbuf, PSTR("%ld %%"), ret);
     break;
   case COOLANT_TEMP:
   case INT_AIR_TEMP:
+  case AMBIENT_TEMP:
     ret=buf[0]-40;
+    sprintf_P(retbuf, PSTR("%ld C"), ret);
+    break;
+  case CAT_TEMP_B1S1:
+  case CAT_TEMP_B2S1:
+  case CAT_TEMP_B1S2:
+  case CAT_TEMP_B2S2:
+    ret=(buf[0]*256+buf[1])/10 - 40;
     sprintf_P(retbuf, PSTR("%ld C"), ret);
     break;
   case STF_BANK1:
@@ -639,8 +674,9 @@ long get_pid(byte pid, char *retbuf)
     break;
   case FUEL_PRESSURE:
   case MAN_PRESSURE:
+  case BARO_PRESSURE:
     ret=buf[0];
-    if(pid=FUEL_PRESSURE)
+    if(pid==FUEL_PRESSURE)
       ret*=3;
     sprintf_P(retbuf, PSTR("%ld kPa"), ret);
     break;
@@ -758,7 +794,7 @@ void get_cons(char *retbuf)
     return;
   }
   else // request it
-  maf=get_pid(MAF_AIR_FLOW, retbuf);
+    maf=get_pid(MAF_AIR_FLOW, retbuf);
 
   // retbuf will be scrapped and re-used to display fuel consumption
   vss=get_pid(VEHICLE_SPEED, retbuf);
@@ -806,17 +842,23 @@ void get_trip_cons(char *retbuf)
 
   if(params.useMetric==1)
   {
-    // from g/m to L/100 so divide by 730 to have L and mul by 100000 for km
+    // from L/km to L/100 so mul by 100 for km
     // multiply by 100 to have 2 digits precision
-    trip_cons=(trip_fuel/trip_dist)*13698.63;
+    if(params.trip_dist<0.001)
+      trip_cons=0.0;
+    else
+      trip_cons=(params.trip_fuel/params.trip_dist)*10000.0;
     int_to_dec_str((long)trip_cons, decs, 2);
     sprintf_P(retbuf, PSTR("%s \001\002"), decs);
   }
   else
   {
-    // from m/g to MPG so * by 6.17*454 to have gallon and * by 0.621371 for mile
+    // from km/L to MPG so * by 3.78 to have gallon and * by 0.621371 for mile
     // multiply by 10 to have a digit precision
-    trip_cons=(trip_dist/trip_fuel)*17405.7;
+    if(params.trip_fuel<0.001)
+      trip_cons=0.0;
+    else
+      trip_cons=(params.trip_dist/params.trip_fuel)*23.49;
     int_to_dec_str((long)trip_cons, decs, 1);
     sprintf_P(retbuf, PSTR("%s MPG"), decs);
   }
@@ -828,14 +870,14 @@ void get_trip_dist(char *retbuf)
   char decs[16];
 
   // convert from meters to hundreds of meter
-  cdist=trip_dist/100.0;
+  cdist=params.trip_dist/100.0;
 
   // convert in miles if requested
   if(params.useMetric==0)
     cdist*=0.621731;
 
   int_to_dec_str((long)cdist, decs, 1);
-  sprintf_P(retbuf, PSTR("%s %s"), decs, (params.useMetric==0)?"miles":"km" );
+  sprintf_P(retbuf, PSTR("%s %s"), decs, (params.useMetric==0)?"mi":"\003" );
 }
 
 void accu_trip(void)
@@ -852,14 +894,15 @@ void accu_trip(void)
   time_now = millis();
   delta_time = time_now - old_time;
   old_time = time_now;
-  // distance in meters
-  trip_dist+=((float)vss*(float)delta_time)/3600.0;
-  // fuel used in g
+  // distance in km
+  params.trip_dist+=((float)vss*(float)delta_time)/36.0;
+  // fuel used in L
   // maf gives grams of air per second
   // divide by 14.7 (a/f ratio) to have grams of fuel
   // divide by 100 because our MAF return is not divided!
   // divide by 1000 because delta_time is in ms
-  trip_fuel+=((float)maf*(float)delta_time)/1470000.0;
+  // div by 730 to have L
+  params.trip_fuel+=((float)maf*(float)delta_time)/1073100000.0;
 }
 
 void display(byte corner, byte pid)
@@ -1045,7 +1088,7 @@ void config_menu(void)
     lcd_print(str);
     analogWrite(ContrastPin, params.contrast);  // change dynamicaly
     buttonState=buttonsUp;
-    delay(200);
+    delay(BUTTON_DELAY);
   } while(buttonState&mbuttonBit);
 
   // then the use of metric
@@ -1065,7 +1108,7 @@ void config_menu(void)
     else
       lcd_print_P(PSTR("NO (YES)"));
     buttonState=buttonsUp;
-    delay(200);
+    delay(BUTTON_DELAY);
   } while(buttonState&mbuttonBit);
 
   // speed from which we toggle to fuel/hour
@@ -1083,7 +1126,7 @@ void config_menu(void)
     sprintf_P(str, PSTR("- %d + "), params.perHourSpeed);
     lcd_print(str);
     buttonState=buttonsUp;
-    delay(200);
+    delay(BUTTON_DELAY);
   } while(buttonState&mbuttonBit);
 
   // to reset trip
@@ -1104,12 +1147,41 @@ void config_menu(void)
     else
       lcd_print_P(PSTR("NO (YES)"));
     buttonState=buttonsUp;
-    delay(200);
+    delay(BUTTON_DELAY);
   } while(buttonState&mbuttonBit);
   if(p==1)
   {
-    params.metres=0;
-    params.grams=0;
+    params.trip_dist=0.0;
+    params.trip_fuel=0.0;
+  }
+
+  // pid for the 4 corners, and for the n screen
+  for(byte cur_screen=0; cur_screen<NBSCREEN; cur_screen++)
+  {
+    for(byte cur_corner=0; cur_corner<NBCORNER; cur_corner++)
+    {
+      lcd_cls();
+      sprintf_P(str, PSTR("Scr %d Corner %d"), cur_screen+1, cur_corner+1);
+      lcd_print(str);
+      p=params.screen[cur_screen].corner[cur_corner];
+
+      // set value with left/right and set with middle
+      do
+      {
+        if(!(buttonState&lbuttonBit))
+          p--;
+        else if(!(buttonState&rbuttonBit))
+          p++;
+      
+        lcd_gotoXY(5,1);
+        sprintf_P(str, PSTR("- %02X +"), p);
+        lcd_print(str);
+        buttonState=buttonsUp;
+        delay(BUTTON_DELAY);
+      } while(buttonState&mbuttonBit);
+      // PID is choosen, set it
+      params.screen[cur_screen].corner[cur_corner]=p;
+    }
   }
 
   // save params in EEPROM
@@ -1118,9 +1190,6 @@ void config_menu(void)
 
 void test_buttons(void)
 {
-  // need a button command to reset distance trip?
-  // or do it in menu
-  
   // left is cycle through active screen
   if(!(buttonState&lbuttonBit))
   {
@@ -1168,15 +1237,28 @@ void setup()                    // run once, when the sketch starts
   PCMSK1 |= (1 << PCINT11) | (1 << PCINT12) | (1 << PCINT13);
   PCICR |= (1 << PCIE1);       
 
+  // default parameters
+  params.contrast=20;
+  params.useMetric=1;
+  params.perHourSpeed=10;
+  params.trip_dist=0.0;
+  params.trip_fuel=0.0;
+  params.screen[0].corner[TOPLEFT]=0xf1;
+  params.screen[0].corner[TOPRIGHT]=0x0d;
+  params.screen[0].corner[BOTTOMLEFT]=0x0c;
+  params.screen[0].corner[BOTTOMRIGHT]=0x04;
+  params.screen[1].corner[TOPLEFT]=0xf2;
+  params.screen[1].corner[TOPRIGHT]=0xf3;
+  params.screen[1].corner[BOTTOMLEFT]=0x0f;
+  params.screen[1].corner[BOTTOMRIGHT]=0x46;
+  params.screen[2].corner[TOPLEFT]=0x1f;
+  params.screen[2].corner[TOPRIGHT]=0x31;
+  params.screen[2].corner[BOTTOMLEFT]=0x2f;
+  params.screen[2].corner[BOTTOMRIGHT]=0x41;
+
   // load parameters
   load();
   
-  // in case trip is 0, put a small value to not have a div by zero
-  if(trip_dist<0.01)
-    trip_dist=0.01;
-  if(trip_fuel<0.01)
-    trip_fuel=0.01;
-
   // LCD pin init
   analogWrite(BrightnessPin,255-brightness[brightnessIdx]);      
   pinMode(EnablePin,OUTPUT);       
@@ -1190,7 +1272,7 @@ void setup()                    // run once, when the sketch starts
   analogWrite(ContrastPin, params.contrast);
   lcd_init();
 
-  lcd_print_P(PSTR("Initialization"));
+  lcd_print_P(PSTR(" ** OBDuino **"));
 
   do // init loop
   {
@@ -1207,7 +1289,7 @@ void setup()                    // run once, when the sketch starts
     if(r==0)
       lcd_print_P(PSTR("Successful!"));
     else
-      lcd_print_P(PSTR("Failed! "));
+      lcd_print_P(PSTR("Failed!"));
 
     delay(1000);
   } 
@@ -1238,7 +1320,7 @@ void loop()                     // run over and over again
   char str[STRLEN];
 
   // test if engine has started
-  has_rpm=get_pid(ENGINE_RPM, str)?1:0;
+  has_rpm=(get_pid(ENGINE_RPM, str)>0)?1:0;
   if(engine_started==0 && has_rpm!=0)
   {
     engine_started=1;
@@ -1252,7 +1334,7 @@ void loop()                     // run over and over again
     save();
     param_saved=1;
     engine_started=0;
-    lcd_gotoXY(0,0);
+    lcd_cls();
     lcd_print_P(PSTR("TRIP SAVED!"));
     delay(5000);
   }
@@ -1261,10 +1343,8 @@ void loop()                     // run over and over again
     accu_trip();
 
   // display on LCD
-  display(TOPLEFT,     params.screen[active_screen]>>24);
-  display(TOPRIGHT,    params.screen[active_screen]>>16 & 0xff);
-  display(BOTTOMLEFT,  params.screen[active_screen]>>8 & 0xff);
-  display(BOTTOMRIGHT, params.screen[active_screen] & 0xff);
+  for(byte cur_corner=0; cur_corner<NBCORNER; cur_corner++)
+    display(cur_corner, params.screen[active_screen].corner[cur_corner]);
 
   // test buttons
   test_buttons();
@@ -1280,8 +1360,6 @@ void save(void)
   uint16_t crc;
   byte *p;
   
-  params.metres=(long)trip_dist;
-  params.grams=(long)trip_fuel;
   // start at address 0
   eeprom_write_block((const void*)&params, (void*)0, sizeof(params_t));
   
@@ -1319,8 +1397,6 @@ byte load(void)
   else
   {
     memcpy((void*)&params, (const void*)&params_temp, sizeof(params_t));
-    trip_dist=(long)params.metres;
-    trip_fuel=(long)params.grams;
     return 1;
   }
 }
