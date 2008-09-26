@@ -1,31 +1,25 @@
-/*
- * TODO
- *
- * convert temp from C to F
- * still convert somekm to mi or L to gal etc
- *
- */
+//#define DEBUG
 
 // comment to use MC33290 ISO K line chip
 // uncomment to use ELM327
 #define ELM
 
 /* OBDuino
-
+ 
  Copyright (C) 2008
-
+ 
  Main coding/ISO/ELM: Frédéric (aka Magister on ecomodder.com)
  LCD part: Dave (aka dcb on ecomodder.com), optimized by Frédéric
-
+ 
  This program is free software; you can redistribute it and/or modify it under
  the terms of the GNU General Public License as published by the Free Software
  Foundation; either version 2 of the License, or (at your option) any later
  version.
-
+ 
  This program is distributed in the hope that it will be useful, but WITHOUT
  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-
+ 
  You should have received a copy of the GNU General Public License along with
  this program; if not, write to the Free Software Foundation, Inc.,
  59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
@@ -57,7 +51,7 @@ void lcd_CommandWrite(byte value);
 void lcd_DataWrite(byte value);
 void lcd_pushNibble(byte value);
 
-#define BUTTON_DELAY  500
+#define BUTTON_DELAY  250
 // use analog pins as digital pins
 #define lbuttonPin 17 // Left Button, on analog 3
 #define mbuttonPin 18 // Middle Button, on analog 4
@@ -93,15 +87,17 @@ typedef struct
 
 typedef struct
 {
-  byte contrast;  // we only use 0-100 value in step 20
-  byte useMetric;
-  byte perHourSpeed;
-  float trip_dist;  // trip distance in m
-  float trip_fuel;  // trip fuel used in mL
+  byte contrast;     // we only use 0-100 value in step 20
+  byte useMetric;    // 0=rods and hogshead, 1=SI
+  byte perHourSpeed; // speed from which we toggle to fuel/hour
+  byte vol_eff;      // volumetric efficiency measured in percent
+  byte eng_dis;      // Engine Displacement in dL
+  float trip_dist;   // trip distance in m
+  float trip_fuel;   // trip fuel used in mL
   screen_t screen[NBSCREEN];
 } params_t;
 
-// global
+// global parameters
 params_t params;
 
 #define STRLEN  40
@@ -123,9 +119,9 @@ params_t params;
 
 /* PID stuff */
 
-unsigned long  pid01to20_support=0;
-unsigned long  pid21to40_support=0;
-unsigned long  pid41to60_support=0;
+unsigned long  pid01to20_support;
+unsigned long  pid21to40_support;
+unsigned long  pid41to60_support;
 #define PID_SUPPORT20 0x00
 #define MIL_CODE      0x01
 #define FREEZE_DTC    0x02
@@ -159,7 +155,7 @@ unsigned long  pid41to60_support=0;
 #define AUX_INPUT     0x1E
 #define RUNTIME_START 0x1F
 #define PID_SUPPORT40 0x20
-#define DIST_MIL      0x21
+#define DIST_MIL_ON   0x21
 #define FUEL_RAIL_P   0x22
 #define FUEL_RAIL_DIESEL 0x23
 #define O2S1_WR1_V   0x24
@@ -175,7 +171,7 @@ unsigned long  pid41to60_support=0;
 #define EVAP_PURGE   0x2E
 #define FUEL_LEVEL   0x2F
 #define WARM_UPS     0x30
-#define DIST_CLEARED 0x31
+#define DIST_MIL_CLR 0x31
 #define EVAP_PRESSURE 0x32
 #define BARO_PRESSURE 0x33
 #define O2S1_WR1_C    0x34
@@ -213,6 +209,7 @@ unsigned long  pid41to60_support=0;
 #define FUEL_CONS     0xF1
 #define TRIP_CONS     0xF2
 #define TRIP_DIST     0xF3
+#define FREE_MEM      0xFF
 
 // returned length of the PID response.
 // constants so put in flash
@@ -225,13 +222,16 @@ prog_uchar pid_reslen[] PROGMEM=
   // pid 0x20 to 0x3F
   4,2,2,2,4,4,4,4,4,4,4,4,1,1,1,1,
   1,2,2,1,4,4,4,4,4,4,4,4,2,2,2,2,
-
+  
   // pid 0x40 to 0x4E
   4,8,2,2,2,1,1,1,1,1,1,1,1,2,2
 };
 
-// for trip calculation
+// some globals, for trip calculation and others
+byte has_rpm;
 unsigned long old_time;
+long vss;  // speed
+long maf;  // MAF
 
 // flag used to save distance/average consumption in eeprom only if required
 byte engine_started;
@@ -241,7 +241,6 @@ byte param_saved;
 ISR(PCINT1_vect)
 {
   byte p = PINC;  // bypassing digitalRead for interrupt performance
-
   buttonState &= p;
 }
 
@@ -323,6 +322,7 @@ int elm_init()
   beginSerial(9600);
   serialFlush();
 
+#ifndef DEBUG
   // reset, wait for something and display it
   elm_command(str, PSTR("ATWS\r"));
   lcd_gotoXY(0,1);
@@ -346,25 +346,18 @@ int elm_init()
   elm_command(str, PSTR("ATDPN\r"));
   // str[0] should be 'A' for automatic
   // talk directly to ECU#1
-  switch(str[1])
-  {
-  case '1':  // PWM
+  if(str[1]=='1')  // PWM
     elm_command(str, PSTR("ATSHE410F1\r"));
-    break;
-  case '2':  // VPW
+  else if(str[1]=='2')  // VPW
     elm_command(str, PSTR("ATSHA810F1\r"));
-    break;
-  case '3':  // ISO 9141
+  else if(str[1]=='3')  // ISO 9141
     elm_command(str, PSTR("ATSH6810F1\r"));
-    break;
-  case '6':  // CAN 11 bits
+  else if(str[1]=='6')  // CAN 11 bits
     elm_command(str, PSTR("ATSH7E0\r"));
-    break;
-  case '7':  // CAN 29 bits
+  else if(str[1]=='7')  // CAN 29 bits
     elm_command(str, PSTR("ATSHDA01F1\r"));
-    break;
-  }
 
+#endif
   return 0;
 }
 #else
@@ -594,12 +587,14 @@ long get_pid(byte pid, char *retbuf)
 #ifdef ELM
   sprintf_P(cmd_str, PSTR("01%02X\r"), pid);
   elm_write(cmd_str);
+#ifndef DEBUG
   elm_read(str, STRLEN);
   if(elm_check_response(cmd_str, str)!=0)
   {
     sprintf_P(retbuf, PSTR("ERROR"));
     return -255;
   }
+#endif
   // first 2 bytes are 0x41 and command, skip them
   // convert response in hex and return in buf
   elm_compact_response(buf, str);
@@ -617,47 +612,46 @@ long get_pid(byte pid, char *retbuf)
   {
   case ENGINE_RPM:
     ret=(buf[0]*256+buf[1])/4;
+#ifdef DEBUG
+ret=0x1af8/4;
+#endif
     sprintf_P(retbuf, PSTR("%ld RPM"), ret);
     break;
   case MAF_AIR_FLOW:
     ret=buf[0]*256+buf[1];
+#ifdef DEBUG
+ret=2048;
+#endif
     // not divided by 100 for return value!!
     int_to_dec_str(ret, decs, 2);
     sprintf_P(retbuf, PSTR("%s g/s"), decs);
     break;
   case VEHICLE_SPEED:
     ret=buf[0];
-    if(params.useMetric==0)  // convert to MPH for display
-    {
-      ret=(ret*621L)/1000L;
-      sprintf_P(retbuf, PSTR("%ld mph"), ret);
-    }
-    else
-      sprintf_P(retbuf, PSTR("%ld \003\004"), ret);
+#ifdef DEBUG
+ret=100;
+#endif
+    if(!params.useMetric)
+      ret=(ret*621)/1000;
+    sprintf_P(retbuf, PSTR("%ld %s"), ret, params.useMetric?"\003\004":"mph");
     break;
   case FUEL_STATUS:
     ret=buf[0]*256+buf[1];
-    switch(buf[0])
-    {
-    case 0x01:
+#ifdef DEBUG
+ret=0x0200;
+#endif
+    if(buf[0]==0x01)
       sprintf_P(retbuf, PSTR("OPENLOWT"));  // open due to insufficient engine temperature
-      break;
-    case 0x02:
+    else if(buf[0]==0x02)
       sprintf_P(retbuf, PSTR("CLSEOXYS"));  // Closed loop, using oxygen sensor feedback to determine fuel mix
-      break;
-    case 0x04:
+    else if(buf[0]==0x04)
       sprintf_P(retbuf, PSTR("OPENLOAD"));  // Open loop due to engine load
-      break;
-    case 0x08:
+    else if(buf[0]==0x08)
       sprintf_P(retbuf, PSTR("OPENFAIL"));  // Open loop due to system failure
-      break;
-    case 0x10:
+    else if(buf[0]==0x10)
       sprintf_P(retbuf, PSTR("CLSEBADF"));  // Closed loop, using at least one oxygen sensor but there is a fault in the feedback system
-      break;
-    default:
+    else
       sprintf_P(retbuf, PSTR("%04lX"), ret);
-      break;
-    }
     break;
   case LOAD_VALUE:
   case THROTTLE_POS:
@@ -672,10 +666,13 @@ long get_pid(byte pid, char *retbuf)
   case ACCEL_PEDAL_F:
   case CMD_THR_ACTU:
     ret=(buf[0]*100)/255;
+#ifdef DEBUG
+ret=10;
+#endif
     sprintf_P(retbuf, PSTR("%ld %%"), ret);
     break;
-  case DIST_MIL:
-  case DIST_CLEARED:
+  case DIST_MIL_ON:
+  case DIST_MIL_CLR:
     ret=buf[0]*256+buf[1];
     sprintf_P(retbuf, PSTR("%ld \003"), ret);
     break;
@@ -687,15 +684,17 @@ long get_pid(byte pid, char *retbuf)
   case COOLANT_TEMP:
   case INT_AIR_TEMP:
   case AMBIENT_TEMP:
-    ret=buf[0]-40;
-    sprintf_P(retbuf, PSTR("%ld C"), ret);
-    break;
   case CAT_TEMP_B1S1:
   case CAT_TEMP_B2S1:
   case CAT_TEMP_B1S2:
   case CAT_TEMP_B2S2:
-    ret=(buf[0]*256+buf[1])/10 - 40;
-    sprintf_P(retbuf, PSTR("%ld C"), ret);
+    if(pid>=CAT_TEMP_B1S1 && pid<=CAT_TEMP_B2S2)
+      ret=(buf[0]*256+buf[1])/10 - 40;
+    else
+      ret=buf[0]-40;
+    if(!params.useMetric)
+      ret=(ret*9)/5+32;
+    sprintf_P(retbuf, PSTR("%ld\005%c"), ret, params.useMetric?'C':'F');
     break;
   case STF_BANK1:
   case LTR_BANK1:
@@ -715,55 +714,38 @@ long get_pid(byte pid, char *retbuf)
     break;
   case TIMING_ADV:
     ret=(buf[0]/2)-64;
-    sprintf_P(retbuf, PSTR("%ld deg"), ret);
+    sprintf_P(retbuf, PSTR("%ld\005"), ret);
     break;
   case OBD_STD:
     ret=buf[0];
-    switch(buf[0])
-    {
-    case 0x01:
+    if(buf[0]==0x01)
       sprintf_P(retbuf, PSTR("OBD2CARB"));
-      break;
-    case 0x02:
+    else if(buf[0]==0x02)
       sprintf_P(retbuf, PSTR("OBD2EPA"));
-      break;
-    case 0x03:
+    else if(buf[0]==0x03)
       sprintf_P(retbuf, PSTR("OBD1&2"));
-      break;
-    case 0x04:
+    else if(buf[0]==0x04)
       sprintf_P(retbuf, PSTR("OBD1"));
-      break;
-    case 0x05:
+    else if(buf[0]==0x05)
       sprintf_P(retbuf, PSTR("NOT OBD"));
-      break;
-    case 0x06:
+    else if(buf[0]==0x06)
       sprintf_P(retbuf, PSTR("EOBD"));
-      break;
-    case 0x07:
+    else if(buf[0]==0x07)
       sprintf_P(retbuf, PSTR("EOBD&2"));
-      break;
-    case 0x08:
+    else if(buf[0]==0x08)
       sprintf_P(retbuf, PSTR("EOBD&1"));
-      break;
-    case 0x09:
+    else if(buf[0]==0x09)
       sprintf_P(retbuf, PSTR("EOBD&1&2"));
-      break;
-    case 0x0a:
+    else if(buf[0]==0x0a)
       sprintf_P(retbuf, PSTR("JOBD"));
-      break;
-    case 0x0b:
+    else if(buf[0]==0x0b)
       sprintf_P(retbuf, PSTR("JOBD&2"));
-      break;
-    case 0x0c:
+    else if(buf[0]==0x0c)
       sprintf_P(retbuf, PSTR("JOBD&1"));
-      break;
-    case 0x0d:
+    else if(buf[0]==0x0d)
       sprintf_P(retbuf, PSTR("JOBD&1&2"));
-      break;
-    default:
+    else
       sprintf_P(retbuf, PSTR("OBD:%02X"), buf[0]);
-      break;
-    }
     break;
     // for the moment, everything else, display the raw answer
   default:
@@ -805,26 +787,8 @@ void int_to_dec_str(long value, char *decs, byte prec)
 
 void get_cons(char *retbuf)
 {
-  long maf, vss, cons;
+  long cons;
   char decs[16];
-
-  // check if MAF is supported
-  if((1L<<(32-MAF_AIR_FLOW) & pid01to20_support) == 0)
-  {
-    // nope, lets approximate it with MAP and IAT
-    // later :-/
-    sprintf_P(retbuf, PSTR("NO MAF"));
-    return;
-  }
-  else // request it
-    maf=get_pid(MAF_AIR_FLOW, retbuf);
-
-  // retbuf will be scrapped and re-used to display fuel consumption
-  vss=get_pid(VEHICLE_SPEED, retbuf);
-
-  // in case of error, retbuf will contain "ERROR", so just return
-  if(maf<0 || vss<0)
-    return;
 
   // divide MAF by 100 because our function return MAF*100
   // but multiply by 100 for double digits precision
@@ -835,7 +799,7 @@ void get_cons(char *retbuf)
   // = maf*0.3355/vss L/km
   // mul by 100 to have L/100km
 
-  if(params.useMetric==1)
+  if(params.useMetric)
   {
     if(vss<params.perHourSpeed)
       cons=(maf*3355L)/10000L;  // do not use float so mul first then divide
@@ -858,7 +822,7 @@ void get_cons(char *retbuf)
     else
       cons=0;
     int_to_dec_str(cons, decs, 1);
-    sprintf_P(retbuf, PSTR("%s %s"), decs, (vss<(params.perHourSpeed*1609L)/1000L)?"GPH":"MPG" );
+    sprintf_P(retbuf, PSTR("%s %s"), decs, ((vss*1609L)/1000L<params.perHourSpeed)?"GPH":"MPG" );
   }
 }
 
@@ -867,7 +831,7 @@ void get_trip_cons(char *retbuf)
   float trip_cons;  // takes same size if I use long, so keep precision
   char decs[16];
 
-  if(params.useMetric==1)
+  if(params.useMetric)
   {
     // from mL/m to L/100 so div by 1000 for L and mul by 100000 for 100km
     // multiply by 100 to have 2 digits precision
@@ -880,12 +844,12 @@ void get_trip_cons(char *retbuf)
   }
   else
   {
-    // from m/mL to MPG so * by 3785.41178 to have gallon and * by 0.621371 for mile
+    // from m/mL to MPG so * by 3.78541178 to have gallon and * by 0.621371 for mile
     // multiply by 10 to have a digit precision
     if(params.trip_fuel==0.0)
       trip_cons=0.0;
     else
-      trip_cons=(params.trip_dist/params.trip_fuel)*23521.45;
+      trip_cons=(params.trip_dist/params.trip_fuel)*23.52;
     int_to_dec_str((long)trip_cons, decs, 1);
     sprintf_P(retbuf, PSTR("%s MPG"), decs);
   }
@@ -900,37 +864,100 @@ void get_trip_dist(char *retbuf)
   cdist=params.trip_dist/100.0;
 
   // convert in miles if requested
-  if(params.useMetric==0)
+  if(!params.useMetric)
     cdist*=0.621731;
 
   int_to_dec_str((long)cdist, decs, 1);
-  sprintf_P(retbuf, PSTR("%s %s"), decs, (params.useMetric==0)?"mi":"\003" );
+  sprintf_P(retbuf, PSTR("%s %s"), decs, params.useMetric?"\003":"mi" );
 }
 
+/*
+ * accumulate data for trip, called every loop()
+ */
 void accu_trip(void)
 {
-  long vss;
-  long maf;
+  static byte min_throttle_pos=255;   // idle throttle position
+  byte throttle_pos;   // current throttle position
+  byte open_load;      // to detect open loop
   char str[STRLEN];
   unsigned long time_now, delta_time;
 
-  vss=get_pid(VEHICLE_SPEED, str);
-  maf=get_pid(MAF_AIR_FLOW, str);
-
-  // acumulate for this trip
+  // time elapsed
   time_now = millis();
   delta_time = time_now - old_time;
   old_time = time_now;
+  
   // distance in m
-  params.trip_dist+=((float)vss*(float)delta_time)/3600.0;
-  // we want fuel used in mL/s
-  // maf gives grams of air/s
-  // divide by 100 because our MAF return is not divided!
-  // divide by 14.7 (a/f ratio) to have grams of fuel/s
-  // divide by 730 to have L/s
-  // mul by 1000 to have mL/s
-  // divide by 1000 because delta_time is in ms
-  params.trip_fuel+=((float)maf*(float)delta_time)/1073100.0;
+  vss=get_pid(VEHICLE_SPEED, str);
+  if(vss>0)
+    params.trip_dist+=((float)vss*(float)delta_time)/3600.0;
+
+  // if engine is stopped, we can get out now
+  if(!has_rpm)
+  {
+    maf=0;
+    return;
+  }
+    
+  // accumulate fuel only if not in DFCO
+  // if throttle position is close to idle and we are in open loop -> DFCO
+
+  // detect idle pos
+  throttle_pos=get_pid(THROTTLE_POS, str);
+  if(throttle_pos<min_throttle_pos)
+    min_throttle_pos=throttle_pos;
+
+  // get fuel status
+  open_load=(get_pid(FUEL_STATUS, str)&0x0400)?1:0;
+  
+  if(throttle_pos<(min_throttle_pos+4) && open_load)
+    maf=0;  // decellerate fuel cut-off, fake the MAF as 0 :)
+  else
+  {
+    // check if MAF is supported
+    if((1L<<(32-MAF_AIR_FLOW) & pid01to20_support) != 0)
+    {
+      // yes, just request it
+      maf=get_pid(MAF_AIR_FLOW, str);
+    }
+    else
+    {
+/*
+      I just hope if you don't have a MAF, you have a MAP!!
+
+      No MAF (Uses MAP and Absolute Temp to approximate MAF):
+      IMAP = RPM * MAP / IAT
+      MAF = (IMAP/120)*(VE/100)*(ED)*(MM)/(R)
+      MAP - Manifold Absolute Pressure in kPa
+      IAT - Intake Air Temperature in Kelvin
+      R - Specific Gas Constant (8.314472 J/(mol.K)
+      MM - Average molecular mass of air (28.9644 g/mol)
+      VE - volumetric efficiency measured in percent
+      ED - Engine Displacement in liters
+      This method requires tweaking of the VE for accuracy.
+*/
+      long imap, rpm, map, iat;
+      
+      rpm=get_pid(ENGINE_RPM, str);
+      map=get_pid(MAN_PRESSURE, str);
+      iat=get_pid(INT_AIR_TEMP, str);
+      imap=(rpm*map)/(iat+273);
+      
+      // does not divide by 100 because we use (MAF*100) in formula
+      // but divide by 10 because engine displacement is in dL
+      // 28.9644/(120*8.314472*10)= about 0.0029 or 29/10000
+      maf=(imap * params.vol_eff * params.eng_dis * 29) / 10000;
+    }
+    // add MAF result to trip
+    // we want fuel used in mL/s
+    // maf gives grams of air/s
+    // divide by 100 because our MAF return is not divided!
+    // divide by 14.7 (a/f ratio) to have grams of fuel/s
+    // divide by 730 to have L/s
+    // mul by 1000 to have mL/s
+    // divide by 1000 because delta_time is in ms
+    params.trip_fuel+=((float)maf*(float)delta_time)/1073100.0;
+  }
 }
 
 void display(byte corner, byte pid)
@@ -938,48 +965,44 @@ void display(byte corner, byte pid)
   char str[STRLEN];
 
   /* check if it's a real PID or our internal one */
-  switch(pid)
-  {
-  case NO_DISPLAY:
+  if(pid==NO_DISPLAY)
     return;
-  case FUEL_CONS:
+  else if(pid==FUEL_CONS)
     get_cons(str);
-    break;
-  case TRIP_CONS:
+  else if(pid==TRIP_CONS)
     get_trip_cons(str);
-    break;
-  case TRIP_DIST:
+  else if(pid==TRIP_DIST)
     get_trip_dist(str);
-    break;
-  default:
+  else if(pid==FREE_MEM)
+    sprintf_P(str, PSTR("%d free"), memoryTest());
+  else
     (void)get_pid(pid, str);
-    break;
-  }
 
   // left corners are left aligned
   // right corners are right aligned
-  switch(corner)
+  if(corner==TOPLEFT)
   {
-  case TOPLEFT:
     lcd_gotoXY(0,0);
     lcd_print_P(blkstr);
     lcd_gotoXY(0,0);
-    break;
-  case TOPRIGHT:
+  }
+  else if(corner==TOPRIGHT)
+  {
     lcd_gotoXY(8, 0);
     lcd_print_P(blkstr);
     lcd_gotoXY(16-strlen(str), 0);  // 16 = screen width
-    break;
-  case BOTTOMLEFT:
+  }
+  else if(corner==BOTTOMLEFT)
+  {
     lcd_gotoXY(0,1);
     lcd_print_P(blkstr);
     lcd_gotoXY(0,1);
-    break;
-  case BOTTOMRIGHT:
+  }
+  else if(corner==BOTTOMRIGHT)
+  {
     lcd_gotoXY(8, 1);
     lcd_print_P(blkstr);
     lcd_gotoXY(16-strlen(str), 1);
-    break;
   }
 
   lcd_print(str);
@@ -1000,6 +1023,9 @@ void check_supported_pid(void)
   pid41to60_support=get_pid(PID_SUPPORT60, str);
   if(pid41to60_support==-1)
     pid41to60_support=0;
+#ifdef DEBUG
+pid01to20_support=0xFFFFFFFE;
+#endif
 }
 
 // might be incomplete
@@ -1096,6 +1122,15 @@ return;
 /*
  * Configuration menu
  */
+ 
+void delay_button(void)
+{
+  // when we delay for the button, do not forget to accumulate data for trip
+  // but anyway you should not configure your OBDuino while driving!
+  delay(BUTTON_DELAY);
+  accu_trip();
+}
+
 void config_menu(void)
 {
   char str[STRLEN];
@@ -1119,7 +1154,7 @@ void config_menu(void)
     lcd_print(str);
     analogWrite(ContrastPin, params.contrast);  // change dynamicaly
     buttonState=buttonsUp;
-    delay(BUTTON_DELAY);
+    delay_button();
   } while(buttonState&mbuttonBit);
 
   // then the use of metric
@@ -1134,12 +1169,12 @@ void config_menu(void)
       params.useMetric=1;
 
     lcd_gotoXY(4,1);
-    if(params.useMetric==0)
+    if(!params.useMetric)
       lcd_print_P(PSTR("(NO) YES"));
     else
       lcd_print_P(PSTR("NO (YES)"));
     buttonState=buttonsUp;
-    delay(BUTTON_DELAY);
+    delay_button();
   } while(buttonState&mbuttonBit);
 
   // speed from which we toggle to fuel/hour
@@ -1157,7 +1192,45 @@ void config_menu(void)
     sprintf_P(str, PSTR("- %d + "), params.perHourSpeed);
     lcd_print(str);
     buttonState=buttonsUp;
-    delay(BUTTON_DELAY);
+    delay_button();
+  } while(buttonState&mbuttonBit);
+
+  // volume efficiency
+  lcd_cls();
+  lcd_print_P(PSTR("Vol effncy (MAP)"));
+  // set value with left/right and set with middle
+  do
+  {
+    if(!(buttonState&lbuttonBit) && params.vol_eff!=0)
+      params.vol_eff--;
+    else if(!(buttonState&rbuttonBit) && params.vol_eff!=100)
+      params.vol_eff++;
+
+    lcd_gotoXY(4,1);
+    sprintf_P(str, PSTR("- %d%% + "), params.vol_eff);
+    lcd_print(str);
+    buttonState=buttonsUp;
+    delay_button();
+  } while(buttonState&mbuttonBit);
+
+  // engine displacement
+  lcd_cls();
+  lcd_print_P(PSTR("Eng dplcmt (MAP)"));
+  char decs[16];
+  // set value with left/right and set with middle
+  do
+  {
+    if(!(buttonState&lbuttonBit) && params.eng_dis!=0)
+      params.eng_dis--;
+    else if(!(buttonState&rbuttonBit) && params.eng_dis!=100)
+      params.eng_dis++;
+
+    lcd_gotoXY(4,1);
+    int_to_dec_str(params.eng_dis, decs, 1);
+    sprintf_P(str, PSTR("- %sL + "), decs);
+    lcd_print(str);
+    buttonState=buttonsUp;
+    delay_button();
   } while(buttonState&mbuttonBit);
 
   // to reset trip
@@ -1178,7 +1251,7 @@ void config_menu(void)
     else
       lcd_print_P(PSTR("NO (YES)"));
     buttonState=buttonsUp;
-    delay(BUTTON_DELAY);
+    delay_button();
   } while(buttonState&mbuttonBit);
   if(p==1)
   {
@@ -1208,7 +1281,7 @@ void config_menu(void)
         sprintf_P(str, PSTR("- %02X +"), p);
         lcd_print(str);
         buttonState=buttonsUp;
-        delay(BUTTON_DELAY);
+        delay_button();
       } while(buttonState&mbuttonBit);
       // PID is choosen, set it
       params.screen[cur_screen].corner[cur_corner]=p;
@@ -1275,15 +1348,17 @@ void setup()                    // run once, when the sketch starts
   // load parameters
   if(load()==0)  // if something is wrong, put default parms
   {
-    params.contrast=20;
+    params.contrast=40;
     params.useMetric=1;
-    params.perHourSpeed=10;
+    params.perHourSpeed=20;
+    params.vol_eff=80;  // start at 80%, need tweaking for MAP
+    params.eng_dis=20;  // for a 2.0L engine
     params.trip_dist=0.0;
     params.trip_fuel=0.0;
     params.screen[0].corner[TOPLEFT]=FUEL_CONS;
-    params.screen[0].corner[TOPRIGHT]=FUEL_STATUS;
-    params.screen[0].corner[BOTTOMLEFT]=THROTTLE_POS;
-    params.screen[0].corner[BOTTOMRIGHT]=TIMING_ADV;
+    params.screen[0].corner[TOPRIGHT]=TRIP_CONS;
+    params.screen[0].corner[BOTTOMLEFT]=ENGINE_RPM;
+    params.screen[0].corner[BOTTOMRIGHT]=VEHICLE_SPEED;
     params.screen[1].corner[TOPLEFT]=TRIP_CONS;
     params.screen[1].corner[TOPRIGHT]=TRIP_DIST;
     params.screen[1].corner[BOTTOMLEFT]=COOLANT_TEMP;
@@ -1320,9 +1395,9 @@ void setup()                    // run once, when the sketch starts
 #endif
     lcd_gotoXY(0,1);
     if(r==0)
-      lcd_print_P(PSTR("Successful!"));
+      lcd_print_P(PSTR("Successful!     "));
     else
-      lcd_print_P(PSTR("Failed!"));
+      lcd_print_P(PSTR("Failed!         "));
 
     delay(1000);
   }
@@ -1334,6 +1409,9 @@ void setup()                    // run once, when the sketch starts
   // check if we have MIL code
   //check_mil_code();
 
+  has_rpm=0;
+  vss=0;
+  maf=0;
   active_screen=0;
   engine_started=0;
   param_saved=0;
@@ -1349,10 +1427,9 @@ void setup()                    // run once, when the sketch starts
 
 void loop()                     // run over and over again
 {
-  byte has_rpm;
   char str[STRLEN];
 
-  // test if engine has started
+  // test if engine is started
   has_rpm=(get_pid(ENGINE_RPM, str)>0)?1:0;
   if(engine_started==0 && has_rpm!=0)
   {
@@ -1369,11 +1446,11 @@ void loop()                     // run over and over again
     engine_started=0;
     lcd_cls();
     lcd_print_P(PSTR("TRIP SAVED!"));
-    delay(5000);
+    delay(2000);
   }
 
-  if(has_rpm!=0)
-    accu_trip();
+  // this read and assign vss and maf and accumulate trip data
+  accu_trip();
 
   // display on LCD
   for(byte cur_corner=0; cur_corner<NBCORNER; cur_corner++)
@@ -1433,7 +1510,7 @@ byte load(void)
 // this function will return the number of bytes currently free in RAM
 extern int  __bss_end;
 extern int  *__brkval;
-int memoryTest()
+int memoryTest(void)
 {
   int free_memory;
   if((int)__brkval == 0)
@@ -1496,19 +1573,21 @@ void lcd_init()
   // char 0 is not used
   // 1&2 is the L/100 datagram in 2 chars only
   // 3&4 is the km/h datagram in 2 chars only
-#define NB_CHAR  4
+  // 5 is the ° char (degree)
+#define NB_CHAR  5
   // set cg ram to address 0x08 (B001000) to skip the
   // first 8 rows as we do not use char 0
   lcd_CommandWrite(B01001000);
   static byte chars[] PROGMEM ={
-    B10000,B00000,B10000,B00010,
-    B10000,B00000,B10100,B00100,
-    B11001,B00000,B11000,B01000,
-    B00010,B00000,B10100,B10000,
-    B00100,B00000,B00000,B00100,
-    B01001,B11011,B11111,B00100,
-    B00001,B11011,B10101,B00111,
-    B00001,B11011,B10101,B00101              };
+    B10000,B00000,B10000,B00010,B00111,
+    B10000,B00000,B10100,B00100,B00101,
+    B11001,B00000,B11000,B01000,B00111,
+    B00010,B00000,B10100,B10000,B00000,
+    B00100,B00000,B00000,B00100,B00000,
+    B01001,B11011,B11111,B00100,B00000,
+    B00001,B11011,B10101,B00111,B00000,
+    B00001,B11011,B10101,B00101,B00000,
+    };
 
   for(byte x=0;x<NB_CHAR;x++)
     for(byte y=0;y<8;y++)  // 8 rows
