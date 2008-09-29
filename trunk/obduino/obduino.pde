@@ -158,20 +158,20 @@ unsigned long  pid41to60_support;
 #define DIST_MIL_ON   0x21
 #define FUEL_RAIL_P   0x22
 #define FUEL_RAIL_DIESEL 0x23
-#define O2S1_WR1_V   0x24
-#define O2S2_WR1_V   0x25
-#define O2S3_WR1_V   0x26
-#define O2S4_WR1_V   0x27
-#define O2S5_WR1_V   0x28
-#define O2S6_WR1_V   0x29
-#define O2S7_WR1_V   0x2A
-#define O2S8_WR1_V   0x2B
-#define EGR          0x2C
-#define EGR_ERROR    0x2D
-#define EVAP_PURGE   0x2E
-#define FUEL_LEVEL   0x2F
-#define WARM_UPS     0x30
-#define DIST_MIL_CLR 0x31
+#define O2S1_WR1_V    0x24
+#define O2S2_WR1_V    0x25
+#define O2S3_WR1_V    0x26
+#define O2S4_WR1_V    0x27
+#define O2S5_WR1_V    0x28
+#define O2S6_WR1_V    0x29
+#define O2S7_WR1_V    0x2A
+#define O2S8_WR1_V    0x2B
+#define EGR           0x2C
+#define EGR_ERROR     0x2D
+#define EVAP_PURGE    0x2E
+#define FUEL_LEVEL    0x2F
+#define WARM_UPS      0x30
+#define DIST_MIL_CLR  0x31
 #define EVAP_PRESSURE 0x32
 #define BARO_PRESSURE 0x33
 #define O2S1_WR1_C    0x34
@@ -209,7 +209,9 @@ unsigned long  pid41to60_support;
 #define FUEL_CONS     0xF1
 #define TRIP_CONS     0xF2
 #define TRIP_DIST     0xF3
+#ifdef DEBUG
 #define FREE_MEM      0xFF
+#endif
 
 // returned length of the PID response.
 // constants so put in flash
@@ -594,10 +596,10 @@ long get_pid(byte pid, char *retbuf)
     sprintf_P(retbuf, PSTR("ERROR"));
     return -255;
   }
-#endif
   // first 2 bytes are 0x41 and command, skip them
   // convert response in hex and return in buf
   elm_compact_response(buf, str);
+#endif
 #else
   cmd[0]=0x01;    // ISO cmd 1, get PID
   cmd[1]=pid;
@@ -611,34 +613,38 @@ long get_pid(byte pid, char *retbuf)
   switch(pid)
   {
   case ENGINE_RPM:
-    ret=(buf[0]*256+buf[1])/4;
 #ifdef DEBUG
-ret=0x1af8/4;
+    ret=1726;
+#else
+    ret=(unsigned)(buf[0]*256+buf[1])/4;
 #endif
     sprintf_P(retbuf, PSTR("%ld RPM"), ret);
     break;
   case MAF_AIR_FLOW:
-    ret=buf[0]*256+buf[1];
 #ifdef DEBUG
-ret=2048;
+    ret=2048;
+#else
+    ret=(unsigned)(buf[0]*256+buf[1]);
 #endif
     // not divided by 100 for return value!!
     int_to_dec_str(ret, decs, 2);
     sprintf_P(retbuf, PSTR("%s g/s"), decs);
     break;
   case VEHICLE_SPEED:
-    ret=buf[0];
 #ifdef DEBUG
-ret=100;
+    ret=100;
+#else
+    ret=(unsigned)buf[0];
 #endif
     if(!params.useMetric)
       ret=(ret*621)/1000;
     sprintf_P(retbuf, PSTR("%ld %s"), ret, params.useMetric?"\003\004":"mph");
     break;
   case FUEL_STATUS:
-    ret=buf[0]*256+buf[1];
 #ifdef DEBUG
-ret=0x0200;
+    ret=0x0200;
+#else
+    ret=(unsigned)(buf[0]*256+buf[1]);
 #endif
     if(buf[0]==0x01)
       sprintf_P(retbuf, PSTR("OPENLOWT"));  // open due to insufficient engine temperature
@@ -665,20 +671,37 @@ ret=0x0200;
   case ACCEL_PEDAL_E:
   case ACCEL_PEDAL_F:
   case CMD_THR_ACTU:
-    ret=(buf[0]*100)/255;
 #ifdef DEBUG
-ret=10;
+    ret=17;
+#else
+    ret=(unsigned)(buf[0]*100)/255;
 #endif
     sprintf_P(retbuf, PSTR("%ld %%"), ret);
     break;
+  case B1S1_O2_V:
+  case B1S2_O2_V:
+  case B1S3_O2_V:
+  case B1S4_O2_V:
+  case B2S1_O2_V:
+  case B2S2_O2_V:
+  case B2S3_O2_V:
+  case B2S4_O2_V:
+    ret=(unsigned)(buf[0]*5);  // not divided by 1000 !!
+    if(buf[1]==0xFF)  // not used in trim calculation
+      sprintf_P(retbuf, PSTR("%ld mV"), ret);
+    else
+      sprintf_P(retbuf, PSTR("%ldmV/%d%%"), ret, ((buf[1]-128)*100)/128);
+    break;
   case DIST_MIL_ON:
   case DIST_MIL_CLR:
-    ret=buf[0]*256+buf[1];
-    sprintf_P(retbuf, PSTR("%ld \003"), ret);
+    ret=(unsigned)(buf[0]*256+buf[1]);
+    if(!params.useMetric)
+      ret=(ret*621)/1000;
+    sprintf_P(retbuf, PSTR("%ld %s"), ret, params.useMetric?"\003":"mi");
     break;
   case TIME_MIL_ON:
   case TIME_MIL_CLR:
-    ret=buf[0]*256+buf[1];
+    ret=(unsigned)(buf[0]*256+buf[1]);
     sprintf_P(retbuf, PSTR("%ld min"), ret);
     break;
   case COOLANT_TEMP:
@@ -689,9 +712,17 @@ ret=10;
   case CAT_TEMP_B1S2:
   case CAT_TEMP_B2S2:
     if(pid>=CAT_TEMP_B1S1 && pid<=CAT_TEMP_B2S2)
-      ret=(buf[0]*256+buf[1])/10 - 40;
+#ifdef DEBUG
+      ret=600;
+#else
+      ret=(unsigned)(buf[0]*256+buf[1])/10 - 40;
+#endif
     else
+#ifdef DEBUG
+      ret=40;
+#else
       ret=buf[0]-40;
+#endif
     if(!params.useMetric)
       ret=(ret*9)/5+32;
     sprintf_P(retbuf, PSTR("%ld\005%c"), ret, params.useMetric?'C':'F');
@@ -707,7 +738,7 @@ ret=10;
   case FUEL_PRESSURE:
   case MAN_PRESSURE:
   case BARO_PRESSURE:
-    ret=buf[0];
+    ret=(unsigned)buf[0];
     if(pid==FUEL_PRESSURE)
       ret*=3;
     sprintf_P(retbuf, PSTR("%ld kPa"), ret);
@@ -716,6 +747,7 @@ ret=10;
     ret=(buf[0]/2)-64;
     sprintf_P(retbuf, PSTR("%ld\005"), ret);
     break;
+#if 1  // takes 254 bytes, may be removed if necessary
   case OBD_STD:
     ret=buf[0];
     if(buf[0]==0x01)
@@ -747,6 +779,7 @@ ret=10;
     else
       sprintf_P(retbuf, PSTR("OBD:%02X"), buf[0]);
     break;
+#endif
     // for the moment, everything else, display the raw answer
   default:
     // transform buffer to an integer value
@@ -973,8 +1006,10 @@ void display(byte corner, byte pid)
     get_trip_cons(str);
   else if(pid==TRIP_DIST)
     get_trip_dist(str);
+#ifdef DEBUG
   else if(pid==FREE_MEM)
     sprintf_P(str, PSTR("%d free"), memoryTest());
+#endif
   else
     (void)get_pid(pid, str);
 
@@ -1024,7 +1059,7 @@ void check_supported_pid(void)
   if(pid41to60_support==-1)
     pid41to60_support=0;
 #ifdef DEBUG
-pid01to20_support=0xFFFFFFFE;
+  pid01to20_support=0xFFFFFFFE;
 #endif
 }
 
@@ -1050,7 +1085,7 @@ void check_mil_code(void)
    availability signified by set (1) bit; completeness signified by reset (0)
    bit. (from Wikipedia)
    */
-  if( (1L<<31 & n) !=0)  // test bit A7
+  if(n>>31)  // test bit A7
   {
     // we have MIL on
     nb=(n>>24) & 0x7F;
@@ -1060,33 +1095,32 @@ void check_mil_code(void)
     sprintf_P(str, PSTR("%d CODE(S) IN ECU"), nb);
     lcd_print(str);
     delay(2000);
+    lcd_cls();
 
-    // retrieve code
-    cmd[0]=0x03;
 #ifdef ELM
+    // retrieve code
     sprintf_P(str, PSTR("03\r"));
     elm_write(str);
-#else
-    iso_write_data(cmd, 1);
-#endif
+    // ELM returns something like 43 01 33 00 00 00 00
+    elm_read(str, STRLEN);
+    if(str[0]!='4' && str[1]!='3')
+      return;  // something wrong
 
+    // must convert to P/C/B/U etc
+    lcd_print(str+3);
+    delay(5000);
+#else
     // we display only the first 6 codes
     // if you have more than 6 in your ECU
     // your car is obviously wrong :-/
+
+    // retrieve code
+    cmd[0]=0x03;
+    iso_write_data(cmd, 1);
+
     for(i=0;i<nb/3;i++)  // each received packet contain 3 codes
     {
-#ifdef ELM
-      elm_read(str, STRLEN);
-      elm_compact_response(buf, str);
-#else
       iso_read_data(buf, 6);
-#endif
-
-// must rewrite so just display and quit for the moment
-lcd_gotoXY(0,1);
-lcd_print(str);
-delay(5000);
-return;
 
       k=0;  // to build the string
       for(j=0;j<3;j++)  // the 3 codes
@@ -1116,6 +1150,7 @@ return;
       lcd_print(str);
       lcd_gotoXY(0, 1);  // go to next line to display the 3 next
     }
+#endif
   }
 }
 
@@ -1206,7 +1241,7 @@ void config_menu(void)
     else if(!(buttonState&rbuttonBit) && params.vol_eff!=100)
       params.vol_eff++;
 
-    lcd_gotoXY(4,1);
+    lcd_gotoXY(5,1);
     sprintf_P(str, PSTR("- %d%% + "), params.vol_eff);
     lcd_print(str);
     buttonState=buttonsUp;
@@ -1407,7 +1442,7 @@ void setup()                    // run once, when the sketch starts
   check_supported_pid();
 
   // check if we have MIL code
-  //check_mil_code();
+  check_mil_code();
 
   has_rpm=0;
   vss=0;
@@ -1507,7 +1542,9 @@ byte load(void)
     return 0;
 }
 
+#ifdef DEBUG  // takes 578 bytes!!
 // this function will return the number of bytes currently free in RAM
+// there is about 680 bytes free in memory when OBDuino is running
 extern int  __bss_end;
 extern int  *__brkval;
 int memoryTest(void)
@@ -1519,11 +1556,12 @@ int memoryTest(void)
     free_memory = ((int)&free_memory) - ((int)__brkval);
   return free_memory;
 }
+#endif
 
 /***************\
 * LCD functions *
 \***************/
-//x=0..16, y= 0..1
+// x=0..16, y=0..1
 void lcd_gotoXY(byte x, byte y)
 {
   byte dr=0x80+x;
