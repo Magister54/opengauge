@@ -209,6 +209,8 @@ unsigned long  pid41to60_support;
 #define FUEL_CONS     0xF1
 #define TRIP_CONS     0xF2
 #define TRIP_DIST     0xF3
+#define BATT_VOLTAGE  0xF4
+#define CAN_STATUS    0xF5
 #ifdef DEBUG
 #define FREE_MEM      0xFF
 #endif
@@ -616,7 +618,7 @@ long get_pid(byte pid, char *retbuf)
 #ifdef DEBUG
     ret=1726;
 #else
-    ret=(unsigned)(buf[0]*256+buf[1])/4;
+    ret=(buf[0]*256U+buf[1])/4U;
 #endif
     sprintf_P(retbuf, PSTR("%ld RPM"), ret);
     break;
@@ -624,7 +626,7 @@ long get_pid(byte pid, char *retbuf)
 #ifdef DEBUG
     ret=2048;
 #else
-    ret=(unsigned)(buf[0]*256+buf[1]);
+    ret=buf[0]*256U+buf[1];
 #endif
     // not divided by 100 for return value!!
     int_to_dec_str(ret, decs, 2);
@@ -634,17 +636,17 @@ long get_pid(byte pid, char *retbuf)
 #ifdef DEBUG
     ret=100;
 #else
-    ret=(unsigned)buf[0];
+    ret=buf[0];
 #endif
     if(!params.useMetric)
-      ret=(ret*621)/1000;
+      ret=(ret*621U)/1000U;
     sprintf_P(retbuf, PSTR("%ld %s"), ret, params.useMetric?"\003\004":"mph");
     break;
   case FUEL_STATUS:
 #ifdef DEBUG
     ret=0x0200;
 #else
-    ret=(unsigned)(buf[0]*256+buf[1]);
+    ret=buf[0]*256U+buf[1];
 #endif
     if(buf[0]==0x01)
       sprintf_P(retbuf, PSTR("OPENLOWT"));  // open due to insufficient engine temperature
@@ -674,7 +676,7 @@ long get_pid(byte pid, char *retbuf)
 #ifdef DEBUG
     ret=17;
 #else
-    ret=(unsigned)(buf[0]*100)/255;
+    ret=(buf[0]*100U)/255U;
 #endif
     sprintf_P(retbuf, PSTR("%ld %%"), ret);
     break;
@@ -686,7 +688,7 @@ long get_pid(byte pid, char *retbuf)
   case B2S2_O2_V:
   case B2S3_O2_V:
   case B2S4_O2_V:
-    ret=(unsigned)(buf[0]*5);  // not divided by 1000 !!
+    ret=buf[0]*5U;  // not divided by 1000 for return!!
     if(buf[1]==0xFF)  // not used in trim calculation
       sprintf_P(retbuf, PSTR("%ld mV"), ret);
     else
@@ -694,14 +696,14 @@ long get_pid(byte pid, char *retbuf)
     break;
   case DIST_MIL_ON:
   case DIST_MIL_CLR:
-    ret=(unsigned)(buf[0]*256+buf[1]);
+    ret=buf[0]*256U+buf[1];
     if(!params.useMetric)
-      ret=(ret*621)/1000;
+      ret=(ret*621U)/1000U;
     sprintf_P(retbuf, PSTR("%ld %s"), ret, params.useMetric?"\003":"mi");
     break;
   case TIME_MIL_ON:
   case TIME_MIL_CLR:
-    ret=(unsigned)(buf[0]*256+buf[1]);
+    ret=buf[0]*256U+buf[1];
     sprintf_P(retbuf, PSTR("%ld min"), ret);
     break;
   case COOLANT_TEMP:
@@ -715,7 +717,7 @@ long get_pid(byte pid, char *retbuf)
 #ifdef DEBUG
       ret=600;
 #else
-      ret=(unsigned)(buf[0]*256+buf[1])/10 - 40;
+      ret=(buf[0]*256U+buf[1])/10U - 40;
 #endif
     else
 #ifdef DEBUG
@@ -738,9 +740,9 @@ long get_pid(byte pid, char *retbuf)
   case FUEL_PRESSURE:
   case MAN_PRESSURE:
   case BARO_PRESSURE:
-    ret=(unsigned)buf[0];
+    ret=buf[0];
     if(pid==FUEL_PRESSURE)
-      ret*=3;
+      ret*=3U;
     sprintf_P(retbuf, PSTR("%ld kPa"), ret);
     break;
   case TIMING_ADV:
@@ -1006,6 +1008,10 @@ void display(byte corner, byte pid)
     get_trip_cons(str);
   else if(pid==TRIP_DIST)
     get_trip_dist(str);
+  else if(pid==BATT_VOLTAGE)
+    elm_command(str, PSTR("ATRV\r"));
+  else if(pid==CAN_STATUS)
+    elm_command(str, PSTR("ATCS\r"));
 #ifdef DEBUG
   else if(pid==FREE_MEM)
     sprintf_P(str, PSTR("%d free"), memoryTest());
@@ -1048,8 +1054,11 @@ void check_supported_pid(void)
   unsigned long n;
   char str[STRLEN];
 
+#ifdef DEBUG
+  pid01to20_support=0xBE1FA812;
+#else
   pid01to20_support=get_pid(PID_SUPPORT20, str);
-
+#endif
   pid21to40_support=get_pid(PID_SUPPORT40, str);
   // if not supported, get_pid return -1
   if(pid21to40_support==-1)
@@ -1058,9 +1067,6 @@ void check_supported_pid(void)
   pid41to60_support=get_pid(PID_SUPPORT60, str);
   if(pid41to60_support==-1)
     pid41to60_support=0;
-#ifdef DEBUG
-  pid01to20_support=0xFFFFFFFE;
-#endif
 }
 
 // might be incomplete
@@ -1085,7 +1091,7 @@ void check_mil_code(void)
    availability signified by set (1) bit; completeness signified by reset (0)
    bit. (from Wikipedia)
    */
-  if(n>>31)  // test bit A7
+  if(1L<<31 & n)  // test bit A7
   {
     // we have MIL on
     nb=(n>>24) & 0x7F;
@@ -1168,9 +1174,25 @@ void delay_button(void)
 
 void config_menu(void)
 {
+  char VERSION[] = {"$Revision: 82$"};
   char str[STRLEN];
   byte p;
 
+  // display info
+  lcd_cls();
+  VERSION[strlen(VERSION)-1]=NUL;  // replace last $ with \0
+  sprintf_P(str, PSTR("OBDuino v%s"), strchr(VERSION, ' ')+1);
+  lcd_print(str);
+#ifndef DEBUG
+  elm_command(str, PSTR("ATDP\r"));
+  lcd_gotoXY(0,1);
+  if(str[0]=='A')  // string start with "AUTO, ", skip it
+    lcd_print(str+6);
+  else
+    lcd_print(str);
+#endif
+  delay(2000);
+  
   // go through all the configurable items
 
   // first one is contrast
@@ -1337,6 +1359,7 @@ void test_buttons(void)
   if(!(buttonState&lbuttonBit))
   {
     active_screen = (active_screen+1) % NBSCREEN;
+    lcd_cls();
   }
   // right is cycle through brightness settings
   else if(!(buttonState&rbuttonBit))
@@ -1581,108 +1604,11 @@ void lcd_print_P(char *string)
 void lcd_print(char *string)
 {
   while(*string != 0)
-    lcd_DataWrite(*string++);
-}
-
-// do the lcd initialization voodoo
-// thanks to Yoshi "SuperMID" for tips :)
-void lcd_init()
-{
-  delay(16);                    // wait for more than 15 msec
-  lcd_pushNibble(B00110000);  // send (B0011) to DB7-4
-  lcd_commandWriteSet();
-  delay(5);                     // wait for more than 4.1 msec
-  lcd_pushNibble(B00110000);  // send (B0011) to DB7-4
-  lcd_commandWriteSet();
-  delay(1);                     // wait for more than 100 usec
-  lcd_pushNibble(B00110000);  // send (B0011) to DB7-4
-  lcd_commandWriteSet();
-  delay(1);                     // wait for more than 100 usec
-  lcd_pushNibble(B00100000);  // send (B0010) to DB7-4 for 4bit
-  lcd_commandWriteSet();
-  delay(1);                     // wait for more than 100 usec
-  // ready to use normal CommandWrite() function now!
-
-  lcd_CommandWrite(B00101000);   // 4-bit interface, 2 display lines, 5x8 font
-  lcd_CommandWrite(B00001100);   // display control on, no cursor, no blink
-  lcd_CommandWrite(B00000110);   // entry mode set: increment automatically, no display shift
-
-  //creating the custom fonts (8 char max)
-  // char 0 is not used
-  // 1&2 is the L/100 datagram in 2 chars only
-  // 3&4 is the km/h datagram in 2 chars only
-  // 5 is the ° char (degree)
-#define NB_CHAR  5
-  // set cg ram to address 0x08 (B001000) to skip the
-  // first 8 rows as we do not use char 0
-  lcd_CommandWrite(B01001000);
-  static byte chars[] PROGMEM ={
-    B10000,B00000,B10000,B00010,B00111,
-    B10000,B00000,B10100,B00100,B00101,
-    B11001,B00000,B11000,B01000,B00111,
-    B00010,B00000,B10100,B10000,B00000,
-    B00100,B00000,B00000,B00100,B00000,
-    B01001,B11011,B11111,B00100,B00000,
-    B00001,B11011,B10101,B00111,B00000,
-    B00001,B11011,B10101,B00101,B00000,
-    };
-
-  for(byte x=0;x<NB_CHAR;x++)
-    for(byte y=0;y<8;y++)  // 8 rows
-      lcd_DataWrite(pgm_read_byte(&chars[y*NB_CHAR+x])); //write the character data to the character generator ram
-
-  lcd_cls();
-  lcd_CommandWrite(B10000000);  // set dram to zero
-}
-
-void lcd_cls()
-{
-  lcd_CommandWrite(B00000001);  // Clear Display
-  lcd_CommandWrite(B00000010);  // Return Home
-}
-
-void lcd_tickleEnable()
-{
-  // send a pulse to enable
-  digitalWrite(EnablePin,HIGH);
-  delayMicroseconds(1);  // pause 1 ms according to datasheet
-  digitalWrite(EnablePin,LOW);
-  delayMicroseconds(1);  // pause 1 ms according to datasheet
-}
-
-void lcd_commandWriteSet()
-{
-  digitalWrite(EnablePin,LOW);
-  delayMicroseconds(1);  // pause 1 ms according to datasheet
-  digitalWrite(DIPin,0);
-  lcd_tickleEnable();
-}
-
-void lcd_pushNibble(byte value)
-{
-  digitalWrite(DB7Pin, value & 128);
-  digitalWrite(DB6Pin, value & 64);
-  digitalWrite(DB5Pin, value & 32);
-  digitalWrite(DB4Pin, value & 16);
-}
-
-void lcd_CommandWrite(byte value)
-{
-  lcd_pushNibble(value);
-  lcd_commandWriteSet();
-  value<<=4;
-  lcd_pushNibble(value);
-  lcd_commandWriteSet();
-  delay(5);
-}
-
-void lcd_DataWrite(byte value)
-{
-  digitalWrite(DIPin, HIGH);
-  lcd_pushNibble(value);
-  lcd_tickleEnable();
-  value<<=4;
-  lcd_pushNibble(value);
-  lcd_tickleEnable();
-  delay(5);
-}
+    lcd_Dat/V4„x®k6nU§,U½a‡ß½µv,ÉÍã)Áğµ“ü(Ãj"G+økn#Çã•|·™júz´U_')#ß”Ëk€…ü<r^‘G\é*j×ÍÆ±œ/9ª§Õİ˜@l_ç¯S™|Œú]51l°ºSa1:‚ƒÉ¥`ÅV&ôŠû'.>§ë²Åù«Ù½«}ÑL›Îz7q¥½#1²m
+ éŒpÉOãŞÊé¦»‘•Yk_,õ¾4g5Æ'ûm³‡èÚo¿üî‡&SÕÉI´ úuª5C}'–#²;í¼˜íõá'k×öäCIÓHá¼‘)H‰@Øác ³ãK%€âı…> .¯¶nCê`™p½í Ä¹7•Ö¾¯gË ä7¸ŒÀ?É£™3“2ö¸O Ú;Æ“F "4ßÓ3„¤(ºòQx!–õï-à’]h€‘9+ÖWyC*N0E}µšº¬šÍ«è”ršCéƒ+³”¥Rğùb7ØÄdu¶6»QiI?i*¤mÌpqÀ$K%qÍ€üİmqûãÃø9÷½L12í.³ ³ÈI.É2ì¤ÁNøL÷L¸]jĞßıŒvŞ»íÑ­
+d­¹xÛ"“PÿÃs]ôy¥×ğèWK'µ'¨üáp£ç‚½£¨5q[^¤6íuûÏ9ª«äWóbZxNêÈÅºÍ0°Üõ?DØÎ6ìŠ,^J/X2EÚ)HÃ¢Ó!È¸‚Â0bª©šÜc¸²,#N£œ9ëÜ‡Š‰€N–&üŠáMîI‡âÜïJr†(»’´caÑÀ˜šÂ\]õ›:Ü{IæLÔTWj–½ƒ2Ò…†o,gS£Ê©±?KÁ'zÁ­î~Bd‰ô>±8É¥è j‹HG­ŒáÎğ®ÃÅ5¸>(ñlÎ\*ıQ$rîkäW£»¸O;Z}ß¬_fåt6[L?$…k¾Ô >ëÖ|ÓÄÏ˜gò”­åéÃO&ŸìŞ!vÎU§öË«çÙe\½ªZíÙ¾g]8pÉ—+/'âƒ'[>MöÍVôßIÀw)â†/ä!°£™}³¨¨ğƒ¥ívşkğÖ‹±Ká£Æj½ïs–n} §Ò‹“ø²G‚’½9¨JåúV¢NØESèŒ ËWîŞ8Ò¾ÌYâüx„ñÁg†ÒŒ¸úQóçş¹}©5T¬”ÖT:LMaù½Tú|$æE}ïãmY”«“ˆï°ãõvõ…,-©øØ}ç:v~¦‹¡&‚VW‹–ùÙeğch¡¢‹¸=VMStí¨‰Ôw»@F„{ğDÓÏX¤M.
+‘µ9~K´SŞğQá°lÚ,¿‚'è5œÄ6¢GïW®®Oëv¡-«RÜ/pªƒ} y,@ªšºíŠ/Š"êÙÈÍ™ZDw1Üø×ƒx_AĞnÍk:Ä.¶_ïúnHw‚ê£Ö½ ¶ÌH@ç#—ò‹¢æ­yÙ‘ëÊz6Rş=Ë°½¢Zº(M7ÿ"æ·l7Øéƒ/ôÈìÅ¥g Bë“.µÿlRá¦üil)ÙÕû
+…ÑŒ¡ÉâÌÂrü²á•Ú0\ÓÜªüë&¿ê>Xã0™Òã>ğ#nÔCËãF‰x:	“_¬güMóìeYpÓfUº˜®üºøë-\ç1Ó!äÒ[˜¸Û9İ‹5ûBH8bG›,}u¾¤·é~¨¾4¶ºZÈ¡áë½b‚2çK«Ü¹ú°ê/Çx9Ùï½†`•W¸GVÖùzfi7ÊcD‡ºyô}ZÁùNa|GÜ§ÎÿgcñQûµtÜ#¿~fmXÿ;í±bìˆàÇèkTê¨û-Ûâ"6áâ"ÔF‡rH	t-¤•7rƒ•nü¿¢lL5´ ñ$E0äsÔ“Êp•ÖÇÁ×Æö¨@¡ñ]C¢—°¨Ú¦Šş˜ı,ôN³Ã¢§t§çÔ‚Pøôv|FÂ…mOëm}^fòSŸ’ù8À˜¿HÙìuc'tÂìdãhZş=%³s²åÈfëåòÏˆ\4ãÔ¨ôü§­bóVœv+ÆôOÑIÛ+4/ıDÅšçŠ§ˆãÿ‡ÇüáÀEfûCÅşğ'.?7äğ¯¯ğXÉ•CÑJÑ”'"fÂ¾€¾1ãp©n6?ÆòÖN¿71½Ï<Q’(D¦é8Í]Òqt[ñÓõ!ñÍô[œëp?ñû”ªŞ¯†;˜ˆıuĞ3êÍ²9îû@“bnX¿IpÓôZ"U(¯øõ ‚-£© !¬Ñ.*ş=2×@ô} nË†eË)µêÉZ¢MÓv¾¾)Í«ÈJE¯û°5VC±9D/Ù÷?zN˜X´…ªd0ÇÖ"<s²ªÊ²k{şšê”‹2âm' ª1œ²Ve±¨÷Å$¡Ä„W½%pñ¢» ®²5ÅŒÄÖ~ÊRñ7şr ®g+||U_–D0ÒpÀãk)«U».ÀbrO!A$BéÅgA<ş¾m»BÔÒ~òq7Ô~¾óé3mèaÎ
+R©(D‰¥ŒGÌi‚G°/Ûn‹Ç0Æ10%]+ÎõÊmCØK”écõBL_`„<	õ—Ş–¢¾1Øh/„H­§eS×èÉİkÊQC´ÏÅ¬‘ëîj¾zfC)ô['¦„•Eù5†ºßâ”ïw;¬­°:bªå½ËGç>ŸğåÙVÀ9P^Áî~l¹Goëæ>ÉÉĞ?fôOm×Ò4š4ù>x^´‘ğhù0Vx?.8&Ò×ŞºftúúZL©íTÌ•3œ–¶ƒìõ¬­Ñ²<‡z•ƒe¯që»o>˜µ¯H~Ú;b±ØNH¸¢œ³ÿ˜d©ÿY)tNzÜ°JA*>'µ6ÄÂxíüğJ±pû‘NÒ©i2–6Êñ>¦y„®E¦j¢¤ğ	¿l SŸêÿ" ÿ¾£À~’“¶Ğ
+ÆFB¢4ŞÅR½ÉWÓ¹Î‡EK”o¢HïkÖœ¸Q8ìGÈáo	Jôƒ¡ú™ãp2aL¯«Ò÷GòIëkP:SïOtËwÑHü:Gp§±¥v¡ZŸ­Æ™.0J×|rÙuÿ7®òÿ€“ÜI²';ó%İHç¡âe/Ù{ÛÑÕà /hÚt/ñš\ä U¯h¤K#&^8NÈJ£à©ÊÜpYë\y­4iØ­À„ãí9Fôšµ'ºgbY)ÓËş¿”2$½˜×¼J™¥x¬‰x¨Pöô®'’RoÖâ°ÔÄ<‚[³Œ“ûM­"ø|ìf¹ŒwÉ‘œs	*$¢]V©xSEû’-÷ëç¢<jâ«G‰‹RçT·±ˆØ?ì£ ëÇ/4u§“Ÿ`íøß ½LZnÿµ©Í9¼ÇL:8²Ñ³Ä1e£ÈB4”MDVÇà©Æ©.£ı	‘çVƒüw"LøƒS`»b šCìH¶!±ˆ	Ü†H?åÁ&È9d_œÈ„yøÒâ“¥úU§J××@wánÕUÚOïµ‹¹Ò÷ñ·ñ›M³ÔéUÉ®×
+.ËÙÂ§†˜XNt[—½«E–`Á2şiÖ.]—!WGu©Š+¨BE†Óqçàğ€MQ›ØCí^^p€¸ BlI0­›Ñ§í{ŒQ'|¤ße²‹]+!Dq²1û¿BŠİÀ>79“·9ïFá^Œ~ö|§İ.3ò‘0Ç˜²@ÿL›úê¼±™Ñêhªi[ì2~£šÁ+‡•*Á*æ¹zhbl³È·«›Ä7SHv8‰MV>A«r}^V×¥Ûİ{Û§vZã ·ö’“æJjºõA°Áoš_¤àºuúnG¦õÕ£QsMz¯:úMŒ”˜b)sã¾7ÈĞÃğÄV“PŒ—~NZ’¶áSR0ûd*BmZÜqÔ;:‡®$É·r¹“ä^V^ÆŞ¨\b‰¼ÍCBå·×Ul¼ ã¯ ç’øyİ½»<lV{Æx°ÿè@øßµÉáõU²ïÌµ_q*ƒ!hº=®©DªôJáüqLšöSá¾Ë¯Ë¦€£íyœBc}Íû¢Oö;¾»´á¾É(Ü=„ÜvøH—£Î×°V'¤[~õzpC#C\ãwLsÄ#™skƒÚSDÊà¬*ÁÔJŒz8ÏRç
