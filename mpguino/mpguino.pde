@@ -1,10 +1,13 @@
 /* YOU NEED TO USE ARDUINO VERSION 0011 !!!!!!  */
 //it won't fit with the new math libraries that come with 0012, sorry.
-
-#define ver=730
 //GPL Software    
-//#define debuguino youbetyourbippy  
+
 #include <avr/pgmspace.h>  
+
+//#define usedefaults true
+unsigned long  parms[]={95ul,8208ul,500000000ul,3ul,420000000ul,10300ul,500ul,2400ul,0ul,2ul};//default values
+char *  parmLabels[]={"Contrast","VSS Pulses/Mile", "MicroSec/Gallon","Pulses/2 revs","Timout(microSec)","Tank Gal * 1000","Injector DelayuS","Weight (lbs)","Scratchpad(odo?)","VSS Delay ms"};
+
 byte brightness[]={255,214,171,128}; //middle button cycles through these brightness settings      
 #define brightnessLength (sizeof(brightness)/sizeof(byte)) //array size      
 byte brightnessIdx=1;      
@@ -20,9 +23,6 @@ byte brightnessIdx=1;
 #define weightIdx 7
 #define scratchpadIdx 8
 #define vsspause 9
-char *  parmLabels[]={"Contrast","VSS Pulses/Mile", "MicroSec/Gallon","Pulses/2 revs","Timout(microSec)","Tank Gal * 1000","Injector DelayuS","Weight (lbs)","Scratchpad(odo?)","VSS Delay ms"};
-//unsigned long  parms[]={15ul,16408ul,684968626ul,3ul,420000000ul,13300ul,500ul};//default values
-unsigned long  parms[]={95ul,8208ul,500000000ul,3ul,420000000ul,10300ul,500ul,2400ul,0ul,2ul};//default values
 #define parmsLength (sizeof(parms)/sizeof(unsigned long)) //array size      
 
 #define nil 3999999999ul
@@ -257,11 +257,9 @@ pFunc displayFuncs[] ={
   doDisplayCustom, 
   doDisplayInstantCurrent, 
   doDisplayInstantTank, 
-#ifndef debuguino  //need to make room for Serial, so BigNums is out in debug mode
   doDisplayBigInstant, 
   doDisplayBigCurrent, 
   doDisplayBigTank, 
-#endif  
   doDisplayCurrentTripData, 
   doDisplayTankTripData, 
   doDisplayEOCIdleData, 
@@ -272,20 +270,14 @@ prog_char  * displayFuncNames[displayFuncSize];
 byte newRun = 0;
 void setup (void){
   init2();
-  #ifdef debuguino  
-  Serial.begin(9600);  
-  Serial.println("OpenGauge MPGuino online");  
-  #endif      
   newRun = load();//load the default parameters
   byte x = 0;
   displayFuncNames[x++]=  PSTR("Custom  "); 
   displayFuncNames[x++]=  PSTR("Instant/Current "); 
   displayFuncNames[x++]=  PSTR("Instant/Tank "); 
-#ifndef debuguino  
   displayFuncNames[x++]=  PSTR("BIG Instant "); 
   displayFuncNames[x++]=  PSTR("BIG Current "); 
   displayFuncNames[x++]=  PSTR("BIG Tank "); 
-#endif
   displayFuncNames[x++]=  PSTR("Current "); 
   displayFuncNames[x++]=  PSTR("Tank "); 
   displayFuncNames[x++]=  PSTR("EOC mi/Idle gal "); 
@@ -309,7 +301,7 @@ void setup (void){
   LCD::gotoXY(0,0); 
   LCD::print(getStr(PSTR("OpenGauge       ")));      
   LCD::gotoXY(0,1);      
-  LCD::print(getStr(PSTR("  MPGuino  v0.73")));      
+  LCD::print(getStr(PSTR("  MPGuino  v0.74")));      
 
   pinMode(InjectorOpenPin, INPUT);       
   pinMode(InjectorClosedPin, INPUT);       
@@ -366,16 +358,22 @@ void loop (void){
     tmpInstInjCount=0;
 
     sei();
-    #ifdef debuguino  
-//    Serial.print("instant: ");Serial.print(instant.injHiSec);Serial.print(",");Serial.print(instant.injHius);  
-//    Serial.print(",");Serial.print(instant.injPulses);Serial.print(",");Serial.println(instant.vssPulses);      
-    #endif  
+    
+    //send out instantmpg * 1000, instantmph * 1000, the injector/vss raw data
+    simpletx(format(instantmpg()));
+    simpletx(",");
+    simpletx(format(instantmph()));
+    simpletx(",");
+    simpletx(format(instant.injHius*1000));
+    simpletx(",");
+    simpletx(format(instant.injPulses*1000));
+    simpletx(",");
+    simpletx(format(instant.vssPulses*1000));
+    simpletx("\n");
+    
+    
     current.update(instant);   //use instant to update current      
     tank.update(instant);      //use instant to update tank      
-    #ifdef debuguino  
-//    Serial.print("current: ");Serial.print(current.injHiSec);Serial.print(",");Serial.print(current.injHius);  
-//    Serial.print(",");Serial.print(current.injPulses);Serial.print(",");Serial.println(current.vssPulses);      
-    #endif  
 
 //currentTripResetTimeoutUS
     if(instant.vssPulses == 0 && instant.injPulses == 0 && holdDisplay==0){
@@ -532,11 +530,9 @@ void doDisplayInstantCurrent(){displayTripCombo('I','M',instantmpg(),'S',instant
  
 void doDisplayInstantTank(){displayTripCombo('I','M',instantmpg(),'S',instantmph(),'T','M',tank.mpg(),'D',tank.miles());}      
 
-#ifndef debuguino  
 void doDisplayBigInstant() {bigNum(instantmpg(),"INST","MPG ");}      
 void doDisplayBigCurrent() {bigNum(current.mpg(),"CURR","MPG ");}      
 void doDisplayBigTank()    {bigNum(tank.mpg(),"TANK","MPG ");}      
-#endif 
  
 void doDisplayCurrentTripData(void){tDisplay(&current);}   //display current trip formatted data.        
 void doDisplayTankTripData(void){tDisplay(&tank);}      //display tank trip formatted data.        
@@ -609,7 +605,7 @@ void LCD::init(){
   LcdCommandWrite(B00101000);   // 4-bit interface, 2 display lines, 5x8 font
   LcdCommandWrite(B00001100);   // display control:
   LcdCommandWrite(B00000110);   // entry mode set: increment automatically, no display shift
-#ifndef debuguino 
+
 //creating the custom fonts:
   LcdCommandWrite(B01001000);  // set cgram
   static byte chars[] PROGMEM ={
@@ -626,7 +622,6 @@ void LCD::init(){
     for(byte x=0;x<5;x++)
       for(byte y=0;y<8;y++)
           LcdDataWrite(pgm_read_byte(&chars[y*5+x])); //write the character data to the character generator ram
-#endif
   LcdCommandWrite(B00000001);  // clear display, set cursor position to zero
   LcdCommandWrite(B10000000);  // set dram to zero
 
@@ -895,7 +890,6 @@ void Trip::update(Trip t){
 }   
  
  
-#ifndef debuguino  
 char bignumchars1[]={4,1,4,0, 1,4,32,0, 3,3,4,0, 1,3,4,0, 4,2,4,0,   4,3,3,0, 4,3,3,0, 1,1,4,0,   4,3,4,0, 4,3,4,0}; 
 char bignumchars2[]={4,2,4,0, 2,4,2,0,  4,2,2,0, 2,2,4,0, 32,32,4,0, 2,2,4,0, 4,2,4,0, 32,4,32,0, 4,2,4,0, 2,2,4,0};  
  
@@ -932,7 +926,6 @@ void bigNum (unsigned long t, char * txt1, char * txt2){
   LCD::print(" "); 
   LCD::print(txt2); 
 }      
-#endif 
 
 
 
@@ -1055,6 +1048,9 @@ void save(){
 }
 
 byte load(){ //return 1 if loaded ok
+  #ifdef usedefaults
+    return 1;
+  #endif
   byte b = EEPROM.read(0);
   byte c = EEPROM.read(1);
   if(b == guinosigold)
@@ -1076,7 +1072,6 @@ byte load(){ //return 1 if loaded ok
   return 0;
 }
 
-#ifndef debuguino
 
 char * uformat(unsigned long val){ 
   unsigned long d = 1000000000ul;
@@ -1183,15 +1178,12 @@ void editParm(byte parmIdx){
   }      
   
 }
-#endif
 
 void initGuino(){ //edit all the parameters
-#ifndef debuguino
   for(int x = 0;x<parmsLength;x++)
     editParm(x);
   save();
   holdDisplay=1;
-#endif
 }  
 
 unsigned long millis2(){
@@ -1244,4 +1236,17 @@ void init2(){
 	// disable timer 0 overflow interrupt
 	TIMSK0&=!(1<<TOIE0);
 }
-
+#define myubbr (16000000/16/9600-1)
+void simpletx( char * string ){
+ if (UCSR0B != (1<<TXEN0)){ //do we need to init the uart?
+    UBRR0H = (unsigned char)(myubbr>>8);
+    UBRR0L = (unsigned char)myubbr;
+    UCSR0B = (1<<TXEN0);//Enable transmitter
+    UCSR0C = (3<<UCSZ00);//N81
+ }
+ while (*string)
+ {
+   while ( !( UCSR0A & (1<<UDRE0)) );
+   UDR0 = *string++; //send the data
+ }
+}
