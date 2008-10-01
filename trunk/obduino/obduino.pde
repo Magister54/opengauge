@@ -25,11 +25,12 @@
  59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
  */
 
+#undef int
 #include <stdio.h>
 #include <avr/eeprom.h>
 #include <avr/pgmspace.h>
 
-//LCD Pins from mpguino
+// LCD Pins from mpguino
 #define DIPin 4 // register select RS
 #define DB4Pin 7
 #define DB5Pin 8
@@ -39,17 +40,24 @@
 #define EnablePin 5
 #define BrightnessPin 9
 
-//LCD prototype
+// LCD prototypes
 void lcd_gotoXY(byte x, byte y);
 void lcd_print_P(char *string);  // to work with string in flash and PSTR()
 void lcd_print(char *string);
 void lcd_cls();
 void lcd_init();
 void lcd_tickleEnable();
-void lcd_CommandWriteSet();
-void lcd_CommandWrite(byte value);
-void lcd_DataWrite(byte value);
+void lcd_commandWriteSet();
+void lcd_commandWrite(byte value);
+void lcd_dataWrite(byte value);
 void lcd_pushNibble(byte value);
+
+// Memory prototypes
+byte params_load(void);
+void params_save(void);
+
+// Others prototypes
+void int_to_dec_str(long value, char *decs, byte prec);
 
 #define BUTTON_DELAY  250
 // use analog pins as digital pins
@@ -1184,6 +1192,7 @@ void trip_reset(void)
   lcd_print_P(PSTR("Reset trip data"));
   p=0;
   // set value with left/right and set with middle
+  buttonState=buttonsUp;
   do
   {
     if(!(buttonState&lbuttonBit))
@@ -1391,7 +1400,7 @@ void config_menu(void)
   lcd_print_P(PSTR("Saving config"));
   lcd_gotoXY(0,1);
   lcd_print_P(PSTR("Please wait..."));
-  save();
+  params_save();
 }
 
 void test_buttons(void)
@@ -1451,7 +1460,7 @@ void setup()                    // run once, when the sketch starts
   PCICR |= (1 << PCIE1);
 
   // load parameters
-  if(load()==0)  // if something is wrong, put default parms
+  if(params_load()==0)  // if something is wrong, put default parms
   {
     params.contrast=40;
     params.useMetric=1;
@@ -1548,7 +1557,7 @@ void loop()                     // run over and over again
   // save param only once, by flopping param_saved
   if(param_saved==0 && engine_started!=0 && has_rpm==0)
   {
-    save();
+    params_save();
     param_saved=1;
     engine_started=0;
     lcd_cls();
@@ -1572,7 +1581,7 @@ void loop()                     // run over and over again
  */
 
 // we have 512 bytes of EEPROM
-void save(void)
+void params_save(void)
 {
   uint16_t crc;
   byte *p;
@@ -1590,7 +1599,7 @@ void save(void)
 }
 
 //return 1 if loaded ok
-byte load(void)
+byte params_load(void)
 {
   uint16_t crc, crc_calc;
   byte *p;
@@ -1639,7 +1648,7 @@ void lcd_gotoXY(byte x, byte y)
   byte dr=0x80+x;
   if(y!=0)    // save 2 bytes compared to "if(y==1)"
     dr+=0x40;
-  lcd_CommandWrite(dr);
+  lcd_commandWrite(dr);
 }
 
 void lcd_print_P(char *string)
@@ -1653,7 +1662,7 @@ void lcd_print_P(char *string)
 void lcd_print(char *string)
 {
   while(*string != 0)
-    lcd_DataWrite(*string++);
+    lcd_dataWrite(*string++);
 }
 
 // do the lcd initialization voodoo
@@ -1675,9 +1684,9 @@ void lcd_init()
   delay(1);                     // wait for more than 100 usec
   // ready to use normal CommandWrite() function now!
 
-  lcd_CommandWrite(B00101000);   // 4-bit interface, 2 display lines, 5x8 font
-  lcd_CommandWrite(B00001100);   // display control on, no cursor, no blink
-  lcd_CommandWrite(B00000110);   // entry mode set: increment automatically, no display shift
+  lcd_commandWrite(B00101000);   // 4-bit interface, 2 display lines, 5x8 font
+  lcd_commandWrite(B00001100);   // display control on, no cursor, no blink
+  lcd_commandWrite(B00000110);   // entry mode set: increment automatically, no display shift
 
   //creating the custom fonts (8 char max)
   // char 0 is not used
@@ -1687,7 +1696,7 @@ void lcd_init()
 #define NB_CHAR  5
   // set cg ram to address 0x08 (B001000) to skip the
   // first 8 rows as we do not use char 0
-  lcd_CommandWrite(B01001000);
+  lcd_commandWrite(B01001000);
   static byte chars[] PROGMEM ={
     B10000,B00000,B10000,B00010,B00111,
     B10000,B00000,B10100,B00100,B00101,
@@ -1701,16 +1710,16 @@ void lcd_init()
 
   for(byte x=0;x<NB_CHAR;x++)
     for(byte y=0;y<8;y++)  // 8 rows
-      lcd_DataWrite(pgm_read_byte(&chars[y*NB_CHAR+x])); //write the character data to the character generator ram
+      lcd_dataWrite(pgm_read_byte(&chars[y*NB_CHAR+x])); //write the character data to the character generator ram
 
   lcd_cls();
-  lcd_CommandWrite(B10000000);  // set dram to zero
+  lcd_commandWrite(B10000000);  // set dram to zero
 }
 
 void lcd_cls()
 {
-  lcd_CommandWrite(B00000001);  // Clear Display
-  lcd_CommandWrite(B00000010);  // Return Home
+  lcd_commandWrite(B00000001);  // Clear Display
+  lcd_commandWrite(B00000010);  // Return Home
 }
 
 void lcd_tickleEnable()
@@ -1738,7 +1747,7 @@ void lcd_pushNibble(byte value)
   digitalWrite(DB4Pin, value & 16);
 }
 
-void lcd_CommandWrite(byte value)
+void lcd_commandWrite(byte value)
 {
   lcd_pushNibble(value);
   lcd_commandWriteSet();
@@ -1748,7 +1757,7 @@ void lcd_CommandWrite(byte value)
   delay(5);
 }
 
-void lcd_DataWrite(byte value)
+void lcd_dataWrite(byte value)
 {
   digitalWrite(DIPin, HIGH);
   lcd_pushNibble(value);

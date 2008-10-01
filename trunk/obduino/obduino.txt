@@ -1,11 +1,47 @@
-three buttons:
+Role of the three buttons:
 
         realtime display      menu display
 LEFT    rotate screen         decrease, select NO
 MIDDLE  go into menu          apply and go to next item
 RIGHT   rotate brightness     increase, select YES
+MIDDLE+RIGHT trip reset
 
+When you press middle and right button, a screen appear:
+- Reset trip data (NO/YES)
+  Select if you want to reset the data and press middle button to ack.
 
-configuration:
-1 - Contrast (0-9)
-2 - Use Metric units (0-1)
+Configuration menu (accessed by middle button);
+
+- LCD Contrast (0-100)
+  Set the LCD contrast from 0 to 100 in step 20
+  
+- Use Metric units (NO/YES)
+  NO=rods and hogshead, YES=SI
+  
+- Fuel/hour speed (0-255)
+  Speed from which the display go from L/100 or MPG, to L/h or GPH
+  
+- Volume Efficiency (0-100%) (MAP only)
+  For vehicles with a MAP only we have to emulate the MAF.
+  This percentage will needs adjustment after you have checked manually
+  a few tank to approximate better the fuel consumption.
+  
+- Engine Displacement (0.0-10.0) (MAP only)
+  For vehicles with a MAP only we have to emulate the MAF.
+  This is the size of the engine, e.g. 2.0 for a 2Liter one.
+  
+- Configure PIDs (NO/YES)
+  Choose if you want to configure the PIDs in the various screen.
+  
+- Scr 'n' Corner 'm' (0x00-oxFF)
+  (if you have selected YES at the previous item)
+  Select the PID you want to be displayed on screen 'n' in the corner 'm'.
+  Some specials PIDs you can access (either by decreasing below 0 or by
+  going far up):
+  0xF0 - no display, meaning this corner will be blank, can be useful if
+         another PID result is more than 8 characters
+  0xF1 - instant Fuel Consumption
+  0xF2 - average consumption of the trip
+  0xF3 - distance of the trip
+  0xF4 - battery voltage (of the car)
+  0xF5 - CAN status, for CAN only protocol only, display TX and RX errors
