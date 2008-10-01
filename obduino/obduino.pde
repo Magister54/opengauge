@@ -83,7 +83,8 @@ prog_char blkstr[] PROGMEM="        "; // 8 spaces, used to clear part of screen
 typedef struct
 {
   byte corner[NBCORNER];
-} screen_t;
+} 
+screen_t;
 
 typedef struct
 {
@@ -95,7 +96,8 @@ typedef struct
   float trip_dist;   // trip distance in m
   float trip_fuel;   // trip fuel used in mL
   screen_t screen[NBSCREEN];
-} params_t;
+} 
+params_t;
 
 // global parameters
 params_t params;
@@ -226,7 +228,7 @@ prog_uchar pid_reslen[] PROGMEM=
   // pid 0x20 to 0x3F
   4,2,2,2,4,4,4,4,4,4,4,4,1,1,1,1,
   1,2,2,1,4,4,4,4,4,4,4,4,2,2,2,2,
-  
+
   // pid 0x40 to 0x4E
   4,8,2,2,2,1,1,1,1,1,1,1,1,2,2
 };
@@ -344,7 +346,8 @@ int elm_init()
   {
     elm_command(str, PSTR("0100\r"));
     delay(1000);
-} while(elm_check_response("0100", str)!=0);
+  } 
+  while(elm_check_response("0100", str)!=0);
 
   // ask protocol
   elm_command(str, PSTR("ATDPN\r"));
@@ -575,9 +578,9 @@ long get_pid(byte pid, char *retbuf)
   if( pid!=PID_SUPPORT20 )
   {
     if( (pid<=0x20 && ( 1L<<(0x20-pid) & pid01to20_support ) == 0 )
-    ||  (pid>0x20 && pid<=0x40 && ( 1L<<(0x40-pid) & pid21to40_support ) == 0 )
-    ||  (pid>0x40 && pid<=0x60 && ( 1L<<(0x60-pid) & pid41to60_support ) == 0 )
-    ||  (pid>LAST_PID) )
+      ||  (pid>0x20 && pid<=0x40 && ( 1L<<(0x40-pid) & pid21to40_support ) == 0 )
+      ||  (pid>0x40 && pid<=0x60 && ( 1L<<(0x60-pid) & pid41to60_support ) == 0 )
+      ||  (pid>LAST_PID) )
     {
       // nope
       sprintf_P(retbuf, PSTR("%02X N/A"), pid);
@@ -717,13 +720,13 @@ long get_pid(byte pid, char *retbuf)
 #ifdef DEBUG
       ret=600;
 #else
-      ret=(buf[0]*256U+buf[1])/10U - 40;
+    ret=(buf[0]*256U+buf[1])/10U - 40;
 #endif
     else
 #ifdef DEBUG
       ret=40;
 #else
-      ret=buf[0]-40;
+    ret=buf[0]-40;
 #endif
     if(!params.useMetric)
       ret=(ret*9)/5+32;
@@ -921,7 +924,7 @@ void accu_trip(void)
   time_now = millis();
   delta_time = time_now - old_time;
   old_time = time_now;
-  
+
   // distance in m
   vss=get_pid(VEHICLE_SPEED, str);
   if(vss>0)
@@ -933,7 +936,7 @@ void accu_trip(void)
     maf=0;
     return;
   }
-    
+
   // accumulate fuel only if not in DFCO
   // if throttle position is close to idle and we are in open loop -> DFCO
 
@@ -944,7 +947,7 @@ void accu_trip(void)
 
   // get fuel status
   open_load=(get_pid(FUEL_STATUS, str)&0x0400)?1:0;
-  
+
   if(throttle_pos<(min_throttle_pos+4) && open_load)
     maf=0;  // decellerate fuel cut-off, fake the MAF as 0 :)
   else
@@ -957,27 +960,27 @@ void accu_trip(void)
     }
     else
     {
-/*
+      /*
       I just hope if you don't have a MAF, you have a MAP!!
-
-      No MAF (Uses MAP and Absolute Temp to approximate MAF):
-      IMAP = RPM * MAP / IAT
-      MAF = (IMAP/120)*(VE/100)*(ED)*(MM)/(R)
-      MAP - Manifold Absolute Pressure in kPa
-      IAT - Intake Air Temperature in Kelvin
-      R - Specific Gas Constant (8.314472 J/(mol.K)
-      MM - Average molecular mass of air (28.9644 g/mol)
-      VE - volumetric efficiency measured in percent
-      ED - Engine Displacement in liters
-      This method requires tweaking of the VE for accuracy.
-*/
+       
+       No MAF (Uses MAP and Absolute Temp to approximate MAF):
+       IMAP = RPM * MAP / IAT
+       MAF = (IMAP/120)*(VE/100)*(ED)*(MM)/(R)
+       MAP - Manifold Absolute Pressure in kPa
+       IAT - Intake Air Temperature in Kelvin
+       R - Specific Gas Constant (8.314472 J/(mol.K)
+       MM - Average molecular mass of air (28.9644 g/mol)
+       VE - volumetric efficiency measured in percent
+       ED - Engine Displacement in liters
+       This method requires tweaking of the VE for accuracy.
+       */
       long imap, rpm, map, iat;
-      
+
       rpm=get_pid(ENGINE_RPM, str);
       map=get_pid(MAN_PRESSURE, str);
       iat=get_pid(INT_AIR_TEMP, str);
       imap=(rpm*map)/(iat+273);
-      
+
       // does not divide by 100 because we use (MAF*100) in formula
       // but divide by 10 because engine displacement is in dL
       // 28.9644/(120*8.314472*10)= about 0.0029 or 29/10000
@@ -1070,7 +1073,6 @@ void check_supported_pid(void)
 }
 
 // might be incomplete
-
 void check_mil_code(void)
 {
   unsigned long n;
@@ -1163,7 +1165,7 @@ void check_mil_code(void)
 /*
  * Configuration menu
  */
- 
+
 void delay_button(void)
 {
   // when we delay for the button, do not forget to accumulate data for trip
@@ -1172,123 +1174,10 @@ void delay_button(void)
   accu_trip();
 }
 
-void config_menu(void)
+void trip_reset(void)
 {
-  char VERSION[] = {"$Revision: 82$"};
   char str[STRLEN];
   byte p;
-
-  // display info
-  lcd_cls();
-  VERSION[strlen(VERSION)-1]=NUL;  // replace last $ with \0
-  sprintf_P(str, PSTR("OBDuino v%s"), strchr(VERSION, ' ')+1);
-  lcd_print(str);
-#ifndef DEBUG
-  elm_command(str, PSTR("ATDP\r"));
-  lcd_gotoXY(0,1);
-  if(str[0]=='A')  // string start with "AUTO, ", skip it
-    lcd_print(str+6);
-  else
-    lcd_print(str);
-#endif
-  delay(2000);
-  
-  // go through all the configurable items
-
-  // first one is contrast
-  lcd_cls();
-  lcd_print_P(PSTR("LCD Contrast"));
-  // set value with left/right and set with middle
-  do
-  {
-    if(!(buttonState&lbuttonBit) && params.contrast!=0)
-      params.contrast-=20;
-    else if(!(buttonState&rbuttonBit) && params.contrast!=100)
-      params.contrast+=20;
-
-    lcd_gotoXY(5,1);
-    sprintf_P(str, PSTR("- %d + "), params.contrast);
-    lcd_print(str);
-    analogWrite(ContrastPin, params.contrast);  // change dynamicaly
-    buttonState=buttonsUp;
-    delay_button();
-  } while(buttonState&mbuttonBit);
-
-  // then the use of metric
-  lcd_cls();
-  lcd_print_P(PSTR("Use metric unit"));
-  // set value with left/right and set with middle
-  do
-  {
-    if(!(buttonState&lbuttonBit))
-      params.useMetric=0;
-    else if(!(buttonState&rbuttonBit))
-      params.useMetric=1;
-
-    lcd_gotoXY(4,1);
-    if(!params.useMetric)
-      lcd_print_P(PSTR("(NO) YES"));
-    else
-      lcd_print_P(PSTR("NO (YES)"));
-    buttonState=buttonsUp;
-    delay_button();
-  } while(buttonState&mbuttonBit);
-
-  // speed from which we toggle to fuel/hour
-  lcd_cls();
-  lcd_print_P(PSTR("Fuel/hour speed"));
-  // set value with left/right and set with middle
-  do
-  {
-    if(!(buttonState&lbuttonBit) && params.perHourSpeed!=0)
-      params.perHourSpeed--;
-    else if(!(buttonState&rbuttonBit) && params.perHourSpeed!=255)
-      params.perHourSpeed++;
-
-    lcd_gotoXY(5,1);
-    sprintf_P(str, PSTR("- %d + "), params.perHourSpeed);
-    lcd_print(str);
-    buttonState=buttonsUp;
-    delay_button();
-  } while(buttonState&mbuttonBit);
-
-  // volume efficiency
-  lcd_cls();
-  lcd_print_P(PSTR("Vol effncy (MAP)"));
-  // set value with left/right and set with middle
-  do
-  {
-    if(!(buttonState&lbuttonBit) && params.vol_eff!=0)
-      params.vol_eff--;
-    else if(!(buttonState&rbuttonBit) && params.vol_eff!=100)
-      params.vol_eff++;
-
-    lcd_gotoXY(5,1);
-    sprintf_P(str, PSTR("- %d%% + "), params.vol_eff);
-    lcd_print(str);
-    buttonState=buttonsUp;
-    delay_button();
-  } while(buttonState&mbuttonBit);
-
-  // engine displacement
-  lcd_cls();
-  lcd_print_P(PSTR("Eng dplcmt (MAP)"));
-  char decs[16];
-  // set value with left/right and set with middle
-  do
-  {
-    if(!(buttonState&lbuttonBit) && params.eng_dis!=0)
-      params.eng_dis--;
-    else if(!(buttonState&rbuttonBit) && params.eng_dis!=100)
-      params.eng_dis++;
-
-    lcd_gotoXY(4,1);
-    int_to_dec_str(params.eng_dis, decs, 1);
-    sprintf_P(str, PSTR("- %sL + "), decs);
-    lcd_print(str);
-    buttonState=buttonsUp;
-    delay_button();
-  } while(buttonState&mbuttonBit);
 
   // to reset trip
   lcd_cls();
@@ -1309,41 +1198,193 @@ void config_menu(void)
       lcd_print_P(PSTR("NO (YES)"));
     buttonState=buttonsUp;
     delay_button();
-  } while(buttonState&mbuttonBit);
+  } 
+  while(buttonState&mbuttonBit);
   if(p==1)
   {
     params.trip_dist=0.0;
     params.trip_fuel=0.0;
   }
+}
+
+void config_menu(void)
+{
+  char str[STRLEN];
+  byte p;
+
+  // display protocol, just for fun
+  lcd_cls();
+#ifndef DEBUG
+  memset(str, 0, STRLEN);
+  elm_command(str, PSTR("ATDP\r"));
+  if(str[0]=='A')  // string start with "AUTO, ", skip it
+  {
+    lcd_print(str+6);
+    lcd_gotoXY(0,1);
+    lcd_print(str+6+16);
+  }
+  else
+  {
+    lcd_print(str);
+    lcd_gotoXY(0,1);
+    lcd_print(str+16);
+  }
+  delay(2000);
+#endif
+
+  // go through all the configurable items
+
+  // first one is contrast
+  lcd_cls();
+  lcd_print_P(PSTR("LCD Contrast"));
+  // set value with left/right and set with middle
+  do
+  {
+    if(!(buttonState&lbuttonBit) && params.contrast!=0)
+      params.contrast-=20;
+    else if(!(buttonState&rbuttonBit) && params.contrast!=100)
+      params.contrast+=20;
+
+    lcd_gotoXY(5,1);
+    sprintf_P(str, PSTR("- %d + "), params.contrast);
+    lcd_print(str);
+    analogWrite(ContrastPin, params.contrast);  // change dynamicaly
+    buttonState=buttonsUp;
+    delay_button();
+  } 
+  while(buttonState&mbuttonBit);
+
+  // then the use of metric
+  lcd_cls();
+  lcd_print_P(PSTR("Use metric unit"));
+  // set value with left/right and set with middle
+  do
+  {
+    if(!(buttonState&lbuttonBit))
+      params.useMetric=0;
+    else if(!(buttonState&rbuttonBit))
+      params.useMetric=1;
+
+    lcd_gotoXY(4,1);
+    if(!params.useMetric)
+      lcd_print_P(PSTR("(NO) YES"));
+    else
+      lcd_print_P(PSTR("NO (YES)"));
+    buttonState=buttonsUp;
+    delay_button();
+  } 
+  while(buttonState&mbuttonBit);
+
+  // speed from which we toggle to fuel/hour
+  lcd_cls();
+  lcd_print_P(PSTR("Fuel/hour speed"));
+  // set value with left/right and set with middle
+  do
+  {
+    if(!(buttonState&lbuttonBit) && params.perHourSpeed!=0)
+      params.perHourSpeed--;
+    else if(!(buttonState&rbuttonBit) && params.perHourSpeed!=255)
+      params.perHourSpeed++;
+
+    lcd_gotoXY(5,1);
+    sprintf_P(str, PSTR("- %d + "), params.perHourSpeed);
+    lcd_print(str);
+    buttonState=buttonsUp;
+    delay_button();
+  } 
+  while(buttonState&mbuttonBit);
+
+  // volume efficiency
+  lcd_cls();
+  lcd_print_P(PSTR("Vol effncy (MAP)"));
+  // set value with left/right and set with middle
+  do
+  {
+    if(!(buttonState&lbuttonBit) && params.vol_eff!=0)
+      params.vol_eff--;
+    else if(!(buttonState&rbuttonBit) && params.vol_eff!=100)
+      params.vol_eff++;
+
+    lcd_gotoXY(5,1);
+    sprintf_P(str, PSTR("- %d%% + "), params.vol_eff);
+    lcd_print(str);
+    buttonState=buttonsUp;
+    delay_button();
+  } 
+  while(buttonState&mbuttonBit);
+
+  // engine displacement
+  lcd_cls();
+  lcd_print_P(PSTR("Eng dplcmt (MAP)"));
+  char decs[16];
+  // set value with left/right and set with middle
+  do
+  {
+    if(!(buttonState&lbuttonBit) && params.eng_dis!=0)
+      params.eng_dis--;
+    else if(!(buttonState&rbuttonBit) && params.eng_dis!=100)
+      params.eng_dis++;
+
+    lcd_gotoXY(4,1);
+    int_to_dec_str(params.eng_dis, decs, 1);
+    sprintf_P(str, PSTR("- %sL + "), decs);
+    lcd_print(str);
+    buttonState=buttonsUp;
+    delay_button();
+  } 
+  while(buttonState&mbuttonBit);
 
   // pid for the 4 corners, and for the n screen
-  for(byte cur_screen=0; cur_screen<NBSCREEN; cur_screen++)
+  lcd_cls();
+  lcd_print_P(PSTR("Configure PIDs"));
+  p=0;
+  // set value with left/right and set with middle
+  do
   {
-    for(byte cur_corner=0; cur_corner<NBCORNER; cur_corner++)
+    if(!(buttonState&lbuttonBit))
+      p=0;
+    else if(!(buttonState&rbuttonBit))
+      p=1;
+
+    lcd_gotoXY(4,1);
+    if(p==0)
+      lcd_print_P(PSTR("(NO) YES"));
+    else
+      lcd_print_P(PSTR("NO (YES)"));
+    buttonState=buttonsUp;
+    delay_button();
+  } 
+  while(buttonState&mbuttonBit);
+  
+  if(p==1)
+    for(byte cur_screen=0; cur_screen<NBSCREEN; cur_screen++)
     {
-      lcd_cls();
-      sprintf_P(str, PSTR("Scr %d Corner %d"), cur_screen+1, cur_corner+1);
-      lcd_print(str);
-      p=params.screen[cur_screen].corner[cur_corner];
-
-      // set value with left/right and set with middle
-      do
+      for(byte cur_corner=0; cur_corner<NBCORNER; cur_corner++)
       {
-        if(!(buttonState&lbuttonBit))
-          p--;
-        else if(!(buttonState&rbuttonBit))
-          p++;
-
-        lcd_gotoXY(5,1);
-        sprintf_P(str, PSTR("- %02X +"), p);
+        lcd_cls();
+        sprintf_P(str, PSTR("Scr %d Corner %d"), cur_screen+1, cur_corner+1);
         lcd_print(str);
-        buttonState=buttonsUp;
-        delay_button();
-      } while(buttonState&mbuttonBit);
-      // PID is choosen, set it
-      params.screen[cur_screen].corner[cur_corner]=p;
+        p=params.screen[cur_screen].corner[cur_corner];
+
+        // set value with left/right and set with middle
+        do
+        {
+          if(!(buttonState&lbuttonBit))
+            p--;
+          else if(!(buttonState&rbuttonBit))
+            p++;
+
+          lcd_gotoXY(5,1);
+          sprintf_P(str, PSTR("- %02X +"), p);
+          lcd_print(str);
+          buttonState=buttonsUp;
+          delay_button();
+        } 
+        while(buttonState&mbuttonBit);
+        // PID is choosen, set it
+        params.screen[cur_screen].corner[cur_corner]=p;
+      }
     }
-  }
 
   // save params in EEPROM
   lcd_cls();
@@ -1355,8 +1396,13 @@ void config_menu(void)
 
 void test_buttons(void)
 {
+  // middle + right = trip reset
+  if(!(buttonState&mbuttonBit) && !(buttonState&rbuttonBit))
+  {
+    trip_reset();
+  }
   // left is cycle through active screen
-  if(!(buttonState&lbuttonBit))
+  else if(!(buttonState&lbuttonBit))
   {
     active_screen = (active_screen+1) % NBSCREEN;
     lcd_cls();
@@ -1374,14 +1420,15 @@ void test_buttons(void)
   buttonState=buttonsUp;
 }
 
-/****************\
-* Initialization *
-\****************/
+/*
+ * Initialization
+ */
 
 void setup()                    // run once, when the sketch starts
 {
   byte r;
   char str[STRLEN];
+  char VERSION[] = "$Revision: 82$";
 
 #ifndef ELM
   // init pinouts
@@ -1440,7 +1487,9 @@ void setup()                    // run once, when the sketch starts
   analogWrite(ContrastPin, params.contrast);
   lcd_init();
 
-  lcd_print_P(PSTR(" ** OBDuino **"));
+  VERSION[strlen(VERSION)-1]=NUL;  // replace last $ with \0
+  sprintf_P(str, PSTR("* OBDuino v%s *"), strchr(VERSION, ' ')+1);
+  lcd_print(str);
 
   do // init loop
   {
@@ -1479,9 +1528,9 @@ void setup()                    // run once, when the sketch starts
   old_time=millis();  // epoch
 }
 
-/***********\
-* Main loop *
-\***********/
+/*
+ * Main loop
+ */
 
 void loop()                     // run over and over again
 {
@@ -1518,9 +1567,9 @@ void loop()                     // run over and over again
   test_buttons();
 }
 
-/**************************\
-* Memory related functions *
-\**************************/
+/*
+ * Memory related functions
+ */
 
 // we have 512 bytes of EEPROM
 void save(void)
@@ -1538,7 +1587,7 @@ void save(void)
     crc+=p[i];
 
   eeprom_write_word((uint16_t*)sizeof(params_t), crc);
- }
+}
 
 //return 1 if loaded ok
 byte load(void)
@@ -1581,9 +1630,9 @@ int memoryTest(void)
 }
 #endif
 
-/***************\
-* LCD functions *
-\***************/
+/*
+ * LCD functions
+ */
 // x=0..16, y=0..1
 void lcd_gotoXY(byte x, byte y)
 {
@@ -1604,11 +1653,108 @@ void lcd_print_P(char *string)
 void lcd_print(char *string)
 {
   while(*string != 0)
-    lcd_Dat/V4„x®k6nU§,U½a‡ß½µv,ÉÍã)Áğµ“ü(Ãj"G+økn#Çã•|·™júz´U_')#ß”Ëk€…ü<r^‘G\é*j×ÍÆ±œ/9ª§Õİ˜@l_ç¯S™|Œú]51l°ºSa1:‚ƒÉ¥`ÅV&ôŠû'.>§ë²Åù«Ù½«}ÑL›Îz7q¥½#1²m
- éŒpÉOãŞÊé¦»‘•Yk_,õ¾4g5Æ'ûm³‡èÚo¿üî‡&SÕÉI´ úuª5C}'–#²;í¼˜íõá'k×öäCIÓHá¼‘)H‰@Øác ³ãK%€âı…> .¯¶nCê`™p½í Ä¹7•Ö¾¯gË ä7¸ŒÀ?É£™3“2ö¸O Ú;Æ“F "4ßÓ3„¤(ºòQx!–õï-à’]h€‘9+ÖWyC*N0E}µšº¬šÍ«è”ršCéƒ+³”¥Rğùb7ØÄdu¶6»QiI?i*¤mÌpqÀ$K%qÍ€üİmqûãÃø9÷½L12í.³ ³ÈI.É2ì¤ÁNøL÷L¸]jĞßıŒvŞ»íÑ­
-d­¹xÛ"“PÿÃs]ôy¥×ğèWK'µ'¨üáp£ç‚½£¨5q[^¤6íuûÏ9ª«äWóbZxNêÈÅºÍ0°Üõ?DØÎ6ìŠ,^J/X2EÚ)HÃ¢Ó!È¸‚Â0bª©šÜc¸²,#N£œ9ëÜ‡Š‰€N–&üŠáMîI‡âÜïJr†(»’´caÑÀ˜šÂ\]õ›:Ü{IæLÔTWj–½ƒ2Ò…†o,gS£Ê©±?KÁ'zÁ­î~Bd‰ô>±8É¥è j‹HG­ŒáÎğ®ÃÅ5¸>(ñlÎ\*ıQ$rîkäW£»¸O;Z}ß¬_fåt6[L?$…k¾Ô >ëÖ|ÓÄÏ˜gò”­åéÃO&ŸìŞ!vÎU§öË«çÙe\½ªZíÙ¾g]8pÉ—+/'âƒ'[>MöÍVôßIÀw)â†/ä!°£™}³¨¨ğƒ¥ívşkğÖ‹±Ká£Æj½ïs–n} §Ò‹“ø²G‚’½9¨JåúV¢NØESèŒ ËWîŞ8Ò¾ÌYâüx„ñÁg†ÒŒ¸úQóçş¹}©5T¬”ÖT:LMaù½Tú|$æE}ïãmY”«“ˆï°ãõvõ…,-©øØ}ç:v~¦‹¡&‚VW‹–ùÙeğch¡¢‹¸=VMStí¨‰Ôw»@F„{ğDÓÏX¤M.
-‘µ9~K´SŞğQá°lÚ,¿‚'è5œÄ6¢GïW®®Oëv¡-«RÜ/pªƒ} y,@ªšºíŠ/Š"êÙÈÍ™ZDw1Üø×ƒx_AĞnÍk:Ä.¶_ïúnHw‚ê£Ö½ ¶ÌH@ç#—ò‹¢æ­yÙ‘ëÊz6Rş=Ë°½¢Zº(M7ÿ"æ·l7Øéƒ/ôÈìÅ¥g Bë“.µÿlRá¦üil)ÙÕû
-…ÑŒ¡ÉâÌÂrü²á•Ú0\ÓÜªüë&¿ê>Xã0™Òã>ğ#nÔCËãF‰x:	“_¬güMóìeYpÓfUº˜®üºøë-\ç1Ó!äÒ[˜¸Û9İ‹5ûBH8bG›,}u¾¤·é~¨¾4¶ºZÈ¡áë½b‚2çK«Ü¹ú°ê/Çx9Ùï½†`•W¸GVÖùzfi7ÊcD‡ºyô}ZÁùNa|GÜ§ÎÿgcñQûµtÜ#¿~fmXÿ;í±bìˆàÇèkTê¨û-Ûâ"6áâ"ÔF‡rH	t-¤•7rƒ•nü¿¢lL5´ ñ$E0äsÔ“Êp•ÖÇÁ×Æö¨@¡ñ]C¢—°¨Ú¦Šş˜ı,ôN³Ã¢§t§çÔ‚Pøôv|FÂ…mOëm}^fòSŸ’ù8À˜¿HÙìuc'tÂìdãhZş=%³s²åÈfëåòÏˆ\4ãÔ¨ôü§­bóVœv+ÆôOÑIÛ+4/ıDÅšçŠ§ˆãÿ‡ÇüáÀEfûCÅşğ'.?7äğ¯¯ğXÉ•CÑJÑ”'"fÂ¾€¾1ãp©n6?ÆòÖN¿71½Ï<Q’(D¦é8Í]Òqt[ñÓõ!ñÍô[œëp?ñû”ªŞ¯†;˜ˆıuĞ3êÍ²9îû@“bnX¿IpÓôZ"U(¯øõ ‚-£© !¬Ñ.*ş=2×@ô} nË†eË)µêÉZ¢MÓv¾¾)Í«ÈJE¯û°5VC±9D/Ù÷?zN˜X´…ªd0ÇÖ"<s²ªÊ²k{şšê”‹2âm' ª1œ²Ve±¨÷Å$¡Ä„W½%pñ¢» ®²5ÅŒÄÖ~ÊRñ7şr ®g+||U_–D0ÒpÀãk)«U».ÀbrO!A$BéÅgA<ş¾m»BÔÒ~òq7Ô~¾óé3mèaÎ
-R©(D‰¥ŒGÌi‚G°/Ûn‹Ç0Æ10%]+ÎõÊmCØK”écõBL_`„<	õ—Ş–¢¾1Øh/„H­§eS×èÉİkÊQC´ÏÅ¬‘ëîj¾zfC)ô['¦„•Eù5†ºßâ”ïw;¬­°:bªå½ËGç>ŸğåÙVÀ9P^Áî~l¹Goëæ>ÉÉĞ?fôOm×Ò4š4ù>x^´‘ğhù0Vx?.8&Ò×ŞºftúúZL©íTÌ•3œ–¶ƒìõ¬­Ñ²<‡z•ƒe¯që»o>˜µ¯H~Ú;b±ØNH¸¢œ³ÿ˜d©ÿY)tNzÜ°JA*>'µ6ÄÂxíüğJ±pû‘NÒ©i2–6Êñ>¦y„®E¦j¢¤ğ	¿l SŸêÿ" ÿ¾£À~’“¶Ğ
-ÆFB¢4ŞÅR½ÉWÓ¹Î‡EK”o¢HïkÖœ¸Q8ìGÈáo	Jôƒ¡ú™ãp2aL¯«Ò÷GòIëkP:SïOtËwÑHü:Gp§±¥v¡ZŸ­Æ™.0J×|rÙuÿ7®òÿ€“ÜI²';ó%İHç¡âe/Ù{ÛÑÕà /hÚt/ñš\ä U¯h¤K#&^8NÈJ£à©ÊÜpYë\y­4iØ­À„ãí9Fôšµ'ºgbY)ÓËş¿”2$½˜×¼J™¥x¬‰x¨Pöô®'’RoÖâ°ÔÄ<‚[³Œ“ûM­"ø|ìf¹ŒwÉ‘œs	*$¢]V©xSEû’-÷ëç¢<jâ«G‰‹RçT·±ˆØ?ì£ ëÇ/4u§“Ÿ`íøß ½LZnÿµ©Í9¼ÇL:8²Ñ³Ä1e£ÈB4”MDVÇà©Æ©.£ı	‘çVƒüw"LøƒS`»b šCìH¶!±ˆ	Ü†H?åÁ&È9d_œÈ„yøÒâ“¥úU§J××@wánÕUÚOïµ‹¹Ò÷ñ·ñ›M³ÔéUÉ®×
-.ËÙÂ§†˜XNt[—½«E–`Á2şiÖ.]—!WGu©Š+¨BE†Óqçàğ€MQ›ØCí^^p€¸ BlI0­›Ñ§í{ŒQ'|¤ße²‹]+!Dq²1û¿BŠİÀ>79“·9ïFá^Œ~ö|§İ.3ò‘0Ç˜²@ÿL›úê¼±™Ñêhªi[ì2~£šÁ+‡•*Á*æ¹zhbl³È·«›Ä7SHv8‰MV>A«r}^V×¥Ûİ{Û§vZã ·ö’“æJjºõA°Áoš_¤àºuúnG¦õÕ£QsMz¯:úMŒ”˜b)sã¾7ÈĞÃğÄV“PŒ—~NZ’¶áSR0ûd*BmZÜqÔ;:‡®$É·r¹“ä^V^ÆŞ¨\b‰¼ÍCBå·×Ul¼ ã¯ ç’øyİ½»<lV{Æx°ÿè@øßµÉáõU²ïÌµ_q*ƒ!hº=®©DªôJáüqLšöSá¾Ë¯Ë¦€£íyœBc}Íû¢Oö;¾»´á¾É(Ü=„ÜvøH—£Î×°V'¤[~õzpC#C\ãwLsÄ#™skƒÚSDÊà¬*ÁÔJŒz8ÏRç
+    lcd_DataWrite(*string++);
+}
+
+// do the lcd initialization voodoo
+// thanks to Yoshi "SuperMID" for tips :)
+void lcd_init()
+{
+  delay(16);                    // wait for more than 15 msec
+  lcd_pushNibble(B00110000);  // send (B0011) to DB7-4
+  lcd_commandWriteSet();
+  delay(5);                     // wait for more than 4.1 msec
+  lcd_pushNibble(B00110000);  // send (B0011) to DB7-4
+  lcd_commandWriteSet();
+  delay(1);                     // wait for more than 100 usec
+  lcd_pushNibble(B00110000);  // send (B0011) to DB7-4
+  lcd_commandWriteSet();
+  delay(1);                     // wait for more than 100 usec
+  lcd_pushNibble(B00100000);  // send (B0010) to DB7-4 for 4bit
+  lcd_commandWriteSet();
+  delay(1);                     // wait for more than 100 usec
+  // ready to use normal CommandWrite() function now!
+
+  lcd_CommandWrite(B00101000);   // 4-bit interface, 2 display lines, 5x8 font
+  lcd_CommandWrite(B00001100);   // display control on, no cursor, no blink
+  lcd_CommandWrite(B00000110);   // entry mode set: increment automatically, no display shift
+
+  //creating the custom fonts (8 char max)
+  // char 0 is not used
+  // 1&2 is the L/100 datagram in 2 chars only
+  // 3&4 is the km/h datagram in 2 chars only
+  // 5 is the ° char (degree)
+#define NB_CHAR  5
+  // set cg ram to address 0x08 (B001000) to skip the
+  // first 8 rows as we do not use char 0
+  lcd_CommandWrite(B01001000);
+  static byte chars[] PROGMEM ={
+    B10000,B00000,B10000,B00010,B00111,
+    B10000,B00000,B10100,B00100,B00101,
+    B11001,B00000,B11000,B01000,B00111,
+    B00010,B00000,B10100,B10000,B00000,
+    B00100,B00000,B00000,B00100,B00000,
+    B01001,B11011,B11111,B00100,B00000,
+    B00001,B11011,B10101,B00111,B00000,
+    B00001,B11011,B10101,B00101,B00000,
+  };
+
+  for(byte x=0;x<NB_CHAR;x++)
+    for(byte y=0;y<8;y++)  // 8 rows
+      lcd_DataWrite(pgm_read_byte(&chars[y*NB_CHAR+x])); //write the character data to the character generator ram
+
+  lcd_cls();
+  lcd_CommandWrite(B10000000);  // set dram to zero
+}
+
+void lcd_cls()
+{
+  lcd_CommandWrite(B00000001);  // Clear Display
+  lcd_CommandWrite(B00000010);  // Return Home
+}
+
+void lcd_tickleEnable()
+{
+  // send a pulse to enable
+  digitalWrite(EnablePin,HIGH);
+  delayMicroseconds(1);  // pause 1 ms according to datasheet
+  digitalWrite(EnablePin,LOW);
+  delayMicroseconds(1);  // pause 1 ms according to datasheet
+}
+
+void lcd_commandWriteSet()
+{
+  digitalWrite(EnablePin,LOW);
+  delayMicroseconds(1);  // pause 1 ms according to datasheet
+  digitalWrite(DIPin,0);
+  lcd_tickleEnable();
+}
+
+void lcd_pushNibble(byte value)
+{
+  digitalWrite(DB7Pin, value & 128);
+  digitalWrite(DB6Pin, value & 64);
+  digitalWrite(DB5Pin, value & 32);
+  digitalWrite(DB4Pin, value & 16);
+}
+
+void lcd_CommandWrite(byte value)
+{
+  lcd_pushNibble(value);
+  lcd_commandWriteSet();
+  value<<=4;
+  lcd_pushNibble(value);
+  lcd_commandWriteSet();
+  delay(5);
+}
+
+void lcd_DataWrite(byte value)
+{
+  digitalWrite(DIPin, HIGH);
+  lcd_pushNibble(value);
+  lcd_tickleEnable();
+  value<<=4;
+  lcd_pushNibble(value);
+  lcd_tickleEnable();
+  delay(5);
+}
