@@ -1428,7 +1428,7 @@ void setup()                    // run once, when the sketch starts
 {
   byte r;
   char str[STRLEN];
-  char VERSION[] = "$Revision: 82$";
+  char VERSION[] = "$Revision$";
 
 #ifndef ELM
   // init pinouts
