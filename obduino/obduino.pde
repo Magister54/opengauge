@@ -1488,7 +1488,7 @@ void setup()                    // run once, when the sketch starts
   lcd_init();
 
   VERSION[strlen(VERSION)-1]=NUL;  // replace last $ with \0
-  sprintf_P(str, PSTR("* OBDuino v%s *"), strchr(VERSION, ' ')+1);
+  sprintf_P(str, PSTR("  OBDuino v%s"), strchr(VERSION, ' ')+1);
   lcd_print(str);
 
   do // init loop
