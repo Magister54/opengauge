@@ -572,10 +572,11 @@ byte iso_init()
 long get_pid(byte pid, char *retbuf)
 {
   byte i;
-  byte cmd[2];    // to send the command
 #ifdef ELM
   char cmd_str[6];   // to send to ELM
   char str[STRLEN];   // to receive from ELM
+#else
+  byte cmd[2];    // to send the command
 #endif
   byte buf[10];   // to receive the result
   long ret;       // return value
@@ -651,7 +652,7 @@ long get_pid(byte pid, char *retbuf)
 #endif
     if(!params.useMetric)
       ret=(ret*621U)/1000U;
-    sprintf_P(retbuf, PSTR("%ld %s"), ret, params.useMetric?"\003\004":"mph");
+    sprintf_P(retbuf, PSTR("%ld %s"), ret, params.useMetric?"\003\004":"\006\004");
     break;
   case FUEL_STATUS:
 #ifdef DEBUG
@@ -833,6 +834,7 @@ void int_to_dec_str(long value, char *decs, byte prec)
 
 void get_cons(char *retbuf)
 {
+  long toggle_speed;
   long cons;
   char decs[16];
 
@@ -845,14 +847,19 @@ void get_cons(char *retbuf)
   // = maf*0.3355/vss L/km
   // mul by 100 to have L/100km
 
+  toggle_speed=params.perHourSpeed;
+  if(!params.useMetric)  // convert toggle speed to km/h
+    toggle_speed=(toggle_speed*1609)/1000;
+
+  if(vss<toggle_speed)
+    cons=(maf*3355)/10000;  // do not use float so mul first then divide
+  else
+    cons=(maf*3355)/(vss*100); // 100 comes from the /10000*100
+ 
   if(params.useMetric)
   {
-    if(vss<params.perHourSpeed)
-      cons=(maf*3355L)/10000L;  // do not use float so mul first then divide
-    else
-      cons=(maf*3355L)/(vss*100L); // 100 comes from the /10000*100
     int_to_dec_str(cons, decs, 2);
-    sprintf_P(retbuf, PSTR("%s %s"), decs, (vss<params.perHourSpeed)?"L\004":"\001\002" );
+    sprintf_P(retbuf, PSTR("%s %s"), decs, (vss<toggle_speed)?"L\004":"\001\002" );
   }
   else
   {
@@ -861,14 +868,13 @@ void get_cons(char *retbuf)
     // 454 g in a pound
     // 14.7 * 6.17 * 454 * (VSS * 0.621371) / (3600 * MAF / 100)
     // multipled by 10 for single digit precision
-    if((vss*1609L)/1000L < params.perHourSpeed)
-      cons=maf/114L; // gallon per hour
-    else if(maf!=0)
-      cons=(vss*7107L)/maf;
+    // new comment: convert from L/100 to MPG
+    if(vss<toggle_speed)
+      cons=(cons*378)/100;  // convert to gallon
     else
-      cons=0;
+      cons=235214/cons;     // convert to MPG
     int_to_dec_str(cons, decs, 1);
-    sprintf_P(retbuf, PSTR("%s %s"), decs, ((vss*1609L)/1000L<params.perHourSpeed)?"GPH":"MPG" );
+    sprintf_P(retbuf, PSTR("%s %s"), decs, (vss<toggle_speed)?"G\004":"\006\007" );
   }
 }
 
@@ -877,28 +883,26 @@ void get_trip_cons(char *retbuf)
   float trip_cons;  // takes same size if I use long, so keep precision
   char decs[16];
 
-  if(params.useMetric)
+  if(params.trip_dist==0.0 || params.trip_fuel==0.0)
+      trip_cons=0.0;
+  else
   {
     // from mL/m to L/100 so div by 1000 for L and mul by 100000 for 100km
     // multiply by 100 to have 2 digits precision
-    if(params.trip_dist==0.0)
-      trip_cons=0.0;
+    trip_cons=(params.trip_fuel/params.trip_dist)*10000.0;
+
+    if(params.useMetric)
+      int_to_dec_str((long)trip_cons, decs, 2);
     else
-      trip_cons=(params.trip_fuel/params.trip_dist)*10000.0;
-    int_to_dec_str((long)trip_cons, decs, 2);
-    sprintf_P(retbuf, PSTR("%s \001\002"), decs);
+    {
+      // from m/mL to MPG so * by 3.78541178 to have gallon and * by 0.621371 for mile
+      // multiply by 10 to have a digit precision
+      // new comment: convert L/100 to MPG
+      trip_cons=235214.5/trip_cons;
+      int_to_dec_str((long)trip_cons, decs, 1);
+    }
   }
-  else
-  {
-    // from m/mL to MPG so * by 3.78541178 to have gallon and * by 0.621371 for mile
-    // multiply by 10 to have a digit precision
-    if(params.trip_fuel==0.0)
-      trip_cons=0.0;
-    else
-      trip_cons=(params.trip_dist/params.trip_fuel)*23.52;
-    int_to_dec_str((long)trip_cons, decs, 1);
-    sprintf_P(retbuf, PSTR("%s MPG"), decs);
-  }
+  sprintf_P(retbuf, PSTR("%s %s"), decs, params.useMetric?"\001\002":"\006\007" );
 }
 
 void get_trip_dist(char *retbuf)
@@ -914,7 +918,7 @@ void get_trip_dist(char *retbuf)
     cdist*=0.621731;
 
   int_to_dec_str((long)cdist, decs, 1);
-  sprintf_P(retbuf, PSTR("%s %s"), decs, params.useMetric?"\003":"mi" );
+  sprintf_P(retbuf, PSTR("%s %s"), decs, params.useMetric?"\003":"\006" );
 }
 
 /*
@@ -1062,7 +1066,6 @@ void display(byte corner, byte pid)
 
 void check_supported_pid(void)
 {
-  unsigned long n;
   char str[STRLEN];
 
 #ifdef DEBUG
@@ -1115,10 +1118,8 @@ void check_mil_code(void)
 
 #ifdef ELM
     // retrieve code
-    sprintf_P(str, PSTR("03\r"));
-    elm_write(str);
+    elm_command(str, PSTR("03\r"));
     // ELM returns something like 43 01 33 00 00 00 00
-    elm_read(str, STRLEN);
     if(str[0]!='4' && str[1]!='3')
       return;  // something wrong
 
@@ -1184,7 +1185,6 @@ void delay_button(void)
 
 void trip_reset(void)
 {
-  char str[STRLEN];
   byte p;
 
   // to reset trip
@@ -1192,7 +1192,7 @@ void trip_reset(void)
   lcd_print_P(PSTR("Reset trip data"));
   p=0;
   // set value with left/right and set with middle
-  buttonState=buttonsUp;
+  buttonState=buttonsUp;  // clear button
   do
   {
     if(!(buttonState&lbuttonBit))
@@ -1693,19 +1693,20 @@ void lcd_init()
   // 1&2 is the L/100 datagram in 2 chars only
   // 3&4 is the km/h datagram in 2 chars only
   // 5 is the ° char (degree)
-#define NB_CHAR  5
+  // 6&7 is the mi/g char
+#define NB_CHAR  7
   // set cg ram to address 0x08 (B001000) to skip the
   // first 8 rows as we do not use char 0
   lcd_commandWrite(B01001000);
   static byte chars[] PROGMEM ={
-    B10000,B00000,B10000,B00010,B00111,
-    B10000,B00000,B10100,B00100,B00101,
-    B11001,B00000,B11000,B01000,B00111,
-    B00010,B00000,B10100,B10000,B00000,
-    B00100,B00000,B00000,B00100,B00000,
-    B01001,B11011,B11111,B00100,B00000,
-    B00001,B11011,B10101,B00111,B00000,
-    B00001,B11011,B10101,B00101,B00000,
+    B10000,B00000,B10000,B00010,B00111,B11111,B00010,
+    B10000,B00000,B10100,B00100,B00101,B10101,B00100,
+    B11001,B00000,B11000,B01000,B00111,B10101,B01000,
+    B00010,B00000,B10100,B10000,B00000,B00000,B10000,
+    B00100,B00000,B00000,B00100,B00000,B00100,B00111,
+    B01001,B11011,B11111,B00100,B00000,B00000,B00100,
+    B00001,B11011,B10101,B00111,B00000,B00100,B00101,
+    B00001,B11011,B10101,B00101,B00000,B00100,B00111,
   };
 
   for(byte x=0;x<NB_CHAR;x++)
