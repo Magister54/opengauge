@@ -896,8 +896,8 @@ void get_trip_cons(char *retbuf)
     // from mL/m to L/100 so div by 1000 for L and mul by 100000 for 100km
     // multiply by 100 to have 2 digits precision
     trip_cons=(params.trip_fuel/params.trip_dist)*10000.0;
-    if(trip_cons>100.0)
-		trip_cons=99.9;
+    if(trip_cons>10000.0)
+		trip_cons=9999.9;
 
     if(params.useMetric)
       int_to_dec_str((long)trip_cons, decs, 2);
