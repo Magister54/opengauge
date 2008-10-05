@@ -653,6 +653,12 @@ long get_pid(byte pid, char *retbuf)
     if(!params.useMetric)
       ret=(ret*621U)/1000U;
     sprintf_P(retbuf, PSTR("%ld %s"), ret, params.useMetric?"\003\004":"\006\004");
+    // do not touch vss, it is used by fuel calculation after
+#ifdef DEBUG
+    ret=100;
+#else
+    ret=buf[0];
+#endif
     break;
   case FUEL_STATUS:
 #ifdef DEBUG
@@ -870,7 +876,7 @@ void get_cons(char *retbuf)
     // multipled by 10 for single digit precision
     // new comment: convert from L/100 to MPG
     if(vss<toggle_speed)
-      cons=(cons*378)/100;  // convert to gallon
+      cons=(cons*10)/378;  // convert to gallon (factor 10 for precision)
     else
       cons=235214/cons;     // convert to MPG
     int_to_dec_str(cons, decs, 1);
@@ -890,6 +896,8 @@ void get_trip_cons(char *retbuf)
     // from mL/m to L/100 so div by 1000 for L and mul by 100000 for 100km
     // multiply by 100 to have 2 digits precision
     trip_cons=(params.trip_fuel/params.trip_dist)*10000.0;
+    if(trip_cons>100.0)
+		trip_cons=99.9;
 
     if(params.useMetric)
       int_to_dec_str((long)trip_cons, decs, 2);
