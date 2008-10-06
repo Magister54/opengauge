@@ -76,57 +76,6 @@ byte brightness[]={
 #define brightnessLength 4 //array size
 byte brightnessIdx=1;
 
-// for the 4 display corners
-#define TOPLEFT  0
-#define TOPRIGHT 1
-#define BOTTOMLEFT  2
-#define BOTTOMRIGHT 3
-#define NBCORNER 4   // with a 16x4 display you can use 8 'corners'
-#define NBSCREEN  3  // 12 PIDs should be enough for everyone
-byte active_screen;  // 0,1,2,... selected by left button
-prog_char blkstr[] PROGMEM="        "; // 8 spaces, used to clear part of screen
-
-// parameters
-// each screen contains n corners
-typedef struct
-{
-  byte corner[NBCORNER];
-} 
-screen_t;
-
-typedef struct
-{
-  byte contrast;     // we only use 0-100 value in step 20
-  byte useMetric;    // 0=rods and hogshead, 1=SI
-  byte perHourSpeed; // speed from which we toggle to fuel/hour
-  byte vol_eff;      // volumetric efficiency measured in percent
-  byte eng_dis;      // Engine Displacement in dL
-  float trip_dist;   // trip distance in m
-  float trip_fuel;   // trip fuel used in mL
-  screen_t screen[NBSCREEN];
-} 
-params_t;
-
-// global parameters
-params_t params;
-
-#define STRLEN  40
-
-#ifdef ELM
-#define NUL     '\0'
-#define CR      '\r'  // carriage return = 0x0d = 13
-#define PROMPT  '>'
-#define DATA    1  // data with no cr/prompt
-#else
-/*
- * for ISO9141-2 Protocol
- */
-#define K_IN    2
-#define K_OUT   3
-// bit period for 10400 bauds = 1000000/10400 = 96
-#define _bitPeriod 1000000L/10400L
-#endif
-
 /* PID stuff */
 
 unsigned long  pid01to20_support;
@@ -240,6 +189,71 @@ prog_uchar pid_reslen[] PROGMEM=
   // pid 0x40 to 0x4E
   4,8,2,2,2,1,1,1,1,1,1,1,1,2,2
 };
+
+// for the 4 display corners
+#define TOPLEFT  0
+#define TOPRIGHT 1
+#define BOTTOMLEFT  2
+#define BOTTOMRIGHT 3
+#define NBCORNER 4   // with a 16x4 display you can use 8 'corners'
+#define NBSCREEN  3  // 12 PIDs should be enough for everyone
+byte active_screen;  // 0,1,2,... selected by left button
+prog_char blkstr[] PROGMEM="        "; // 8 spaces, used to clear part of screen
+
+// parameters
+// each screen contains n corners
+typedef struct
+{
+  byte corner[NBCORNER];
+} 
+screen_t;
+
+typedef struct
+{
+  byte contrast;     // we only use 0-100 value in step 20
+  byte useMetric;    // 0=rods and hogshead, 1=SI
+  byte perHourSpeed; // speed from which we toggle to fuel/hour
+  byte vol_eff;      // volumetric efficiency measured in percent
+  byte eng_dis;      // Engine Displacement in dL
+  float trip_dist;   // trip distance in m
+  float trip_fuel;   // trip fuel used in mL
+  screen_t screen[NBSCREEN];
+} 
+params_t;
+
+// global parameters, default values
+params_t params=
+{
+    40,
+    1,
+    20,
+    80,
+    20,
+    0.0,
+    0.0,
+    {
+        {FUEL_CONS,TRIP_CONS,ENGINE_RPM,VEHICLE_SPEED},
+        {TRIP_CONS,TRIP_DIST,COOLANT_TEMP,CAT_TEMP_B1S1},
+        {PID_SUPPORT20,PID_SUPPORT40,PID_SUPPORT60,OBD_STD},
+    }
+};
+
+#define STRLEN  40
+
+#ifdef ELM
+#define NUL     '\0'
+#define CR      '\r'  // carriage return = 0x0d = 13
+#define PROMPT  '>'
+#define DATA    1  // data with no cr/prompt
+#else
+/*
+ * for ISO9141-2 Protocol
+ */
+#define K_IN    2
+#define K_OUT   3
+// bit period for 10400 bauds = 1000000/10400 = 96
+#define _bitPeriod 1000000L/10400L
+#endif
 
 // some globals, for trip calculation and others
 byte has_rpm;
@@ -586,10 +600,10 @@ long get_pid(byte pid, char *retbuf)
   // check if PID is supported
   if( pid!=PID_SUPPORT20 )
   {
-    if( (pid<=0x20 && ( 1L<<(0x20-pid) & pid01to20_support ) == 0 )
-      ||  (pid>0x20 && pid<=0x40 && ( 1L<<(0x40-pid) & pid21to40_support ) == 0 )
-      ||  (pid>0x40 && pid<=0x60 && ( 1L<<(0x60-pid) & pid41to60_support ) == 0 )
-      ||  (pid>LAST_PID) )
+    if(  (            pid<=0x20 && ( 1L<<(0x20-pid) & pid01to20_support ) == 0 )
+      || (pid>0x20 && pid<=0x40 && ( 1L<<(0x40-pid) & pid21to40_support ) == 0 )
+      || (pid>0x40 && pid<=0x60 && ( 1L<<(0x60-pid) & pid41to60_support ) == 0 )
+      || (pid>LAST_PID) )
     {
       // nope
       sprintf_P(retbuf, PSTR("%02X N/A"), pid);
@@ -653,7 +667,7 @@ long get_pid(byte pid, char *retbuf)
     if(!params.useMetric)
       ret=(ret*621U)/1000U;
     sprintf_P(retbuf, PSTR("%ld %s"), ret, params.useMetric?"\003\004":"\006\004");
-    // do not touch vss, it is used by fuel calculation after
+    // do not touch vss, it is used by fuel calculation after, so reset it
 #ifdef DEBUG
     ret=100;
 #else
@@ -886,30 +900,33 @@ void get_cons(char *retbuf)
 
 void get_trip_cons(char *retbuf)
 {
-  float trip_cons;  // takes same size if I use long, so keep precision
+  long trip_cons;
   char decs[16];
 
   if(params.trip_dist==0.0 || params.trip_fuel==0.0)
-      trip_cons=0.0;
+      trip_cons=0;
   else
   {
     // from mL/m to L/100 so div by 1000 for L and mul by 100000 for 100km
     // multiply by 100 to have 2 digits precision
-    trip_cons=(params.trip_fuel/params.trip_dist)*10000.0;
-    if(trip_cons>10000.0)
-		trip_cons=9999.9;
+    trip_cons=(params.trip_fuel*10000)/params.trip_dist;
+    if(trip_cons>10000)
+        trip_cons=9999;     // display 99.99L/100 max
 
-    if(params.useMetric)
-      int_to_dec_str((long)trip_cons, decs, 2);
-    else
+    if(!params.useMetric)
     {
       // from m/mL to MPG so * by 3.78541178 to have gallon and * by 0.621371 for mile
       // multiply by 10 to have a digit precision
       // new comment: convert L/100 to MPG
-      trip_cons=235214.5/trip_cons;
-      int_to_dec_str((long)trip_cons, decs, 1);
+      trip_cons=235214/trip_cons;
     }
   }
+
+  if(params.useMetric)
+    int_to_dec_str(trip_cons, decs, 2);
+  else
+    int_to_dec_str(trip_cons, decs, 1);
+ 
   sprintf_P(retbuf, PSTR("%s %s"), decs, params.useMetric?"\001\002":"\006\007" );
 }
 
@@ -934,7 +951,7 @@ void get_trip_dist(char *retbuf)
  */
 void accu_trip(void)
 {
-  static byte min_throttle_pos=255;   // idle throttle position
+  static byte min_throttle_pos=255;   // idle throttle position, start high
   byte throttle_pos;   // current throttle position
   byte open_load;      // to detect open loop
   char str[STRLEN];
@@ -948,7 +965,7 @@ void accu_trip(void)
   // distance in m
   vss=get_pid(VEHICLE_SPEED, str);
   if(vss>0)
-    params.trip_dist+=((float)vss*(float)delta_time)/3600.0;
+    params.trip_dist+=(float)(vss*delta_time)/3600.0;
 
   // if engine is stopped, we can get out now
   if(!has_rpm)
@@ -966,7 +983,7 @@ void accu_trip(void)
     min_throttle_pos=throttle_pos;
 
   // get fuel status
-  open_load=(get_pid(FUEL_STATUS, str)&0x0400)?1:0;
+  open_load=(get_pid(FUEL_STATUS, str) & 0x0400)?1:0;
 
   if(throttle_pos<(min_throttle_pos+4) && open_load)
     maf=0;  // decellerate fuel cut-off, fake the MAF as 0 :)
@@ -1454,13 +1471,13 @@ void setup()                    // run once, when the sketch starts
 #endif
 
   // buttons init
-  pinMode( lbuttonPin, INPUT );
-  pinMode( mbuttonPin, INPUT );
-  pinMode( rbuttonPin, INPUT );
+  pinMode(lbuttonPin, INPUT);
+  pinMode(mbuttonPin, INPUT);
+  pinMode(rbuttonPin, INPUT);
   // "turn on" the internal pullup resistors
-  digitalWrite( lbuttonPin, HIGH);
-  digitalWrite( mbuttonPin, HIGH);
-  digitalWrite( rbuttonPin, HIGH);
+  digitalWrite(lbuttonPin, HIGH);
+  digitalWrite(mbuttonPin, HIGH);
+  digitalWrite(rbuttonPin, HIGH);
 
   // low level interrupt enable stuff
   // interrupt 1 for the 3 buttons
@@ -1468,8 +1485,9 @@ void setup()                    // run once, when the sketch starts
   PCICR |= (1 << PCIE1);
 
   // load parameters
-  if(params_load()==0)  // if something is wrong, put default parms
+  if(params_load()==0)  // if something is wrong, default parms are used
   {
+#if 0      // this took 150 bytes, it's now in init code at the top
     params.contrast=40;
     params.useMetric=1;
     params.perHourSpeed=20;
@@ -1489,6 +1507,7 @@ void setup()                    // run once, when the sketch starts
     params.screen[2].corner[TOPRIGHT]=PID_SUPPORT40;
     params.screen[2].corner[BOTTOMLEFT]=PID_SUPPORT60;
     params.screen[2].corner[BOTTOMRIGHT]=OBD_STD;
+#endif
   }
 
   // LCD pin init
@@ -1609,25 +1628,29 @@ void params_save(void)
 //return 1 if loaded ok
 byte params_load(void)
 {
+  params_t params_tmp;
   uint16_t crc, crc_calc;
   byte *p;
 
   // read params
-  eeprom_read_block((void*)&params, (void*)0, sizeof(params_t));
+  eeprom_read_block((void*)&params_tmp, (void*)0, sizeof(params_t));
 
   // read crc
   crc=eeprom_read_word((const uint16_t*)sizeof(params_t));
 
   // calculate crc from read stuff
   crc_calc=0;
-  p=(byte*)&params;
+  p=(byte*)&params_tmp;
   for(byte i=0; i<sizeof(params_t); i++)
     crc_calc+=p[i];
 
   // compare CRC
-  if(crc==crc_calc)
+  if(crc==crc_calc)     // good, copy read params to params
+  {
+    memcpy((void*)&params, &params_tmp, sizeof(params_t));
     return 1;
-  else
+  }
+  else  // default params are used
     return 0;
 }
 
