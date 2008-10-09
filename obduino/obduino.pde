@@ -59,7 +59,7 @@ void params_save(void);
 // Others prototypes
 void int_to_dec_str(long value, char *decs, byte prec);
 
-#define BUTTON_DELAY  250
+#define BUTTON_DELAY  125
 // use analog pins as digital pins
 #define lbuttonPin 17 // Left Button, on analog 3
 #define mbuttonPin 18 // Middle Button, on analog 4
@@ -913,7 +913,7 @@ void get_cons(char *retbuf)
     // new comment: convert from L/100 to MPG
 
     if(vss<toggle_speed)
-        cons=(cons*10)/378;   // convert to gallon (factor 10 for precision)
+        cons=(cons*10)/378;   // convert to gallon, can be 0 G/h
     else
     {
       if(cons==0)             // if cons is 0 (DFCO?) display 999.9MPG
@@ -1316,9 +1316,9 @@ void config_menu(void)
   do
   {
     if(!(buttonState&lbuttonBit) && params.contrast!=0)
-      params.contrast-=20;
+      params.contrast-=10;
     else if(!(buttonState&rbuttonBit) && params.contrast!=100)
-      params.contrast+=20;
+      params.contrast+=10;
 
     lcd_gotoXY(5,1);
     sprintf_P(str, PSTR("- %d + "), params.contrast);
@@ -1702,13 +1702,6 @@ void lcd_print_P(char *string)
   lcd_print(str);
 }
 
-void lcd_subinit(byte stuff)
-{
-  lcd_pushNibble(stuff);  // send (B0011) to DB7-4
-  lcd_commandWriteSet();
-  delay(5);                     // wait for more than 4.1 msec or 100 usec
-}
-
 // do the lcd initialization voodoo
 // thanks to Yoshi "SuperMID" for tips :)
 void lcd_init()
@@ -1716,8 +1709,11 @@ void lcd_init()
   delay(16);                    // wait for more than 15 msec
 #if 1
   for(byte i=0; i<3; i++)
-    lcd_subinit(B00110000);
-  lcd_subinit(B00100000);
+  {
+    lcd_pushNibble(B00110000);  // send (B0011) to DB7-4
+    lcd_commandWriteSet();
+    delay(5);                     // wait for more than 4.1 msec or 100 usec
+  }
 #else
   lcd_pushNibble(B00110000);  // send (B0011) to DB7-4
   lcd_commandWriteSet();
@@ -1728,10 +1724,10 @@ void lcd_init()
   lcd_pushNibble(B00110000);  // send (B0011) to DB7-4
   lcd_commandWriteSet();
   delay(1);                     // wait for more than 100 usec
+#endif
   lcd_pushNibble(B00100000);  // send (B0010) to DB7-4 for 4bit
   lcd_commandWriteSet();
   delay(1);                     // wait for more than 100 usec
-#endif
   // ready to use normal CommandWrite() function now!
 
   lcd_commandWrite(B00101000);   // 4-bit interface, 2 display lines, 5x8 font
