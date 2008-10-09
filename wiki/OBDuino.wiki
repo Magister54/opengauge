@@ -44,12 +44,12 @@ The code was made around a simple ISO interface or with the use of the ELM327 es
 
 
 === Reset trip data (NO/YES) ===
-When you press middle and right button, a screen appear:Select if you want to reset the data and press middle button to ack.
+When you press middle and right button, a screen appear: Select if you want to reset the data and press middle button to ack.
 
 == Configuration menu (accessed by middle button) ==
 
 === LCD Contrast (0-100) === 
-Set the LCD contrast from 0 to 100 in step 20
+Set the LCD contrast from 0 to 100 in step 10
   
 === Use Metric units (NO/YES) === 
 NO=rods and hogshead, YES=SI
@@ -68,7 +68,7 @@ This is the size of the engine, e.g. 2.0 for a 2Liter one.
 === Configure PIDs (NO/YES) === 
 Choose if you want to configure the PIDs in the various screen.
   
-===  Scr 'n' Corner 'm' (0x00-oxFF) === 
+===  Scr 'n' Corner 'm' (0x00-0xFF) === 
 (if you have selected YES at the previous item)
 Select the PID you want to be displayed on screen 'n' in the corner 'm'.
 Some specials PIDs you can access (either by decreasing below 0 or by going far up):
@@ -77,7 +77,7 @@ Some specials PIDs you can access (either by decreasing below 0 or by going far 
   * 0xF2 - average consumption of the trip
   * 0xF3 - distance of the trip
   * 0xF4 - battery voltage (of the car)
-  * 0xF5 - CAN status, for CAN only protocol only, display TX and RX errors
+  * 0xF5 - CAN status, for CAN protocol only, display TX and RX errors
 
 ----
 Add your content here.  Format your content with:
