@@ -13,7 +13,7 @@ When you press middle and right button, a screen appear:
 Configuration menu (accessed by middle button);
 
 - LCD Contrast (0-100)
-  Set the LCD contrast from 0 to 100 in step 20
+  Set the LCD contrast from 0 to 100 in step 10
   
 - Use Metric units (NO/YES)
   NO=rods and hogshead, YES=SI
