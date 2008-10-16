@@ -165,13 +165,16 @@ unsigned long  pid41to60_support=0;
 
 /* our internal fake PIDs */
 #define NO_DISPLAY    0xF0
-#define FUEL_CONS     0xF1
-#define TRIP_CONS     0xF2
-#define TRIP_FUEL     0xF3
-#define TRIP_DIST     0xF4
-#define REMAIN_DIST   0xF5
-#define BATT_VOLTAGE  0xF6
-#define CAN_STATUS    0xF7
+#define FUEL_CONS     0xF1    // instant cons
+#define TANK_CONS     0xF2    // average cons of tank
+#define TANK_FUEL     0xF3    // fuel used in tank
+#define TANK_DIST     0xF4    // distance for tank
+#define REMAIN_DIST   0xF5    // remaining distance of tank
+#define TRIP_CONS     0xF6    // average cons of trip
+#define TRIP_FUEL     0xF7    // fuel used in trip
+#define TRIP_DIST     0xF8    // distance of trip
+#define BATT_VOLTAGE  0xF9
+#define CAN_STATUS    0xFA
 #ifdef DEBUG
 #define FREE_MEM      0xFF
 #endif
@@ -202,7 +205,20 @@ prog_uchar pid_reslen[] PROGMEM=
 byte active_screen=0;  // 0,1,2,... selected by left button
 prog_char blkstr[] PROGMEM="        "; // 8 spaces, used to clear part of screen
 
+// to differenciate trips
+#define TANK   0
+#define TRIP   1
+#define NBTRIP 2
+
 // parameters
+// each trip contains fuel used and distance done
+typedef struct
+{
+  unsigned long dist;
+  unsigned long fuel;
+} 
+trip_t;
+
 // each screen contains n corners
 typedef struct
 {
@@ -217,9 +233,8 @@ typedef struct
   byte per_hour_speed; // speed from which we toggle to fuel/hour (km/h or mph)
   byte vol_eff;      // volumetric efficiency measured in percent
   byte eng_dis;      // engine displacement in dL
-  unsigned int tank_size;    // tank size in dL or dgal depending of unit
-  unsigned long trip_dist;   // trip distance in cm
-  unsigned long trip_fuel;   // trip fuel used in 킠
+  unsigned int  tank_size;   // tank size in dL or dgal depending of unit
+  trip_t trip[NBTRIP];       // trip0=tank, trip1=a trip
   screen_t screen[NBSCREEN];
 } 
 params_t;
@@ -233,12 +248,14 @@ params_t params=
   80,
   20,
   520,
-  0,
-  0,
+  {
+    { 0,0 },
+    { 0,0 }
+  },
   {
     { FUEL_CONS,TRIP_CONS,ENGINE_RPM,VEHICLE_SPEED },
-    { TRIP_CONS,TRIP_DIST,TRIP_FUEL,REMAIN_DIST } ,
-    { PID_SUPPORT20,PID_SUPPORT40,PID_SUPPORT60,OBD_STD }
+    { TRIP_CONS,TRIP_DIST,TRIP_FUEL,COOLANT_TEMP } ,
+    { TANK_CONS,TANK_DIST,TANK_FUEL,REMAIN_DIST }
   }
 };
 
@@ -880,7 +897,7 @@ void long_to_dec_str(long value, char *decs, byte prec)
     decs[pos]='.';
 }
 
-void get_cons(char *retbuf)
+void get_icons(char *retbuf)
 {
   long toggle_speed;
   long cons;
@@ -935,13 +952,20 @@ void get_cons(char *retbuf)
   }
 }
 
-void get_trip_cons(char *retbuf)
+// trip 0 is tank
+// trip 1 is trip
+void get_cons(char *retbuf, byte ctrip)
 {
+  unsigned long cfuel;
+  unsigned long cdist;
   long trip_cons;
   char decs[16];
 
+  cfuel=params.trip[ctrip].fuel;
+  cdist=params.trip[ctrip].dist;
+
   // the car has not moved yet or no fuel used
-  if(params.trip_dist<1000 || params.trip_fuel==0)
+  if(cdist<1000 || cfuel==0)
   {
     if(params.use_metric)
       trip_cons=0;        // will display 0.00L/100
@@ -955,7 +979,7 @@ void get_trip_cons(char *retbuf)
     // we can not mul fuel by 1000 else it can go higher than ULONG_MAX
     // so divide distance by 1000 instead (resolution of 10 metres)
 
-    trip_cons=params.trip_fuel/(params.trip_dist/1000); // div by 0 avoided by previous test
+    trip_cons=cfuel/(cdist/1000); // div by 0 avoided by previous test
     
     if(params.use_metric)
     {
@@ -983,29 +1007,33 @@ void get_trip_cons(char *retbuf)
   sprintf_P(retbuf, PSTR("%s %s"), decs, params.use_metric?"\001\002":"\006\007" );
 }
 
-void get_trip_fuel(char *retbuf)
+// trip 0 is tank
+// trip 1 is trip
+void get_fuel(char *retbuf, byte ctrip)
 {
-  long trip_fuel;
+  unsigned long cfuel;
   char decs[16];
 
   // convert from 킠 to cL
-  trip_fuel=params.trip_fuel/10000;
+  cfuel=params.trip[ctrip].fuel/10000;
 
   // convert in gallon if requested
   if(!params.use_metric)
-    trip_fuel=(trip_fuel*100)/378;
+    cfuel=(cfuel*100)/378;
 
-  long_to_dec_str(trip_fuel, decs, 2);
+  long_to_dec_str(cfuel, decs, 2);
   sprintf_P(retbuf, PSTR("%s %s"), decs, params.use_metric?"L":"G" );
 }
 
-void get_trip_dist(char *retbuf)
+// trip 0 is tank
+// trip 1 is trip
+void get_dist(char *retbuf, byte ctrip)
 {
-  long cdist;
+  unsigned long cdist;
   char decs[16];
 
   // convert from cm to hundreds of meter
-  cdist=params.trip_dist/10000;
+  cdist=params.trip[ctrip].dist/10000;
 
   // convert in miles if requested
   if(!params.use_metric)
@@ -1015,28 +1043,29 @@ void get_trip_dist(char *retbuf)
   sprintf_P(retbuf, PSTR("%s %s"), decs, params.use_metric?"\003":"\006" );
 }
 
+// distance you can do with the remaining fuel in your tank
 void get_remain_dist(char *retbuf)
 {
   long tank_tmp;
   long remain_dist;
   long remain_fuel;
-  long trip_cons;
+  long tank_cons;
 
   tank_tmp=params.tank_size;
-  
+
   if(!params.use_metric)  // if tank is in dgallon, convert to dL
     tank_tmp=(tank_tmp*378)/100;
 
   // convert from 킠 to dL
-  remain_fuel=tank_tmp - params.trip_fuel/100000;
+  remain_fuel=tank_tmp - params.trip[TANK].fuel/100000;
 
-  // calculate remaining distance using trip cons and remaining fuel
-  if(params.trip_dist<1000)
+  // calculate remaining distance using tank cons and remaining fuel
+  if(params.trip[TANK].dist<1000)
     remain_dist=9999;
   else
   {
-    trip_cons=params.trip_fuel/(params.trip_dist/1000);
-    remain_dist=remain_fuel*1000/trip_cons;
+    tank_cons=params.trip[TANK].fuel/(params.trip[TANK].dist/1000);
+    remain_dist=remain_fuel*1000/tank_cons;
     
     if(!params.use_metric)  // convert to miles
       remain_dist=(remain_dist*1000)/1609;
@@ -1054,6 +1083,7 @@ void accu_trip(void)
   byte throttle_pos;   // current throttle position
   byte open_load;      // to detect open loop
   char str[STRLEN];
+  unsigned long delta_dist, delta_fuel;
   unsigned long time_now, delta_time;
 
   // time elapsed
@@ -1067,7 +1097,11 @@ void accu_trip(void)
   // ulong so max value is 4'294'967'295 cm or 42'949 km or 26'671 miles
   vss=get_pid(VEHICLE_SPEED, str);
   if(vss>0)
-    params.trip_dist+=(vss*delta_time)/36;
+  {
+    delta_dist=(vss*delta_time)/36;
+    params.trip[TANK].dist+=delta_dist;
+    params.trip[TRIP].dist+=delta_dist;
+  }
 
   // if engine is stopped, we can get out now
   if(!has_rpm)
@@ -1123,6 +1157,10 @@ void accu_trip(void)
       // does not divide by 100 because we use (MAF*100) in formula
       // but divide by 10 because engine displacement is in dL
       // 28.9644/(120*8.314472*10)= about 0.0029 or 29/10000
+      // ex: VSS=80km/h, MAP=64kPa, RPM=1800, IAT=21C
+      //     engine=2.2L, efficiency=80%
+      // maf = ( (1800*64)/(21+273) * 80 * 22 * 29 ) / 10000
+      // maf = 1995 or 19.95 g/s which is about right at 80km/h
       maf=(imap * params.vol_eff * params.eng_dis * 29) / 10000;
     }
     // add MAF result to trip
@@ -1139,7 +1177,9 @@ void accu_trip(void)
     // or about 210 킠 of fuel/s so 킠 is not too weak nor too large
     // as we sample about 4 times per second at 9600 bauds
     // ulong so max value is 4'294'967'295 킠 or 4'294 L (about 1136 gallon)
-    params.trip_fuel+=(maf*delta_time)/1073;
+    delta_fuel=(maf*delta_time)/1073;
+    params.trip[TANK].fuel+=delta_fuel;
+    params.trip[TRIP].fuel+=delta_fuel;
   }
 }
 
@@ -1151,19 +1191,27 @@ void display(byte corner, byte pid)
   if(pid==NO_DISPLAY)
     return;
   else if(pid==FUEL_CONS)
-    get_cons(str);
-  else if(pid==TRIP_CONS)
-    get_trip_cons(str);
-  else if(pid==TRIP_FUEL)
-    get_trip_fuel(str);
-  else if(pid==TRIP_DIST)
-    get_trip_dist(str);
+    get_icons(str);
+  else if(pid==TANK_CONS)
+    get_cons(str, TANK);
+  else if(pid==TANK_FUEL)
+    get_fuel(str, TANK);
+  else if(pid==TANK_DIST)
+    get_dist(str, TANK);
   else if(pid==REMAIN_DIST)
     get_remain_dist(str);
+  else if(pid==TRIP_CONS)
+    get_cons(str, TRIP);
+  else if(pid==TRIP_FUEL)
+    get_fuel(str, TRIP);
+  else if(pid==TRIP_DIST)
+    get_dist(str, TRIP);
+#ifdef ELM
   else if(pid==BATT_VOLTAGE)
     elm_command(str, PSTR("ATRV\r"));
   else if(pid==CAN_STATUS)
     elm_command(str, PSTR("ATCS\r"));
+#endif
 #ifdef DEBUG
   else if(pid==FREE_MEM)
     sprintf_P(str, PSTR("%d free"), memoryTest());
@@ -1318,13 +1366,15 @@ void delay_button(void)
   accu_trip();
 }
 
-void trip_reset(void)
+void trip_reset(byte ctrip)
 {
+  char str[STRLEN];
   byte p;
 
   // to reset trip
   lcd_cls();
-  lcd_print_P(PSTR("Reset trip data"));
+  sprintf_P(str, PSTR("Reset %s data"), (ctrip==TANK)?"tank":"trip");
+  lcd_print(str);
   p=0;
   // set value with left/right and set with middle
   buttonState=buttonsUp;  // make sure to clear button
@@ -1346,8 +1396,8 @@ void trip_reset(void)
   while(buttonState&mbuttonBit);
   if(p==1)
   {
-    params.trip_dist=0;
-    params.trip_fuel=0;
+    params.trip[ctrip].dist=0;
+    params.trip[ctrip].fuel=0;
   }
 }
 
@@ -1357,6 +1407,7 @@ void config_menu(void)
   char decs[16];
   byte p;
 
+#ifdef ELM
 #ifndef DEBUG  // it takes 98 bytes
   // display protocol, just for fun
   lcd_cls();
@@ -1375,6 +1426,7 @@ void config_menu(void)
     lcd_print(str+16);
   }
   delay(2000);
+#endif
 #endif
 
   // go through all the configurable items
@@ -1566,10 +1618,15 @@ void config_menu(void)
 
 void test_buttons(void)
 {
-  // middle + right = trip reset
-  if(!(buttonState&mbuttonBit) && !(buttonState&rbuttonBit))
+  // middle + left = tank reset
+  if(!(buttonState&mbuttonBit) && !(buttonState&lbuttonBit))
   {
-    trip_reset();
+    trip_reset(TANK);
+  }
+  // middle + right = trip reset
+  else if(!(buttonState&mbuttonBit) && !(buttonState&rbuttonBit))
+  {
+    trip_reset(TRIP);
   }
   // left is cycle through active screen
   else if(!(buttonState&lbuttonBit))
@@ -1636,7 +1693,7 @@ void setup()                    // run once, when the sketch starts
   analogWrite(ContrastPin, params.contrast);
   lcd_init();
 
-  VERSION[strlen(VERSION)-1]=NUL;  // replace last $ with \0
+  VERSION[strlen(VERSION)-1]='\0';  // replace last $ with \0
   sprintf_P(str, PSTR("  OBDuino v%s"), strchr(VERSION, ' ')+1);
   lcd_print(str);
 
