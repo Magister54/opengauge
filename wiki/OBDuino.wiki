@@ -61,6 +61,9 @@ NO=rods and hogshead, YES=SI
 === Fuel/hour speed (0-255) === 
 Speed from which the display go from L/100 or MPG, to L/h or GPH
   
+=== Tank size (n.m) ===
+Size of your tank in litres or gallon
+
 === Volume Efficiency (0-100%) (MAP only) === 
 For vehicles with a MAP only we have to emulate the MAF.
 This percentage will needs adjustment after you have checked manually a few tank to approximate better the fuel consumption.
