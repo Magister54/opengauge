@@ -5,21 +5,21 @@
 #define ELM
 
 /* OBDuino
- 
+
  Copyright (C) 2008
- 
+
  Main coding/ISO/ELM: Fr嶮廨ic (aka Magister on ecomodder.com)
  LCD part: Dave (aka dcb on ecomodder.com), optimized by Fr嶮廨ic
- 
+
  This program is free software; you can redistribute it and/or modify it under
  the terms of the GNU General Public License as published by the Free Software
  Foundation; either version 2 of the License, or (at your option) any later
  version.
- 
+
  This program is distributed in the hope that it will be useful, but WITHOUT
  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
- 
+
  You should have received a copy of the GNU General Public License along with
  this program; if not, write to the Free Software Foundation, Inc.,
  59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
@@ -214,29 +214,29 @@ prog_char blkstr[] PROGMEM="        "; // 8 spaces, used to clear part of screen
 // each trip contains fuel used and distance done
 typedef struct
 {
-  unsigned long dist;
-  unsigned long fuel;
-} 
+  unsigned long dist;   // in cm
+  unsigned long fuel;   // in 無
+}
 trip_t;
 
 // each screen contains n corners
 typedef struct
 {
   byte corner[NBCORNER];
-} 
+}
 screen_t;
 
 typedef struct
 {
-  byte contrast;     // we only use 0-100 value in step 20
-  byte use_metric;    // 0=rods and hogshead, 1=SI
+  byte contrast;       // we only use 0-100 value in step 20
+  byte use_metric;     // 0=rods and hogshead, 1=SI
   byte per_hour_speed; // speed from which we toggle to fuel/hour (km/h or mph)
-  byte vol_eff;      // volumetric efficiency measured in percent
-  byte eng_dis;      // engine displacement in dL
+  byte vol_eff;        // volumetric efficiency measured in percent
+  byte eng_dis;        // engine displacement in dL
   unsigned int  tank_size;   // tank size in dL or dgal depending of unit
-  trip_t trip[NBTRIP];       // trip0=tank, trip1=a trip
-  screen_t screen[NBSCREEN];
-} 
+  trip_t trip[NBTRIP];        // trip0=tank, trip1=a trip
+  screen_t screen[NBSCREEN];  // screen
+}
 params_t;
 
 // global parameters, default values
@@ -253,9 +253,9 @@ params_t params=
     { 0,0 }
   },
   {
-    { FUEL_CONS,TRIP_CONS,ENGINE_RPM,VEHICLE_SPEED },
-    { TRIP_CONS,TRIP_DIST,TRIP_FUEL,COOLANT_TEMP } ,
-    { TANK_CONS,TANK_DIST,TANK_FUEL,REMAIN_DIST }
+    { {FUEL_CONS,TRIP_CONS,ENGINE_RPM,VEHICLE_SPEED} },
+    { {TRIP_CONS,TRIP_DIST,TRIP_FUEL,COOLANT_TEMP} } ,
+    { {TANK_CONS,TANK_DIST,TANK_FUEL,REMAIN_DIST} }
   }
 };
 
@@ -293,7 +293,7 @@ ISR(PCINT1_vect)
 #if 1
   static unsigned long last_millis = 0;
   unsigned long m = millis();
-  
+
   if (m - last_millis > 20)
   { // do pushbutton stuff
     buttonState &= PINC;
@@ -337,7 +337,7 @@ void elm_write(char *str)
 }
 
 // check header byte
-byte elm_check_response(char *cmd, char *str)
+byte elm_check_response(const char *cmd, char *str)
 {
   // cmd is something like "010D"
   // str should be "41 0D blabla"
@@ -399,7 +399,7 @@ int elm_init()
   {
     elm_command(str, PSTR("0100\r"));
     delay(1000);
-  } 
+  }
   while(elm_check_response("0100", str)!=0);
 
   // ask protocol
@@ -682,7 +682,7 @@ long get_pid(byte pid, char *retbuf)
   // a lot of formulas are the same so calculate a default return value here
   // even if it's scrapped after, we still saved 40 bytes
   ret=buf[0]*256U+buf[1];
-  
+
   // formula and unit for each PID
   switch(pid)
   {
@@ -772,7 +772,7 @@ long get_pid(byte pid, char *retbuf)
   case DIST_MIL_CLR:
     if(!params.use_metric)
       ret=(ret*1000U)/1609U;
-    sprintf_P(retbuf, PSTR("%ld %s"), ret, params.use_metric?"\003":"mi");
+    sprintf_P(retbuf, PSTR("%ld %s"), ret, params.use_metric?"\003":"\006");
     break;
   case TIME_MIL_ON:
   case TIME_MIL_CLR:
@@ -889,7 +889,7 @@ void long_to_dec_str(long value, char *decs, byte prec)
     decs[pos]=decs[pos-1];  // move digit
     pos--;
   }
-  
+
   // then insert decimal separator
   if(params.use_metric)
     decs[pos]=',';
@@ -897,6 +897,7 @@ void long_to_dec_str(long value, char *decs, byte prec)
     decs[pos]='.';
 }
 
+// instant fuel consumption
 void get_icons(char *retbuf)
 {
   long toggle_speed;
@@ -934,7 +935,7 @@ void get_icons(char *retbuf)
     // 454 g in a pound
     // 14.7 * 6.17 * 454 * (VSS * 0.621371) / (3600 * MAF / 100)
     // multipled by 10 for single digit precision
-    
+
     // new comment: convert from L/100 to MPG
 
     if(vss<toggle_speed)
@@ -980,7 +981,7 @@ void get_cons(char *retbuf, byte ctrip)
     // so divide distance by 1000 instead (resolution of 10 metres)
 
     trip_cons=cfuel/(cdist/1000); // div by 0 avoided by previous test
-    
+
     if(params.use_metric)
     {
       if(trip_cons>9999)    // SI
@@ -991,7 +992,7 @@ void get_cons(char *retbuf, byte ctrip)
       // it's imperial, convert.
       // from m/mL to MPG so * by 3.78541178 to have gallon and * by 0.621371 for mile
       // multiply by 10 to have a digit precision
-      
+
       // new comment: convert L/100 to MPG
       trip_cons=235214/trip_cons;
       if(trip_cons<10)
@@ -1066,7 +1067,7 @@ void get_remain_dist(char *retbuf)
   {
     tank_cons=params.trip[TANK].fuel/(params.trip[TANK].dist/1000);
     remain_dist=remain_fuel*1000/tank_cons;
-    
+
     if(!params.use_metric)  // convert to miles
       remain_dist=(remain_dist*1000)/1609;
   }
@@ -1099,8 +1100,9 @@ void accu_trip(void)
   if(vss>0)
   {
     delta_dist=(vss*delta_time)/36;
-    params.trip[TANK].dist+=delta_dist;
-    params.trip[TRIP].dist+=delta_dist;
+    // accumulate for all trips
+    for(byte i=0; i<NBTRIP; i++)
+      params.trip[i].dist+=delta_dist;
   }
 
   // if engine is stopped, we can get out now
@@ -1135,7 +1137,7 @@ void accu_trip(void)
     {
       /*
       I just hope if you don't have a MAF, you have a MAP!!
-       
+
        No MAF (Uses MAP and Absolute Temp to approximate MAF):
        IMAP = RPM * MAP / IAT
        MAF = (IMAP/120)*(VE/100)*(ED)*(MM)/(R)
@@ -1171,15 +1173,15 @@ void accu_trip(void)
     // divide by 730 to have L/s
     // mul by 1000000 to have 無/s
     // divide by 1000 because delta_time is in ms
- 
+
     // at idle MAF output is about 2.25 g of air /s on my car
     // so about 0.15g of fuel or 0.210 mL
     // or about 210 無 of fuel/s so 無 is not too weak nor too large
     // as we sample about 4 times per second at 9600 bauds
     // ulong so max value is 4'294'967'295 無 or 4'294 L (about 1136 gallon)
     delta_fuel=(maf*delta_time)/1073;
-    params.trip[TANK].fuel+=delta_fuel;
-    params.trip[TRIP].fuel+=delta_fuel;
+    for(byte i=0; i<NBTRIP; i++)
+      params.trip[i].fuel+=delta_fuel;
   }
 }
 
@@ -1272,9 +1274,11 @@ void check_mil_code(void)
   unsigned long n;
   char str[STRLEN];
   byte nb;
+#ifndef ELM
   byte cmd[2];
   byte buf[6];
   byte i, j, k;
+#endif
 
   n=get_pid(MIL_CODE, str);
 
@@ -1392,7 +1396,7 @@ void trip_reset(byte ctrip)
       lcd_print_P(PSTR("NO (YES)"));
     buttonState=buttonsUp;
     delay_button();
-  } 
+  }
   while(buttonState&mbuttonBit);
   if(p==1)
   {
@@ -1433,7 +1437,7 @@ void config_menu(void)
 
   // first one is contrast
   lcd_cls();
-  lcd_print_P(PSTR("LCD Contrast"));
+  lcd_print_P(PSTR("LCD contrast"));
   // set value with left/right and set with middle
   do
   {
@@ -1448,7 +1452,7 @@ void config_menu(void)
     analogWrite(ContrastPin, params.contrast);  // change dynamicaly
     buttonState=buttonsUp;
     delay_button();
-  } 
+  }
   while(buttonState&mbuttonBit);
 
   // then the use of metric
@@ -1469,7 +1473,7 @@ void config_menu(void)
       lcd_print_P(PSTR("NO (YES)"));
     buttonState=buttonsUp;
     delay_button();
-  } 
+  }
   while(buttonState&mbuttonBit);
 
   // speed from which we toggle to fuel/hour
@@ -1488,7 +1492,7 @@ void config_menu(void)
     lcd_print(str);
     buttonState=buttonsUp;
     delay_button();
-  } 
+  }
   while(buttonState&mbuttonBit);
 
   // tank size
@@ -1508,7 +1512,7 @@ void config_menu(void)
     lcd_print(str);
     buttonState=buttonsUp;
     delay_button();
-  } 
+  }
   while(buttonState&mbuttonBit);
 
   // 2 following settings are for MAP only
@@ -1530,7 +1534,7 @@ void config_menu(void)
     lcd_print(str);
     buttonState=buttonsUp;
     delay_button();
-  } 
+  }
   while(buttonState&mbuttonBit);
 
   // engine displacement
@@ -1550,7 +1554,7 @@ void config_menu(void)
     lcd_print(str);
     buttonState=buttonsUp;
     delay_button();
-  } 
+  }
   while(buttonState&mbuttonBit);
   }
 
@@ -1573,7 +1577,7 @@ void config_menu(void)
       lcd_print_P(PSTR("NO (YES)"));
     buttonState=buttonsUp;
     delay_button();
-  } 
+  }
   while(buttonState&mbuttonBit);
 
   if(p==1)
@@ -1601,7 +1605,7 @@ void config_menu(void)
           lcd_print(str);
           buttonState=buttonsUp;
           delay_button();
-        } 
+        }
         while(buttonState&mbuttonBit);
         // PID is choosen, set it
         params.screen[cur_screen].corner[cur_corner]=p;
@@ -1751,7 +1755,7 @@ void loop()                     // run over and over again
     param_saved=1;
     engine_started=0;
     lcd_cls();
-    lcd_print_P(PSTR("TRIP SAVED!"));
+    lcd_print_P(PSTR("TRIPS SAVED!"));
     delay(2000);
   }
 
