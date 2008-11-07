@@ -10,7 +10,8 @@ The OBDuino is an in-car real-time display of various information, like speed, R
 
 The name OBDuino comes from OBD which means [http://en.wikipedia.org/wiki/On_Board_Diagnostics On Board Diagnostics], and from the development board which is an [http://arduino.cc Arduino] (or a clone).
 It is based on an Atmel AVR ATMEGA168P chip that contains 16K of flash, 1K of RAM and 512bytes of EEPROM, an LCD display, 3 buttons, a few $ of electronics components.
-The interface to the car is made with an ELM327 (a PIC) that talk PWM/VPW/ISO/CAN. Note that PWM/VPW/ISO should be possible to use without an ELM chip easily as the protocol can be find on the net and is not very complicated, but it would require a few resistors, capacitors and transistors, as well as some mods to the code.
+
+The interface to the car is made (for the moment) with an ELM327 (a PIC) that talk PWM/VPW/ISO/CAN. Note that PWM/VPW/ISO should be possible to use without an ELM chip easily as the protocol can be find on the net and is not very complicated, but it would require a few resistors, capacitors and transistors, as well as some mods to the code.
 
 The OBDuino connect to the car on it's OBD-II plug which is in general under the dash. A lot of signals are on this plug as well as battery voltage and ground. Using a standard OBD-II to DB9F cable brings us what we need.
 
@@ -31,6 +32,8 @@ You need also a 220 omhs resistor and a PNP 2N3906 or equivalement like an NTE15
 = Interfacing =
 
 The code was made around a simple ISO interface or with the use of the ELM327 especially for CAN (all 2008+ vehicles sold in North America shall use CAN). You will need to make the interface specific for your car, see [OBDuinoInterface Interface].
+
+I (Frédéric) am currently working on a CAN only interface using Microchip MCP2515 and MCP2551. I found a nice CAN library and adapted the code to use it. It can drive the cost of the whole OBDuino "CAN only" to about $40. More info soon.
 
 = Menu Configuration ==
 
@@ -88,12 +91,7 @@ Some specials PIDs you can access (either by decreasing below 0 or by going far 
   * 0xF6 - Average fuel consumption of the trip (since last trip reset)
   * 0xF7 - Fuel used for the current trip
   * 0xF8 - Distance of the current trip
-  * 0xF9 - Battery voltage (of the car)
+  * 0xF9 - Battery voltage
   * 0xFA - CAN status, for CAN only protocol only, display TX and RX errors
 
-----
-Add your content here.  Format your content with:
-  * Text in *bold* or _italic_
-  * Headings, paragraphs, and lists
-  * Automatic links to other wiki pages
   
