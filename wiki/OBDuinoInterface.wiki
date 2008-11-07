@@ -95,4 +95,4 @@ http://opengauge.org/%7Eobduino/hardware/CAN_Interface_back.jpg
 
 ==Interface for CAN==
 
-I (Frédéric) am currently working on a CAN only interface using Microchip MCP2515 and MCP2551. I found a nice CAN library and adapted the code to use it. It can drive the cost of the OBDuino CAN only to about $40. More info soon.
+Soon another cheaper interface than the ELM327!
