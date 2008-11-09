@@ -2,38 +2,40 @@
 
 http://opengauge.org/~obduino/hardware/idle.jpg
 
+<wiki:toc max_depth="2" />
+
 = Introduction =
 
 The OBDuino is an in-car real-time display of various information, like speed, RPM, instant fuel consumption or average trip fuel consumption as well as others PIDs supported by the car.
 
 = Details =
 
-The name OBDuino comes from OBD which means [http://en.wikipedia.org/wiki/On_Board_Diagnostics On Board Diagnostics], and from the development board which is an [http://arduino.cc Arduino] (or a clone).
-It is based on an Atmel AVR ATMEGA168P chip that contains 16K of flash, 1K of RAM and 512bytes of EEPROM, an LCD display, 3 buttons, a few $ of electronics components.
+The name OBDuino comes from OBD which means [http://en.wikipedia.org/wiki/On_Board_Diagnostics On Board Diagnostics] and from the development board which is an [http://arduino.cc Arduino] (or a clone).
+_Technical info_: It is based on an Atmel AVR ATMEGA168P chip that contains 16K of flash, 1K of RAM and 512bytes of EEPROM, an LCD display, 3 buttons, a few $ of electronics components.
 
-The interface to the car is made (for the moment) with an ELM327 (a PIC) that talk PWM/VPW/ISO/CAN. Note that PWM/VPW/ISO should be possible to use without an ELM chip easily as the protocol can be find on the net and is not very complicated, but it would require a few resistors, capacitors and transistors, as well as some mods to the code.
+The OBDuino connect to the car on its OBD-II plug which is in general under the dash. A lot of signals are on this plug as well as battery voltage and ground. Using a standard OBD-II to DB9F cable brings us what we need.
 
-The OBDuino connect to the car on it's OBD-II plug which is in general under the dash. A lot of signals are on this plug as well as battery voltage and ground. Using a standard OBD-II to DB9F cable brings us what we need.
+The [OBDuinoInterface interface] to the car is made with either a Freescale MC33290 for ISO only, a Microchip 2515 for CAN only, or an ELM327 (a third-party pre-programmed PIC) that talks PWM/VPW/ISO/CAN but it is more expensive and can require more hardware work if you want to use all protocols.
 
-It can display 4 information at a time, plus there is virtual screens to have access to others PIDs. By default there is 3 screens available so it makes 12 PIDs available quickly.
+OBDuino can display 4 information at a time, and there is virtual screens to have access to others PIDs. By default there is 3 screens available so it makes 12 PIDs available quickly.
 
 = Main Hardware =
 
-The Arduino or a clone can be purchased assembled, in a kit, or you can even etch it yourself. Take the flavour you want for serial or USB depending on your PC/laptop configuration. All the clone should work the same, except the very small one that use 3.3V and 8MHz and even there, it should work too.
+The Arduino or a clone can be purchased assembled, in a kit, or you can even etch it yourself. Take the flavour you want for serial or USB depending on your PC/laptop configuration (you need the port to program the chip). All the clone should work the same, except the very small one that use 3.3V and 8MHz and even there, it should work too with some adaptation. It costs about $15-$33 depending of your choice.
 
 To play with, you can start with a "big" board like an Arduino Diecimila or a Freeduino SB, and to integrate in the car you can use a Boarduino or an iDuino by after.
 
 The LCD screen used is a 2 rows x 16 characters using a standard HD44780 or compatible chipset, they can be found on eBay for $4, and they exist in almost every colours as well as STN, FSTN and even OLED (although more expensive).
 
-The 3 buttons are momentary push button switches, take the one you want.
+The 3 buttons are momentary push button switches, take the one you want. You also need a 220 omhs resistor and a transistor PNP 2N3906 or equivalent like an NTE159 to drive the LCD brightness, as it can take up to 200mA on some LCD and the pin used to drive brightness is limited to about 20mA. radio-shack has them, or online electronic parts seller like Digikey or Mouser.
 
-You need also a 220 omhs resistor and a PNP 2N3906 or equivalement like an NTE159 to drive the LCD brightness, as it can take up to 200mA on some LCD and the pin used to drive brightness is limited to about 20mA.
+With this you have the main hardware and now need the car interface.
 
 = Interfacing =
 
-The code was made around a simple ISO interface or with the use of the ELM327 especially for CAN (all 2008+ vehicles sold in North America shall use CAN). You will need to make the interface specific for your car, see [OBDuinoInterface Interface].
+The code can use multiple interface (although one at a time), you will need to make the interface specific for your car, see [OBDuinoInterface Interface]. If your car is sold in north-america and is a 2008+ it uses CAN so you can built the interface using Microchip MCP2515 and MCP2551.
 
-I (Frédéric) am currently working on a CAN only interface using Microchip MCP2515 and MCP2551. I found a nice CAN library and adapted the code to use it. It can drive the cost of the whole OBDuino "CAN only" to about $40. More info soon.
+Interface connect to the Arduino on a few pins, depending on your choice, the LCD will be connected differently.
 
 = Menu Configuration ==
 
@@ -81,6 +83,7 @@ Choose if you want to configure the PIDs in the various screen.
 ===  Scr 'n' Corner 'm' (0x00-0xFF) === 
 (if you have selected YES at the previous item)
 Select the PID you want to be displayed on screen 'n' in the corner 'm'.
+A good list of PIDs is on Wikipedia [http://en.wikipedia.org/wiki/OBD-II_PIDs here]
 Some specials PIDs you can access (either by decreasing below 0 or by going far up):
   * 0xF0 - no display, meaning this corner will be blank, can be useful if another PID result is more than 8 characters
   * 0xF1 - Instant fuel consumption
@@ -93,5 +96,3 @@ Some specials PIDs you can access (either by decreasing below 0 or by going far 
   * 0xF8 - Distance of the current trip
   * 0xF9 - Battery voltage
   * 0xFA - CAN status, for CAN only protocol only, display TX and RX errors
-
-  
