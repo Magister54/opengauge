@@ -1,16 +1,19 @@
-#summary OBDuino OBD2 cable and Interface adapter
+#summary OBDuino OBD2 cable and Interfaces
 #labels Phase-Design
+
+<wiki:toc max_depth="2" />
 
 = Introduction =
 
-You cannot directly plug signals from the OBD-II to the Arduino board.
-You need a small interface to adapt the signal.
+You cannot directly connect signals from the OBD-II to the Arduino board. You need a small interface that adapt the signal.
+
+Whatever the interface needed, you also need a cable that will bring you the signals from the OBD-II plug to your OBDuino.
 
 = Details =
 
 ==Cable==
 
-To keep compatibility with already existing cable, an OBD-II to DB9F cable is wired like this:
+To keep compatibility with already existing cable, the OBDuino Interface pinout for the OBD-II to DB9F cable is wired like this:
 
 {{{
 DB9F			OBD-II
@@ -26,9 +29,11 @@ DB9F			OBD-II
 }}}
 *Do not plug it into a PC!!! This goes to an interface only!!!*
 
+Example of my home made cable:
+
 http://opengauge.org/%7Eobduino/hardware/obd2_cable.jpg
 
-You can make it yourself with an OBD-II plug available at http://www.carplugs.com/ for $5+$3sh. Use at least AWG24 wires especially for Battery and ground.
+You can make it yourself with an OBD-II plug available at http://www.carplugs.com/ for $5+$3sh. Use AWG24 wires for battery and ground if you can.
 
 Or buy an already made cable at http://www.obd2allinone.com/sc/details.asp?item=obd2cable for $10+$5sh or elsewhere.
 
@@ -36,7 +41,7 @@ Or buy an already made cable at http://www.obd2allinone.com/sc/details.asp?item=
 ==Interface for ISO==
 
 This interface adapts the ISO signals for the Arduino inputs.
-It consists of a small IC ([http://www.freescale.com/webapp/sps/site/prod_summary.jsp?code=MC33290 Freescale MCZ33290EF]), a 510 ohms resistor, a DB9M that will be plugged with the cable mentioned above, and a few wires that connect to the Arduino board.
+It consists of a small IC ([http://www.freescale.com/webapp/sps/site/prod_summary.jsp?code=MC33290 Freescale MCZ33290EF]), a 510 ohms resistor, a DB9M that will be plugged with the cable mentioned above, and few wires that connect to the Arduino board.
 
 The MC33290 is a small chip, you can solder some wires on it for better handling.
 http://opengauge.org/%7Eobduino/hardware/MC33290.jpg
@@ -54,12 +59,12 @@ Arduino 5V pin output -----7|VDD  NC|2--               /
 Arduino 5V pin output -----8|CEN VBB|1-----------------+------- DB9M pin 9 (12V Battery)
                             +-------+
 }}}
-The Arduino is powered by the 12V line coming from the cable too
+The Arduino is powered by the 12V line coming from the cable too so you need to bring some wires from the DB9M to the Arduino like this:
 {{{
 Arduino 12V input ------------------ DB9M pin 9 (12V Battery)
 Arduino GND input ------------------ DB9M pin 2 (Chassis Ground)
 }}}
-*Some cars have only one ground so you may have to use pin 1 instead of pin 2 to power the board or just solder pin 1 and 2 together*
+*Some cars have only one ground so you may have to use DB9M pin 1 instead of pin 2 to power the board or just solder pin 1 and 2 together*
 
 Interface front:
 
@@ -72,15 +77,17 @@ http://opengauge.org/%7Eobduino/hardware/iso_interface_back.jpg
 
 ==Interface with ELM==
 
-CAN protocol is not easy to program so as a phase 1 we are using an [http:http://www.elmelectronics.com/ ELM327]. This chip integrates all protocol so it could be used for ISO/VPW/PWM too, but it's a $32 chip that add to the duino and LCD, plus a few components.
+CAN protocol is not easy to program so as a phase 1 I am using an [http:http://www.elmelectronics.com/ ELM327] for this. This chip integrates all protocol so it could be used for ISO/VPW/PWM as well, but it's a $32+s/h chip that add to the duino and LCD, plus a few components.
+
+Note that for PWM/VPW it should be possible to use an ELM320 or ELM323 respectively, which is cheaper than the ELM327 and would require almost no change to the code, but you would still need to do some hadware, schematics are avalaible at ELM web site.
 
 Diagram of the interface (adaptation of the generic diagram found in the PDF of the ELM327):
 
 http://opengauge.org/%7Eobduino/diagram/CANduino.gif
 
-On the diagram, note that CAN-L (OBD2 pin 14) go to a DB9M pin 5 and CAN-H (OBD2 pin 6)  go to a DB9M pin 3. +5V comes from the Arduino board.
+On the diagram, note that CAN-L (OBD2 pin 14) go to a DB9M pin 5 and CAN-H (OBD2 pin 6) go to a DB9M pin 3. +5V comes from the Arduino board.
 
-The Arduino is powered by the 12V line coming from the cable too
+The Arduino is powered by the 12V line coming from the cable too so you need to bring some wires from the DB9M to the Arduino like this:
 {{{
 Arduino 12V input ------------------ DB9M pin 9 (12V Battery)
 Arduino GND input ------------------ DB9M pin 2 (Chassis Ground)
@@ -95,4 +102,10 @@ http://opengauge.org/%7Eobduino/hardware/CAN_Interface_back.jpg
 
 ==Interface for CAN==
 
-Soon another cheaper interface than the ELM327!
+Microchip offers solution for CAN bus, mainly their MCP2551 for the physical layer (as on the ELM327 diagram above) and their MCP2515 for the protocol. The advantage is that it costs only a few $.
+To manipulate CAN message, I use a free library made by Fabian Greif called [http://www.kreatives-chaos.com/artikel/universelle-can-bibliothek libcan], his library also supports manipulation of the MCP2515 through SPI with an AVR, it's a little bit technical but let's say it helps me a lot as I do not have to re-invent the wheel!
+
+Schematic is as follow:
+(soon)
+
+Note that as the 2515 need specials pins on the Arduino, the LCD pins has been moved elsewhere compared to the OBDuino using the Freescale 33290 ISO or the ELM327.
