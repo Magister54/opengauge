@@ -1,17 +1,15 @@
 #summary Whole diagram of the Arduino board, LCD, ISO interface
 #labels Phase-Design
 
-= Diagram =
-
-
+= ISO Diagram =
 
 Here's the proposed diagram of the [http://arduino.cc Arduino] board, the LCD screen, and the [OBDuinoInterface ISO interface].
 
 http://opengauge.org/%7Eobduino/diagram/obduino.gif
 
-= Hardware =
+= Hardware for ISO =
 
-You need (for ISO):
+You need:
   # a duino clone board, serial or USB, your choice
   # an HD44780 compatible LCD screen 2x16
   # a transistor 2N3906 or NTE159
@@ -35,7 +33,7 @@ http://opengauge.org/%7Eobduino/hardware/lcd.jpg
 http://opengauge.org/%7Eobduino/hardware/lcd_back.jpg
 
 
-Freeduino and LCD attached, it's just missing the 3 buttons and the [OBDuinoInterface ISO interface].
+Freeduino and LCD attached:
 
 http://opengauge.org/%7Eobduino/hardware/duino_lcd.jpg
 
