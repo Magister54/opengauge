@@ -2,7 +2,7 @@
 
 // comment to use MC33290 ISO K line chip
 // uncomment to use ELM327
-#define ELM
+//#define ELM
 
 /* OBDuino
 
@@ -200,10 +200,14 @@ prog_uchar pid_reslen[] PROGMEM=
 #define TOPRIGHT 1
 #define BOTTOMLEFT  2
 #define BOTTOMRIGHT 3
-#define NBCORNER 4   // with a 16x4 display you can use 8 'corners'
+#define NBCORNER 4   // with a 16x4 display you could use 8 'corners'
 #define NBSCREEN  3  // 12 PIDs should be enough for everyone
 byte active_screen=0;  // 0,1,2,... selected by left button
 prog_char blkstr[] PROGMEM="        "; // 8 spaces, used to clear part of screen
+prog_char pctspcts[] PROGMEM="%s %s"; // used in a couple of place
+prog_char pctldpcts[] PROGMEM="%ld %s"; // used in a couple of place
+prog_char select_no[]  PROGMEM="(NO) YES"; // for config menu
+prog_char select_yes[] PROGMEM="NO (YES)"; // for config menu
 
 // to differenciate trips
 #define TANK   0
@@ -239,7 +243,7 @@ typedef struct
 }
 params_t;
 
-// global parameters, default values
+// parameters default values
 params_t params=
 {
   40,
@@ -272,8 +276,6 @@ params_t params=
  */
 #define K_IN    2
 #define K_OUT   3
-// bit period for 10400 bauds = 1000000/10400 = 96
-#define _bitPeriod 1000000L/10400L
 #endif
 
 // some globals, for trip calculation and others
@@ -290,7 +292,7 @@ byte param_saved=0;
 // this is the interrupt handler for button presses
 ISR(PCINT1_vect)
 {
-#if 1
+#if 0
   static unsigned long last_millis = 0;
   unsigned long m = millis();
 
@@ -374,7 +376,7 @@ byte elm_command(char *str, char *cmd)
   return elm_read(str, STRLEN);
 }
 
-int elm_init()
+void elm_init()
 {
   char str[STRLEN];
 
@@ -415,68 +417,22 @@ int elm_init()
   else if(str[1]=='6')  // CAN 11 bits
     elm_command(str, PSTR("ATSH7E0\r"));
   else if(str[1]=='7')  // CAN 29 bits
-    elm_command(str, PSTR("ATSHDA01F1\r"));
-
+    elm_command(str, PSTR("ATSHDA10F1\r"));
 #endif
-  return 0;
 }
 #else
 int iso_read_byte()
 {
-  int val = 0;
-  int bitDelay = _bitPeriod - clockCyclesToMicroseconds(50);
-  unsigned long timeout;
+  int b;
 
-  // one byte of serial data (LSB first)
-  // ...--\    /--\/--\/--\/--\/--\/--\/--\/--\/--...
-  //	 \--/\--/\--/\--/\--/\--/\--/\--/\--/
-  //	start  0   1   2   3   4   5   6   7 stop
+  while((b=serialRead())==-1);
 
-  timeout=millis();
-  while (digitalRead(K_IN))    // wait for start bit
-  {
-    if((millis()-timeout) > 300L)  // timeout after 300ms
-      return -1;
-  }
-
-  // confirm that this is a real start bit, not line noise
-  if (digitalRead(K_IN) == LOW)
-  {
-    // frame start indicated by a falling edge and low start bit
-    // jump to the middle of the low start bit
-    delayMicroseconds(bitDelay / 2 - clockCyclesToMicroseconds(50));
-
-    // offset of the bit in the byte: from 0 (LSB) to 7 (MSB)
-    for (int offset = 0; offset < 8; offset++)
-    {
-      // jump to middle of next bit
-      delayMicroseconds(bitDelay);
-      // read bit
-      val |= digitalRead(K_IN) << offset;
-    }
-    delayMicroseconds(_bitPeriod);
-    return val;
-  }
-  return -1;
+  return b;
 }
 
 void iso_write_byte(byte b)
 {
-  int bitDelay = _bitPeriod - clockCyclesToMicroseconds(50); // a digitalWrite is about 50 cycles
-
-  digitalWrite(K_OUT, LOW);
-  delayMicroseconds(bitDelay);
-
-  for (byte mask = 0x01; mask; mask <<= 1)
-  {
-    if (b & mask) // choose bit
-      digitalWrite(K_OUT, HIGH); // send 1
-    else
-      digitalWrite(K_OUT, LOW); // send 0
-    delayMicroseconds(bitDelay);
-  }
-  digitalWrite(K_OUT, HIGH);
-  delayMicroseconds(bitDelay);
+  serialWrite(b);
 }
 
 // inspired by SternOBDII\code\checksum.c
@@ -539,7 +495,7 @@ byte iso_read_data(byte *data, byte len)
   // ignore failure for the moment (0x7f)
   // ignore crc for the moment
 
-  // we send only one command, so result start at buf[4];
+  // we send only one command, so result start at buf[4]
   memcpy(data, buf+4, len);
 
   return len;
@@ -576,6 +532,7 @@ byte iso_init()
   delay(60);
 
   // switch now to 10400 bauds
+  beginSerial(10400);
 
   // wait for 0x55 from the ECU
   b=iso_read_byte();
@@ -680,7 +637,7 @@ long get_pid(byte pid, char *retbuf)
 #endif
 
   // a lot of formulas are the same so calculate a default return value here
-  // even if it's scrapped after, we still saved 40 bytes
+  // even if it's scrapped after, we still saved 40 bytes!
   ret=buf[0]*256U+buf[1];
 
   // formula and unit for each PID
@@ -772,7 +729,7 @@ long get_pid(byte pid, char *retbuf)
   case DIST_MIL_CLR:
     if(!params.use_metric)
       ret=(ret*1000U)/1609U;
-    sprintf_P(retbuf, PSTR("%ld %s"), ret, params.use_metric?"\003":"\006");
+    sprintf_P(retbuf, pctldpcts, ret, params.use_metric?"\003":"\006");
     break;
   case TIME_MIL_ON:
   case TIME_MIL_CLR:
@@ -926,7 +883,7 @@ void get_icons(char *retbuf)
   if(params.use_metric)
   {
     long_to_dec_str(cons, decs, 2);
-    sprintf_P(retbuf, PSTR("%s %s"), decs, (vss<toggle_speed)?"L\004":"\001\002" );
+    sprintf_P(retbuf, pctspcts, decs, (vss<toggle_speed)?"L\004":"\001\002" );
   }
   else
   {
@@ -949,7 +906,7 @@ void get_icons(char *retbuf)
     }
 
     long_to_dec_str(cons, decs, 1);
-    sprintf_P(retbuf, PSTR("%s %s"), decs, (vss<toggle_speed)?"G\004":"\006\007" );
+    sprintf_P(retbuf, pctspcts, decs, (vss<toggle_speed)?"G\004":"\006\007" );
   }
 }
 
@@ -1005,7 +962,7 @@ void get_cons(char *retbuf, byte ctrip)
   else
     long_to_dec_str(trip_cons, decs, 1);
 
-  sprintf_P(retbuf, PSTR("%s %s"), decs, params.use_metric?"\001\002":"\006\007" );
+  sprintf_P(retbuf, pctspcts, decs, params.use_metric?"\001\002":"\006\007" );
 }
 
 // trip 0 is tank
@@ -1023,7 +980,7 @@ void get_fuel(char *retbuf, byte ctrip)
     cfuel=(cfuel*100)/378;
 
   long_to_dec_str(cfuel, decs, 2);
-  sprintf_P(retbuf, PSTR("%s %s"), decs, params.use_metric?"L":"G" );
+  sprintf_P(retbuf, pctspcts, decs, params.use_metric?"L":"G" );
 }
 
 // trip 0 is tank
@@ -1041,7 +998,7 @@ void get_dist(char *retbuf, byte ctrip)
     cdist=(cdist*1000)/1609;
 
   long_to_dec_str(cdist, decs, 1);
-  sprintf_P(retbuf, PSTR("%s %s"), decs, params.use_metric?"\003":"\006" );
+  sprintf_P(retbuf, pctspcts, decs, params.use_metric?"\003":"\006" );
 }
 
 // distance you can do with the remaining fuel in your tank
@@ -1072,7 +1029,7 @@ void get_remain_dist(char *retbuf)
       remain_dist=(remain_dist*1000)/1609;
   }
 
-  sprintf_P(retbuf, PSTR("%ld %s"), remain_dist, params.use_metric?"\003":"\006" );
+  sprintf_P(retbuf, pctldpcts, remain_dist, params.use_metric?"\003":"\006" );
 }
 
 /*
@@ -1093,7 +1050,7 @@ void accu_trip(void)
   old_time = time_now;
 
   // distance in cm
-  // 3km/h = 83cm/s and we can sample 4 times per second or so at 9600 bauds
+  // 3km/h = 83cm/s and we can sample n times per second or so with CAN
   // so having the value in cm is not too large, not too weak.
   // ulong so max value is 4'294'967'295 cm or 42'949 km or 26'671 miles
   vss=get_pid(VEHICLE_SPEED, str);
@@ -1391,9 +1348,9 @@ void trip_reset(byte ctrip)
 
     lcd_gotoXY(4,1);
     if(p==0)
-      lcd_print_P(PSTR("(NO) YES"));
+      lcd_print_P(select_no);
     else
-      lcd_print_P(PSTR("NO (YES)"));
+      lcd_print_P(select_yes);
     buttonState=buttonsUp;
     delay_button();
   }
@@ -1468,9 +1425,9 @@ void config_menu(void)
 
     lcd_gotoXY(4,1);
     if(!params.use_metric)
-      lcd_print_P(PSTR("(NO) YES"));
+      lcd_print_P(select_no);
     else
-      lcd_print_P(PSTR("NO (YES)"));
+      lcd_print_P(select_yes);
     buttonState=buttonsUp;
     delay_button();
   }
@@ -1572,9 +1529,9 @@ void config_menu(void)
 
     lcd_gotoXY(4,1);
     if(p==0)
-      lcd_print_P(PSTR("(NO) YES"));
+      lcd_print_P(select_no);
     else
-      lcd_print_P(PSTR("NO (YES)"));
+      lcd_print_P(select_yes);
     buttonState=buttonsUp;
     delay_button();
   }
@@ -1657,11 +1614,9 @@ void test_buttons(void)
 
 void setup()                    // run once, when the sketch starts
 {
-  byte r;
-  char str[STRLEN];
-  char VERSION[] = "$Revision$";
-
 #ifndef ELM
+  byte r;
+
   // init pinouts
   pinMode(K_OUT, OUTPUT);
   pinMode(K_IN, INPUT);
@@ -1686,30 +1641,24 @@ void setup()                    // run once, when the sketch starts
 
   // LCD pin init
   analogWrite(BrightnessPin,255-brightness[brightnessIdx]);
+  analogWrite(ContrastPin, params.contrast);
   pinMode(EnablePin,OUTPUT);
   pinMode(DIPin,OUTPUT);
   pinMode(DB4Pin,OUTPUT);
   pinMode(DB5Pin,OUTPUT);
   pinMode(DB6Pin,OUTPUT);
   pinMode(DB7Pin,OUTPUT);
-  delay(500);
+  delay(100);
 
-  analogWrite(ContrastPin, params.contrast);
   lcd_init();
+  lcd_print_P(PSTR("  OBDuino v110"));
 
-  VERSION[strlen(VERSION)-1]='\0';  // replace last $ with \0
-  sprintf_P(str, PSTR("  OBDuino v%s"), strchr(VERSION, ' ')+1);
-  lcd_print(str);
-
+#ifndef ELM
   do // init loop
   {
-#ifdef ELM
-    r=elm_init();
-#else
     lcd_gotoXY(0,1);
     lcd_print_P(PSTR("ISO9141 Init"));
     r=iso_init();
-#endif
     lcd_gotoXY(0,1);
     if(r==0)
       lcd_print_P(PSTR("Successful!     "));
@@ -1719,6 +1668,9 @@ void setup()                    // run once, when the sketch starts
     delay(1000);
   }
   while(r!=0); // end init loop
+#else
+  elm_init();
+#endif
 
   // check supported PIDs
   check_supported_pids();
@@ -1811,7 +1763,11 @@ void params_load(void)
 
   // compare CRC
   if(crc==crc_calc)     // good, copy read params to params
+#if 0
     memcpy((void*)&params, &params_tmp, sizeof(params_t));
+#else
+    params=params_tmp;
+#endif
 }
 
 #ifdef DEBUG  // how can this takes 578 bytes!!
