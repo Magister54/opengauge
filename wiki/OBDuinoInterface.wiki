@@ -50,9 +50,9 @@ Schematic is like this:
 {{{
                              MC33290
                             +-------+
-Arduino pin 3 -------------5|TX  ISO|4-----------------+------- DB9M pin 4 (ISO K Line)
+Arduino pin 1 -------------5|TX  ISO|4-----------------+------- DB9M pin 4 (ISO K Line)
                             |       |                  |
-Arduino pin 2 -------------6|RX  GND|3--DB9M pin 1     / between MC pin 4 and pin 1
+Arduino pin 0 -------------6|RX  GND|3--DB9M pin 1     / between MC pin 4 and pin 1
                             |       |                  \ goes a 510 ohms resistor
 Arduino 5V pin output -----7|VDD  NC|2--               /
                             |       |                  |
