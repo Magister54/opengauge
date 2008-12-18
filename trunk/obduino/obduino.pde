@@ -59,6 +59,7 @@ void params_save(void);
 // Others prototypes
 void long_to_dec_str(long value, char *decs, byte prec);
 int memoryTest(void);
+void test_buttons(void);
 
 #define BUTTON_DELAY  250
 // use analog pins as digital pins
@@ -505,6 +506,7 @@ byte iso_read_data(byte *data, byte len)
 byte iso_init()
 {
   byte b;
+  byte kw1, kw2;
 
   // drive K line high for 300ms
   digitalWrite(K_OUT, HIGH);
@@ -541,25 +543,18 @@ byte iso_init()
 
   delay(5);
 
-  // wait for 0x08 0x08
-  b=iso_read_byte();
-  if(b!=0x08)
-    return -1;
-
+  // wait for kw1 and kw2
+  kw1=iso_read_byte();
   delay(20);
 
-  b=iso_read_byte();
-  if(b!=0x08)
-    return -1;
-
+  kw2=iso_read_byte();
   delay(25);
 
-  // sent 0xF7 (which is ~0x08)
-  iso_write_byte(0xF7);
-
+  // sent ~kw2 (invert of last keyword)
+  iso_write_byte(~kw2);
   delay(25);
 
-  // ECU answer by 0xCC
+  // ECU answer by 0xCC (~0x33)
   b=iso_read_byte();
   if(b!=0xCC)
     return -1;
@@ -1651,7 +1646,7 @@ void setup()                    // run once, when the sketch starts
   delay(100);
 
   lcd_init();
-  lcd_print_P(PSTR("  OBDuino v110"));
+  lcd_print_P(PSTR("  OBDuino v112"));
 
 #ifndef ELM
   do // init loop
