@@ -9,6 +9,14 @@ You cannot directly connect pins from the OBD-II plug to the Arduino board. You 
 
 Whatever the interface needed, you also need a cable that will bring you the signals from the OBD-II plug to your OBDuino.
 
+For all cases:
+The Arduino is powered by the 12V line coming from the cable too so you need to bring some wires from the DB9M to the Arduino like this:
+{{{
+Arduino 12V input ------------------ DB9M pin 9 (12V Battery)
+Arduino GND input ------------------ DB9M pin 2 (Chassis Ground)
+}}}
+*Some cars have only one ground so you may have to use DB9M pin 1 instead of pin 2 to power the board or just solder pin 1 and 2 together*
+
 =Cable=
 
 To keep compatibility with already existing cable, the OBDuino Interface pinout for the OBD-II to DB9F cable is wired like this:
@@ -70,12 +78,6 @@ Arduino 5V pin output -----7|VDD  NC|2--               /
 Arduino 5V pin output -----8|CEN VBB|1-----------------+------- DB9M pin 9 (12V Battery)
                             +-------+
 }}}
-The Arduino is powered by the 12V line coming from the cable too so you need to bring some wires from the DB9M to the Arduino like this:
-{{{
-Arduino 12V input ------------------ DB9M pin 9 (12V Battery)
-Arduino GND input ------------------ DB9M pin 2 (Chassis Ground)
-}}}
-*Some cars have only one ground so you may have to use DB9M pin 1 instead of pin 2 to power the board or just solder pin 1 and 2 together*
 
 Interface front:
 
@@ -97,14 +99,6 @@ Diagram of the interface (adaptation of the generic diagram found in the PDF of 
 http://opengauge.org/%7Eobduino/diagram/CANduino.gif
 
 On the diagram, note that CAN-L (OBD2 pin 14) go to a DB9M pin 5 and CAN-H (OBD2 pin 6) go to a DB9M pin 3. +5V comes from the Arduino board.
-
-The Arduino is powered by the 12V line coming from the cable too so you need to bring some wires from the DB9M to the Arduino like this:
-{{{
-Arduino 12V input ------------------ DB9M pin 9 (12V Battery)
-Arduino GND input ------------------ DB9M pin 2 (Chassis Ground)
-}}}
-*Some cars have only one ground so you may have to use pin 1 instead of pin 2 to power the board or just solder pin 1 and 2 together*
-
 
 http://opengauge.org/%7Eobduino/hardware/CAN_Interface_front.jpg
 
