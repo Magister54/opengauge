@@ -1,25 +1,9 @@
-#summary Whole diagram of the Arduino board, LCD, ISO interface
+#summary Whole diagram of the Arduino board, LCD, interface
 #labels Phase-Design
 
-= ISO Diagram =
+<wiki:toc max_depth="2" />
 
-Here's the proposed diagram of the [http://arduino.cc Arduino] board, the LCD screen, and the [OBDuinoInterface ISO interface].
-
-http://opengauge.org/%7Eobduino/diagram/obduino.gif
-
-= Hardware for ISO =
-
-You need:
-  # a duino clone board, serial or USB, your choice
-  # an HD44780 compatible LCD screen 2x16
-  # a transistor 2N3906 or NTE159
-  # three small push buttons
-  # a 220 ohms resistor
-  # a Freescale MC33290 ic
-  # a 510 ohms resistor
-  # a DB9 male
-
-==Some pictures of the hardware==
+=Some pictures of the main hardware=
 
 A clone board called the freeduino, some headers were missing when I took pictures:
 
@@ -33,10 +17,44 @@ http://opengauge.org/%7Eobduino/hardware/lcd.jpg
 http://opengauge.org/%7Eobduino/hardware/lcd_back.jpg
 
 
-Freeduino and LCD attached:
+Example of the Freeduino and LCD attached:
 
 http://opengauge.org/%7Eobduino/hardware/duino_lcd.jpg
 
+
+= CAN Diagram =
+
+Here's the proposed diagram of the [http://arduino.cc Arduino] board, the LCD screen, and the [OBDuinoInterface CAN interface].
+
+http://opengauge.org/%7Eobduino/diagram/OBDuino_can.gif
+
+== Hardware for CAN ==
+
+You need:
+  # a duino clone board, serial or USB, your choice
+  # an HD44780 compatible LCD screen 2x16
+  # a transistor 2N3906 or NTE159 or equiv
+  # three small push buttons
+  # a 220 ohms resistor
+  # the [OBDuinoInterface CAN interface]
+
+= ISO Diagram =
+
+Here's the proposed diagram of the [http://arduino.cc Arduino] board, the LCD screen, and the [OBDuinoInterface ISO interface].
+
+http://opengauge.org/%7Eobduino/diagram/obduino.gif
+
+== Hardware for ISO ==
+
+You need:
+  # a duino clone board, serial or USB, your choice
+  # an HD44780 compatible LCD screen 2x16
+  # a transistor 2N3906 or NTE159
+  # three small push buttons
+  # a 220 ohms resistor
+  # a Freescale MC33290 ic
+  # a 510 ohms resistor
+  # a DB9 male
 
 Freeduino, LCD, ISO interface:
 
