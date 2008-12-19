@@ -39,7 +39,7 @@ Or buy an already made cable at http://www.obd2allinone.com/sc/details.asp?item=
 
 A proposed CAN only cable, smaller and thinner, can be wired like this:
 {{{
-RJ-10     			OBD-II
+RJ-10     		OBD-II
 1 (black) ------5  (Signal ground)
 2 (red)---------14 (CAN Low)
 3 (green)-------6  (CAN High)
