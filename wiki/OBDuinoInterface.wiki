@@ -117,6 +117,7 @@ Microchip offers solution for CAN bus, mainly their MCP2551 for the physical lay
 To manipulate CAN message, I use a free library made by Fabian Greif called [http://www.kreatives-chaos.com/artikel/universelle-can-bibliothek libcan], his library also supports manipulation of the MCP2515 through SPI with an AVR, it's a little bit technical but let's say it helps me a lot as I do not have to re-invent the wheel!
 
 Schematic is as follow:
+
 http://opengauge.org/%7Eobduino/diagram/CAN_interface.gif
 
 Note that as the 2515 need specials pins on the Arduino, the LCD pins has been moved elsewhere compared to the OBDuino using the Freescale 33290 ISO or the ELM327, see [OBDuinoDiagram whole diagram for the CAN interface]
