@@ -13,11 +13,11 @@ The OBDuino is an in-car real-time display of various information, like speed, R
 The name OBDuino comes from OBD which means [http://en.wikipedia.org/wiki/On_Board_Diagnostics On Board Diagnostics] and from the development board which is an [http://arduino.cc Arduino] (or a clone).
 _Technical info_: It is based on an Atmel AVR ATMEGA168P chip that contains 16K of flash, 1K of RAM and 512bytes of EEPROM, an LCD display, 3 buttons, a few $ of electronics components.
 
-The OBDuino connect to the car on its OBD-II plug which is in general under the dash. A lot of signals are on this plug as well as battery voltage and ground. Using a standard OBD-II to DB9F cable brings us what we need.
+The OBDuino connects to the car on its OBD-II plug which is, in general, under the dash. A lot of signals are on this plug as well as battery voltage and ground. Using a standard OBD-II to DB9F cable brings us what we need.
 
 The [OBDuinoInterface interface] to the car is made with either a Freescale MC33290 for ISO only, a Microchip 2515 for CAN only, or an ELM327 (a third-party pre-programmed PIC) that talks PWM/VPW/ISO/CAN but it is more expensive and can require more hardware work if you want to use all protocols.
 
-OBDuino can display 4 information at a time, and there is virtual screens to have access to others PIDs. By default there is 3 screens available so it makes 12 PIDs available quickly.
+OBDuino can display 4 informations at a time, and there is virtual screens to have access to others PIDs. By default there is 3 screens available so it makes 12 PIDs available quickly.
 
 = Main Hardware =
 
@@ -27,15 +27,15 @@ To play with, you can start with a "big" board like an Arduino Diecimila or a Fr
 
 The LCD screen used is a 2 rows x 16 characters using a standard HD44780 or compatible chipset, they can be found on eBay for $4, and they exist in almost every colours as well as STN, FSTN and even OLED (although more expensive).
 
-The 3 buttons are momentary push button switches, take the one you want. You also need a 220 omhs resistor and a transistor PNP 2N3906 or equivalent like an NTE159 to drive the LCD brightness, as it can take up to 200mA on some LCD and the pin used to drive brightness is limited to about 20mA. radio-shack has them, or online electronic parts seller like Digikey or Mouser.
+The 3 buttons are momentary push button switches, take the one you want. You also need a 220 ohms resistor and a PNP 2N3906 transistor or equivalent like an NTE159 to drive the LCD brightness, as it can take up to 200mA on some LCD and the pin used to drive brightness is limited to about 20mA. radio-shack has them, or online electronic parts seller like Digikey or Mouser.
 
 With this you have the main hardware and now need the car interface.
 
-= Interfacing =
+= Interfaces =
 
 The code can use multiple interface (although one at a time), you will need to make the interface specific for your car, see [OBDuinoInterface Interface]. If your car is sold in north-america and is a 2008+ it uses CAN so you can built the interface using Microchip MCP2515 and MCP2551.
 
-Interface connect to the Arduino on a few pins, depending on your choice, the LCD will be connected differently.
+Interface connect to the Arduino on a few pins, depending on your choice, the LCD will be connected differently, see [OBDuinoDiagram Diagram].
 
 = Menu Configuration ==
 
@@ -95,4 +95,4 @@ Some specials PIDs you can access (either by decreasing below 0 or by going far 
   * 0xF7 - Fuel used for the current trip
   * 0xF8 - Distance of the current trip
   * 0xF9 - Battery voltage
-  * 0xFA - CAN status, for CAN only protocol only, display TX and RX errors
+  * 0xFA - CAN status, for CAN protocol only, display TX and RX errors
