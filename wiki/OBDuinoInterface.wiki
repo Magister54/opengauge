@@ -5,13 +5,11 @@
 
 = Introduction =
 
-You cannot directly connect signals from the OBD-II to the Arduino board. You need a small interface that adapt the signal.
+You cannot directly connect pins from the OBD-II plug to the Arduino board. You need a small interface that convert the signal.
 
 Whatever the interface needed, you also need a cable that will bring you the signals from the OBD-II plug to your OBDuino.
 
-= Details =
-
-==Cable==
+=Cable=
 
 To keep compatibility with already existing cable, the OBDuino Interface pinout for the OBD-II to DB9F cable is wired like this:
 
@@ -37,10 +35,23 @@ You can make it yourself with an OBD-II plug available at http://www.carplugs.co
 
 Or buy an already made cable at http://www.obd2allinone.com/sc/details.asp?item=obd2cable for $10+$5sh or elsewhere.
 
+==CAN only cable==
+
+A proposed CAN only cable, smaller and thinner, can be wired like this:
+{{{
+RJ-10     			OBD-II
+1 (black) ------5  (Signal ground)
+2 (red)---------14 (CAN Low)
+3 (green)-------6  (CAN High)
+4 (yellow)------16 (Battery)
+}}}
+source [http://www.controllerareanetwork.com/CANcables.htm]
+
+= Interfaces =
 
 ==Interface for ISO==
 
-This interface adapts the ISO signals for the Arduino inputs.
+This interface converts the ISO signals for the Arduino inputs.
 It consists of a small IC ([http://www.freescale.com/webapp/sps/site/prod_summary.jsp?code=MC33290 Freescale MCZ33290EF]), a 510 ohms resistor, a DB9M that will be plugged with the cable mentioned above, and few wires that connect to the Arduino board.
 
 The MC33290 is a small chip, you can solder some wires on it for better handling.
@@ -79,7 +90,7 @@ http://opengauge.org/%7Eobduino/hardware/iso_interface_back.jpg
 
 CAN protocol is not easy to program so as a phase 1 I am using an [http:http://www.elmelectronics.com/ ELM327] for this. This chip integrates all protocol so it could be used for ISO/VPW/PWM as well, but it's a $32+s/h chip that add to the duino and LCD, plus a few components.
 
-Note that for PWM/VPW it should be possible to use an ELM320 or ELM323 respectively, which is cheaper than the ELM327 and would require almost no change to the code, but you would still need to do some hadware, schematics are avalaible at ELM web site.
+Note that for PWM/VPW it should be possible to use an ELM320 or ELM323 respectively, which is cheaper than the ELM327 and would require almost no change to the code, but you would still need to do some hadware, schematics are avalaible on some web site.
 
 Diagram of the interface (adaptation of the generic diagram found in the PDF of the ELM327):
 
@@ -106,6 +117,8 @@ Microchip offers solution for CAN bus, mainly their MCP2551 for the physical lay
 To manipulate CAN message, I use a free library made by Fabian Greif called [http://www.kreatives-chaos.com/artikel/universelle-can-bibliothek libcan], his library also supports manipulation of the MCP2515 through SPI with an AVR, it's a little bit technical but let's say it helps me a lot as I do not have to re-invent the wheel!
 
 Schematic is as follow:
-(soon)
+http://opengauge.org/%7Eobduino/diagram/CAN_interface.gif
 
-Note that as the 2515 need specials pins on the Arduino, the LCD pins has been moved elsewhere compared to the OBDuino using the Freescale 33290 ISO or the ELM327.
+Note that as the 2515 need specials pins on the Arduino, the LCD pins has been moved elsewhere compared to the OBDuino using the Freescale 33290 ISO or the ELM327, see [OBDuinoDiagram whole diagram for the CAN interface]
+
+code soon
