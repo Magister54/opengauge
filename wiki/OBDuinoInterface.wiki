@@ -116,4 +116,6 @@ http://opengauge.org/%7Eobduino/diagram/CAN_interface.gif
 
 Note that as the 2515 need specials pins on the Arduino, the LCD pins has been moved elsewhere compared to the OBDuino using the Freescale 33290 ISO or the ELM327, see [OBDuinoDiagram whole diagram for the CAN interface]
 
-code soon
+http://opengauge.googlecode.com/svn/wiki/pictures/MCP_Interface_front.jpg
+
+http://opengauge.googlecode.com/svn/wiki/pictures/MCP_Interface_back.jpg
