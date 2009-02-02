@@ -198,26 +198,28 @@ unsigned volatile long instInjCount;
 unsigned volatile long tmpInstInjCount;     
 
 
- 
 void processInjOpen(void){      
   injHiStart = microSeconds();  
-  if (tmpInstInjStart == nil)
-    tmpInstInjStart=injHiStart;
-  tmpInstInjEnd=injHiStart;
 }      
  
 void processInjClosed(void){      
-  long x = elapsedMicroseconds(injHiStart)- parms[injectorSettleTimeIdx];       
+  long t =  microSeconds();
+  long x = elapsedMicroseconds(injHiStart, t)- parms[injectorSettleTimeIdx];       
   if(x >0)
     tmpTrip.injHius += x;       
   tmpTrip.injPulses++;      
 
-  if (tmpInstInjStart != nil){
+  if (tmpInstInjStart != nil) {
     if(x >0)
       tmpInstInjTot += x;     
-      tmpInstInjCount++;
-  }  
-}      
+    tmpInstInjCount++;
+  } else {
+    tmpInstInjStart = t;
+  }
+  
+  tmpInstInjEnd = t;
+}
+
 
 volatile boolean vssFlop = 0;
 
@@ -301,7 +303,7 @@ void setup (void){
   LCD::gotoXY(0,0); 
   LCD::print(getStr(PSTR("OpenGauge       ")));      
   LCD::gotoXY(0,1);      
-  LCD::print(getStr(PSTR("  MPGuino  v0.74")));      
+  LCD::print(getStr(PSTR("  MPGuino  v0.75")));      
 
   pinMode(InjectorOpenPin, INPUT);       
   pinMode(InjectorClosedPin, INPUT);       
