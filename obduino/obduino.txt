@@ -29,10 +29,13 @@ Configuration menu (accessed by middle button);
 - Tank size (n.m)
   Size of your tank in litres or gallon
 
-- Volume Efficiency (0-100%) (MAP only)
-  For vehicles with a MAP only we have to emulate the MAF.
+- Fuel Adjust (0-255%)
   This percentage will needs adjustment after you have checked manually
   a few tank to better approximate the fuel consumption.
+
+- Speed Adjust (0-255%)
+  This percentage will needs adjustment after you have checked manually
+  your speed with a well calibrated instrument like a GPS.
 
 - Engine Displacement (0.0-10.0) (MAP only)
   For vehicles with a MAP only we have to emulate the MAF.
@@ -57,4 +60,6 @@ Configuration menu (accessed by middle button);
   0xF7 - Fuel used for the current trip
   0xF8 - Distance of the current trip
   0xF9 - Battery voltage (of the car)
-  0xFA - CAN status, for CAN only protocol only, display TX and RX errors
+  0xFD - CAN status, for CAN only protocol only, display TX and RX errors
+  0xFE - Number of retreived PIDs per second
+  
