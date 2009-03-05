@@ -235,9 +235,10 @@ prog_char select_no[]  PROGMEM="(NO) YES"; // for config menu
 prog_char select_yes[] PROGMEM="NO (YES)"; // for config menu
 
 // to differenciate trips
-#define TANK   0
-#define TRIP   1
-#define NBTRIP 2
+#define TANK         0
+#define TRIP         1
+#define RUNNING_TRIP 2  //Tracks your current outting 
+#define NBTRIP       3
 
 // parameters
 // each trip contains fuel used and distance done
@@ -1451,6 +1452,7 @@ void trip_reset(byte ctrip)
   {
     params.trip[ctrip].dist=0;
     params.trip[ctrip].fuel=0;
+    params.trip[ctrip].waste=0;
   }
 }
 
@@ -1719,7 +1721,7 @@ void setup()                    // run once, when the sketch starts
   delay(100);
 
   lcd_init();
-  lcd_print_P(PSTR("  OBDuino v124"));
+  lcd_print_P(PSTR("  OBDuino v125"));
   delay(2000);
 #ifndef ELM
   do // init loop
@@ -1784,7 +1786,12 @@ void loop()                     // run over and over again
     lcd_gotoXY(8,1);
     lcd_print_P(PSTR("L wasted"));
     delay(2000);
+    //Turn the Backlight off
     analogWrite(BrightnessPin,255);
+    //Reset the currentouting trip
+    params.trip[RUNNING_TRIP].dist=0;
+    params.trip[RUNNING_TRIP].fuel=0;
+    params.trip[RUNNING_TRIP].waste=0;
   }
 
   // this read and assign vss and maf and accumulate trip data
@@ -1992,4 +1999,3 @@ void lcd_dataWrite(byte value)
   lcd_tickleEnable();
   delay(5);
 }
-
