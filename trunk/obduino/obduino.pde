@@ -23,6 +23,7 @@
   Mike: Added Tracking of Fuel wasted while idling, total for tank displayed when engine shut off.
         Modified iso_read_byte() to return 0 if no respose is received [for when ECU shuts off quicker
            then the engine so the progam will now know when engine is off and can save parameters]
+        Backlight will turn off when engine is not running.
 
 Still need to:
           Modify iso_init to allow re-init without resetting arduino.
@@ -1718,7 +1719,7 @@ void setup()                    // run once, when the sketch starts
   delay(100);
 
   lcd_init();
-  lcd_print_P(PSTR("  OBDuino v123"));
+  lcd_print_P(PSTR("  OBDuino v124"));
   delay(2000);
 #ifndef ELM
   do // init loop
@@ -1764,6 +1765,7 @@ void loop()                     // run over and over again
   {
     engine_started=1;
     param_saved=0;
+    analogWrite(BrightnessPin,255-brightness[brightnessIdx]);
   }
 
   // if engine was started but RPM is now 0
@@ -1782,6 +1784,7 @@ void loop()                     // run over and over again
     lcd_gotoXY(8,1);
     lcd_print_P(PSTR("L wasted"));
     delay(2000);
+    analogWrite(BrightnessPin,255);
   }
 
   // this read and assign vss and maf and accumulate trip data
