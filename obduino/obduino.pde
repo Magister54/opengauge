@@ -2,7 +2,7 @@
 
 // comment to use MC33290 ISO K line chip
 // uncomment to use ELM327
-#define ELM
+//#define ELM
 
 /* OBDuino
 
@@ -10,18 +10,21 @@
 
  Main coding/ISO/ELM: Frédéric (aka Magister on ecomodder.com)
  LCD part: Dave (aka dcb on ecomodder.com), optimized by Frédéric
-
- Russ:  Added serial_rx_off() and serial_rx_on() functions to disable and enable serial receiver
+ Fixes and Features: 
+  Russ: Added serial_rx_off() and serial_rx_on() functions to disable and enable serial receiver
         Modified iso_write_byte() to disable serial receiver while sending to avoid echos in buffer
-	Modified iso_write_byte() to include intrabyte delay
-	Modified iso_write_data() to remove intrabyte delay (now included in iso_write_byte())
+        Modified iso_write_byte() to include intrabyte delay
+        Modified iso_write_data() to remove intrabyte delay (now included in iso_write_byte())
         Modified iso_read_data() to return only data, not PID + data
         Modified iso_read_data() to insure minimum 55 ms delay between requests
-	Modified pid_reslen table to correct some lengths-others appear incorrect but aren't supported
-	  by my car, so I can't verify.  Specifically, some lengths are 8, when max data size in 
-	  iso 9141 packet is 7.
-	
-	Still need to:
+        Modified pid_reslen table to correct some lengths-others appear incorrect but aren't supported
+          by my car, so I can't verify.  Specifically, some lengths are 8, when max data size in 
+          iso 9141 packet is 7.
+  Mike: Added Tracking of Fuel wasted while idling, total for tank displayed when engine shut off.
+        Modified iso_read_byte() to return 0 if no respose is received [for when ECU shuts off quicker
+           then the engine so the progam will now know when engine is off and can save parameters]
+
+Still need to:
           Modify iso_init to allow re-init without resetting arduino.
           Fix code to retrieve stored trouble codes.
  
@@ -241,6 +244,7 @@ typedef struct
 {
   unsigned long dist;   // in cm
   unsigned long fuel;   // in µL
+  unsigned long waste;  // in µL
 }
 trip_t;
 
@@ -460,7 +464,14 @@ void serial_rx_off() {
 int iso_read_byte()
 {
   int b;
-  while((b=serialRead())==-1);
+  byte t=0;
+  while(t!=125  && (b=serialRead())==-1) {
+    delay(1);
+    t++;
+  }
+  if (t>=125) {
+    b = 0;
+  }
   return b;
 }
 
@@ -1136,7 +1147,7 @@ void accu_trip(void)
 
   // detect idle pos
   throttle_pos=get_pid(THROTTLE_POS, str);
-  if(throttle_pos<min_throttle_pos)
+  if(throttle_pos<min_throttle_pos && has_rpm)  //only modify if car is running
     min_throttle_pos=throttle_pos;
 
   // get fuel status
@@ -1182,7 +1193,7 @@ void accu_trip(void)
       //     engine=2.2L, efficiency=80%
       // maf = ( (1800*64)/(21+273) * 80 * 22 * 29 ) / 10000
       // maf = 1995 or 19.95 g/s which is about right at 80km/h
-      maf=(imap * params.eng_dis * 36) / 10000;
+      maf=(imap * params.eng_dis * 36) / 100;  //only need to divide by 100 because no longer multiplying by V.E.
     }
     // add MAF result to trip
     // we want fuel used in µL
@@ -1201,8 +1212,13 @@ void accu_trip(void)
     // also, adjust maf with fuel param, will be used to display instant cons
     maf=(maf*params.fuel_adjust)/100;
     delta_fuel=(maf*delta_time)/1073;
-    for(byte i=0; i<NBTRIP; i++)
+    for(byte i=0; i<NBTRIP; i++) {
       params.trip[i].fuel+=delta_fuel;
+      //code to accumlate fuel wasted while idling
+      if ( vss == 0 )  {//car not moving
+        params.trip[i].waste+=delta_fuel;
+      }
+    }
   }
 }
 
@@ -1702,7 +1718,7 @@ void setup()                    // run once, when the sketch starts
   delay(100);
 
   lcd_init();
-  lcd_print_P(PSTR("  OBDuino v122"));
+  lcd_print_P(PSTR("  OBDuino v123"));
   delay(2000);
 #ifndef ELM
   do // init loop
@@ -1758,6 +1774,13 @@ void loop()                     // run over and over again
     param_saved=1;
     engine_started=0;
     lcd_cls_print_P(PSTR("TRIPS SAVED!"));
+    //Lets Display how much fuel for the tank we wasted.
+    lcd_gotoXY(0,1);
+    char decs[16];
+    long_to_dec_str((params.trip[TANK].waste/10000), decs, 2);
+    lcd_print(decs);
+    lcd_gotoXY(8,1);
+    lcd_print_P(PSTR("L wasted"));
     delay(2000);
   }
 
@@ -1966,3 +1989,4 @@ void lcd_dataWrite(byte value)
   lcd_tickleEnable();
   delay(5);
 }
+
