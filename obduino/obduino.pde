@@ -196,6 +196,10 @@ unsigned long  pid41to60_support=0;
 #define TRIP_FUEL     0xF7    // fuel used in trip
 #define TRIP_DIST     0xF8    // distance of trip
 #define BATT_VOLTAGE  0xF9
+#define OUTING_CONS  0xFA
+#define OUTING_FUEL  0xFB
+#define OUTING_DIST  0xFC
+//#define ECO_VISUAL    0XFC    // Visually dispay relative economy with *'s (too big, not tested)
 #define CAN_STATUS    0xFD
 #define PID_SEC       0xFE
 #ifdef DEBUG
@@ -237,7 +241,7 @@ prog_char select_yes[] PROGMEM="NO (YES)"; // for config menu
 // to differenciate trips
 #define TANK         0
 #define TRIP         1
-#define RUNNING_TRIP 2  //Tracks your current outting 
+#define OUTING_TRIP 2  //Tracks your current outing 
 #define NBTRIP       3
 
 // parameters
@@ -279,14 +283,14 @@ params_t params=
   20,
   100,
   100,
-  20,
-  520,
+  16,
+  450,
   {
     { 0,0 },
     { 0,0 }
   },
   {
-    { { FUEL_CONS,LOAD_VALUE,TANK_CONS, AMBIENT_TEMP} },
+    { { FUEL_CONS,LOAD_VALUE,TANK_CONS, OUTING_FUEL} },
     { {TRIP_CONS,TRIP_DIST,TRIP_FUEL,COOLANT_TEMP} } ,
     { {TANK_CONS,TANK_DIST,TANK_FUEL,REMAIN_DIST} }
   }
@@ -1042,6 +1046,7 @@ void get_cons(char *retbuf, byte ctrip)
 
 // trip 0 is tank
 // trip 1 is trip
+// trip 2 is outing trip
 void get_fuel(char *retbuf, byte ctrip)
 {
   unsigned long cfuel;
@@ -1149,7 +1154,7 @@ void accu_trip(void)
 
   // detect idle pos
   throttle_pos=get_pid(THROTTLE_POS, str);
-  if(throttle_pos<min_throttle_pos && has_rpm)  //only modify if car is running
+  if(throttle_pos<min_throttle_pos && throttle_pos != 0) //And make sure its not '0' returned by no response in read byte function 
     min_throttle_pos=throttle_pos;
 
   // get fuel status
@@ -1252,6 +1257,16 @@ void display(byte corner, byte pid)
     elm_command(str, PSTR("ATRV\r"));
   else if(pid==CAN_STATUS)
     elm_command(str, PSTR("ATCS\r"));
+#endif
+//  else if(pid==ECO_VISUAL)
+//    eco_visual(str);
+#ifndef ELM
+  else if (pid==OUTING_CONS)
+    get_cons(str,OUTING_TRIP);
+  else if (pid==OUTING_FUEL)
+    get_fuel(str,OUTING_TRIP);
+  else if (pid==OUTING_DIST)
+    get_dist(str,OUTING_TRIP);
 #endif
   else if(pid==PID_SEC)
   {
@@ -1721,7 +1736,7 @@ void setup()                    // run once, when the sketch starts
   delay(100);
 
   lcd_init();
-  lcd_print_P(PSTR("  OBDuino v125"));
+  lcd_print_P(PSTR("  OBDuino v126"));
   delay(2000);
 #ifndef ELM
   do // init loop
@@ -1779,19 +1794,21 @@ void loop()                     // run over and over again
     engine_started=0;
     lcd_cls_print_P(PSTR("TRIPS SAVED!"));
     //Lets Display how much fuel for the tank we wasted.
+    #ifndef ELM  //Just not enough room for ELM
     lcd_gotoXY(0,1);
     char decs[16];
     long_to_dec_str((params.trip[TANK].waste/10000), decs, 2);
     lcd_print(decs);
     lcd_gotoXY(8,1);
     lcd_print_P(PSTR("L wasted"));
+    #endif
     delay(2000);
     //Turn the Backlight off
     analogWrite(BrightnessPin,255);
     //Reset the currentouting trip
-    params.trip[RUNNING_TRIP].dist=0;
-    params.trip[RUNNING_TRIP].fuel=0;
-    params.trip[RUNNING_TRIP].waste=0;
+    params.trip[OUTING_TRIP].dist=0;
+    params.trip[OUTING_TRIP].fuel=0;
+    params.trip[OUTING_TRIP].waste=0;
   }
 
   // this read and assign vss and maf and accumulate trip data
@@ -1999,3 +2016,42 @@ void lcd_dataWrite(byte value)
   lcd_tickleEnable();
   delay(5);
 }
+/*
+void eco_visual(char *retbuf) {
+  
+  unsigned long fuel;
+  unsigned long dist;
+  long tank_cons;
+  long outing_cons;
+  char decs[16];
+  byte stars = 4;
+  fuel=params.trip[TANK].fuel;
+  dist=params.trip[TANK].dist;
+  tank_cons = fuel/dist;
+  
+  fuel=params.trip[OUTING_TRIP].fuel;
+  dist=params.trip[OUTING_TRIP].dist;
+  outing_cons = fuel/dist;
+
+  if ( outing_cons < tank_cons ) { //doing good :)
+    outing_cons = outing_cons*105/100;
+    while(outing_cons < tank_cons) {
+      outing_cons = outing_cons*110/100;
+      stars++;
+    }
+  } else {  //doing bad
+    tank_cons = tank_cons*105/100;
+    while(outing_cons > tank_cons) {
+      tank_cons = tank_cons*110/100;
+      stars--;
+    } 
+  } 
+  
+  for(int i=0; i++; i<stars) {
+    decs[i] = '*';
+  }
+  decs[stars] = '\0';
+  sprintf_P(retbuf, pctspcts, decs);
+  
+}
+*/
