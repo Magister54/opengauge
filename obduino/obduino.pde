@@ -1736,7 +1736,7 @@ void setup()                    // run once, when the sketch starts
   delay(100);
 
   lcd_init();
-  lcd_print_P(PSTR("  OBDuino v126"));
+  lcd_print_P(PSTR("  OBDuino v127"));
   delay(2000);
 #ifndef ELM
   do // init loop
@@ -1780,9 +1780,14 @@ void loop()                     // run over and over again
   has_rpm=(get_pid(ENGINE_RPM, str)>0)?1:0;
   if(engine_started==0 && has_rpm!=0)
   {
+    //Reset the current outing trip from last trip
+    params.trip[OUTING_TRIP].dist=0;
+    params.trip[OUTING_TRIP].fuel=0;
+    params.trip[OUTING_TRIP].waste=0;
     engine_started=1;
     param_saved=0;
     analogWrite(BrightnessPin,255-brightness[brightnessIdx]);
+
   }
 
   // if engine was started but RPM is now 0
@@ -1805,10 +1810,7 @@ void loop()                     // run over and over again
     delay(2000);
     //Turn the Backlight off
     analogWrite(BrightnessPin,255);
-    //Reset the currentouting trip
-    params.trip[OUTING_TRIP].dist=0;
-    params.trip[OUTING_TRIP].fuel=0;
-    params.trip[OUTING_TRIP].waste=0;
+
   }
 
   // this read and assign vss and maf and accumulate trip data
