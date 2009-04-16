@@ -13,9 +13,17 @@
  ISO Communication: Russ
  Features: Mike
 
-Still need to:
-          Modify iso_init to allow re-init without resetting arduino.
-          Fix code to retrieve stored trouble codes.
+To-Do:
+  Bugs:
+    Modify iso_init to allow re-init without resetting arduino.
+    Fix code to retrieve stored trouble codes.
+    
+  Features:
+    Graphical Readout to allow 'uninformed' person to know how their doing
+    Trip Cost
+    Aero-Drag calculations?
+    Display "CAR Alarm On" when car is off :)
+    SD Card logging       
  
  This program is free software; you can redistribute it and/or modify it under
  the terms of the GNU General Public License as published by the Free Software
@@ -340,7 +348,7 @@ byte elm_read(char *str, byte size)
   byte i=0;
 
   // wait for something on com port
-  while((b=serialRead())!=PROMPT && i<size)
+  while((b=Serial.read())!=PROMPT && i<size)
   {
     if(/*b!=-1 &&*/ b>=' ')
       str[i++]=b;
@@ -359,7 +367,7 @@ byte elm_read(char *str, byte size)
 void elm_write(char *str)
 {
   while(*str!=NUL)
-    serialWrite(*str++);
+    Serial.print(*str++);
 }
 
 // check header byte
@@ -404,8 +412,8 @@ void elm_init()
 {
   char str[STRLEN];
 
-  beginSerial(9600);
-  serialFlush();
+  Serial.begin(9600);
+  Serial.flush();
 
 #ifndef DEBUG
   // reset, wait for something and display it
@@ -448,7 +456,7 @@ void elm_init()
 
 void serial_rx_on() {
 //  UCSR0B |= _BV(RXEN0);  //enable UART RX
-  beginSerial(10400);		//setting enable bit didn't work, so do beginSerial
+  Serial.begin(10400);		//setting enable bit didn't work, so do beginSerial
 }
 
 void serial_rx_off() {
@@ -459,7 +467,7 @@ int iso_read_byte()
 {
   int b;
   byte t=0;
-  while(t!=125  && (b=serialRead())==-1) {
+  while(t!=125  && (b=Serial.read())==-1) {
     delay(1);
     t++;
   }
@@ -472,7 +480,7 @@ int iso_read_byte()
 void iso_write_byte(byte b)
 {
   serial_rx_off();
-  serialWrite(b);
+  Serial.print(b);
   delay(10);		// ISO requires 5-20 ms delay between bytes.
   serial_rx_on();
 }
@@ -573,7 +581,7 @@ byte iso_init()
   delay(260);
 
   // switch now to 10400 bauds
-  beginSerial(10400);
+  Serial.begin(10400);
 
   // wait for 0x55 from the ECU
   b=iso_read_byte();
@@ -1724,7 +1732,7 @@ void setup()                    // run once, when the sketch starts
   delay(100);
 
   lcd_init();
-  lcd_print_P(PSTR("  OBDuino v129"));
+  lcd_print_P(PSTR("  OBDuino v131"));
   delay(2000);
 #ifndef ELM
   do // init loop
