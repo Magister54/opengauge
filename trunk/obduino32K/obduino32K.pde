@@ -10,7 +10,7 @@
 
  Main coding/ISO/ELM: Frédéric (aka Magister on ecomodder.com)
  LCD part: Dave (aka dcb on ecomodder.com), optimized by Frédéric
- ISO Communication: Russ
+ ISO Communication Timing: Russ
  Features: Mike
 
 To-Do:
@@ -18,8 +18,7 @@ To-Do:
     Modify iso_init to allow re-init without resetting arduino.
     Fix code to retrieve stored trouble codes.
     
-  Features:
-    Graphical Readout to allow 'uninformed' person to know how their doing
+  Features Requested:
     Trip Cost
     Aero-Drag calculations?
     Display "CAR Alarm On" when car is off :)
@@ -192,14 +191,17 @@ unsigned long  pid41to60_support=0;
 #define TRIP_FUEL     0xF7    // fuel used in trip
 #define TRIP_DIST     0xF8    // distance of trip
 #define BATT_VOLTAGE  0xF9
-#define OUTING_CONS  0xFA
-#define OUTING_FUEL  0xFB
-#define OUTING_DIST  0xFC
-//#define ECO_VISUAL    0XFC    // Visually dispay relative economy with *'s (too big, not tested)
+#define OUTING_CONS   0xFA
+#define OUTING_FUEL   0xFB
+#define OUTING_DIST   0xFC
 #define CAN_STATUS    0xFD
 #define PID_SEC       0xFE
+
+//why waste a valueable PID space,
 #ifdef DEBUG
 #define FREE_MEM      0xFF
+#else
+#define ECO_VISUAL    0xFF   // Visually dispay relative economy with text (at end of program)
 #endif
 
 // returned length of the PID response.
@@ -557,7 +559,6 @@ byte iso_init()
 {
   byte b;
   byte kw1, kw2;
-
   // drive K line high for 300ms
   digitalWrite(K_OUT, HIGH);
   delay(300);
@@ -1254,8 +1255,7 @@ void display(byte corner, byte pid)
   else if(pid==CAN_STATUS)
     elm_command(str, PSTR("ATCS\r"));
 #endif
-//  else if(pid==ECO_VISUAL)
-//    eco_visual(str);
+
 #ifndef ELM
   else if (pid==OUTING_CONS)
     get_cons(str,OUTING_TRIP);
@@ -1271,6 +1271,9 @@ void display(byte corner, byte pid)
 #ifdef DEBUG
   else if(pid==FREE_MEM)
     sprintf_P(str, PSTR("%d free"), memoryTest());
+#else
+  else if(pid==ECO_VISUAL)
+    eco_visual(str);
 #endif
   else
     (void)get_pid(pid, str);
@@ -1732,18 +1735,23 @@ void setup()                    // run once, when the sketch starts
   delay(100);
 
   lcd_init();
-  lcd_print_P(PSTR("  OBDuino v131"));
+  lcd_print_P(PSTR("OBDuino32k  v132"));
   delay(2000);
 #ifndef ELM
   do // init loop
   {
     lcd_gotoXY(0,1);
-    lcd_print_P(PSTR("ISO9141 Init"));
+    lcd_print_P(PSTR("  ISO9141 Init"));
+    #ifdef DEBUG // In debug mode we need to skip init.
+    r=0;
+    #else
     r=iso_init();
+    #endif
+    
     lcd_gotoXY(0,1);
     if(r==0)
       lcd_print_P(PSTR("Successful!     "));
-    else
+    else 
       lcd_print_P(PSTR("Failed!         "));
 
     delay(1000);
@@ -1783,7 +1791,6 @@ void loop()                     // run over and over again
     engine_started=1;
     param_saved=0;
     analogWrite(BrightnessPin,255-brightness[brightnessIdx]);
-
   }
 
   // if engine was started but RPM is now 0
@@ -2014,42 +2021,95 @@ void lcd_dataWrite(byte value)
   lcd_tickleEnable();
   delay(5);
 }
-/*
-void eco_visual(char *retbuf) {
-  
-  unsigned long fuel;
-  unsigned long dist;
-  long tank_cons;
-  long outing_cons;
-  char decs[16];
-  byte stars = 4;
-  fuel=params.trip[TANK].fuel;
-  dist=params.trip[TANK].dist;
-  tank_cons = fuel/dist;
-  
-  fuel=params.trip[OUTING_TRIP].fuel;
-  dist=params.trip[OUTING_TRIP].dist;
-  outing_cons = fuel/dist;
 
-  if ( outing_cons < tank_cons ) { //doing good :)
-    outing_cons = outing_cons*105/100;
-    while(outing_cons < tank_cons) {
-      outing_cons = outing_cons*110/100;
+/*
+Adj %
+	 0   	 1 	 2 	 3 	 4 	4	5	6	7	8     <==star count
+1%	91%	92%	93%	94%	95%	105%	106%	107%	108%	109%
+2%	88%	89%	91%	93%	95%	105%	107%	109%	111%	114%
+3%	84%	87%	89%	92%	95%	105%	108%	111%	115%	118%
+4%	81%	84%	88%	91%	95%	105%	109%	114%	118%	123%
+5%	77%	81%	86%	90%	95%	105%	110%	116%	122%	128%
+6%	74%	79%	84%	89%	95%	105%	111%	118%	125%	133%
+7%	71%	76%	82%	88%	95%	105%	112%	120%	129%	138%
+8%	68%	74%	80%	87%	95%	105%	113%	122%	132%	143%
+9%	65%	72%	79%	86%	95%	105%	114%	125%	136%	148%
+10%	62%	69%	77%	86%	95%	105%	116%	127%	140%	154%
+11%	60%	67%	75%	85%	95%	105%	117%	129%	144%	159%
+12%	57%	65%	74%	84%	95%	105%	118%	132%	148%	165%
+13%	54%	63%	72%	83%	95%	105%	119%	134%	152%	171%
+*/
+#define PERCENTAGE_RANGE 108  //108 = 8%
+void eco_visual(char *retbuf) {
+  //enable our varriables
+  unsigned long tank_cons, outing_cons;
+  unsigned long tfuel, tdist;
+  int stars;
+
+  tfuel = params.trip[OUTING_TRIP].fuel;
+  tdist = params.trip[OUTING_TRIP].dist;
+  
+  if(tdist > 100 && tfuel!=0) {//Make sure no devisions by Zero.
+    outing_cons = tfuel / (tdist / 1000);  //our current trip since engine start
+    tfuel = params.trip[TANK].fuel;
+    tdist = params.trip[TANK].dist;
+    tank_cons = tfuel / (tdist / 1000);  //our results for the current tank of gas
+  } else {  //give some dummy numbers to avoid devide by zero numbers
+    tank_cons = 100;
+    outing_cons = 101;
+  }
+
+  //lets start off in the middle
+  stars = 3; // 3 = Average.
+  if ( outing_cons < tank_cons ) {          //doing good :)
+    outing_cons = (outing_cons*105) / 100; //Check if within 5% of TANK for Average result
+    //Loop to check how much better we are doing
+    //Each time the smaller number will be increased by a set percentage
+    //in order to add or subtract from our star count.
+    while(outing_cons < tank_cons && stars < 7) {  
+      outing_cons = (outing_cons*PERCENTAGE_RANGE) / 100;
       stars++;
     }
-  } else {  //doing bad
-    tank_cons = tank_cons*105/100;
-    while(outing_cons > tank_cons) {
-      tank_cons = tank_cons*110/100;
+    outing_cons=0;
+  } else if (outing_cons > tank_cons) {  //doing bad... so far...
+    tank_cons = (tank_cons*105) / 100;   //Check if within 5% of TANK for Average result
+    while(outing_cons > tank_cons  && stars > 0) {  //Loop to check how much worse we are doing
+      tank_cons = (tank_cons*PERCENTAGE_RANGE) / 100;
       stars--;
     } 
-  } 
+  } //else they are equal, do nothing.
+ 
+  //Now we have our star count!
   
-  for(int i=0; i++; i<stars) {
-    decs[i] = '*';
+  switch(stars){
+    case 0:
+      sprintf_P(retbuf, PSTR("Yuck!!8{"));
+    break;
+    case 1:
+      sprintf_P(retbuf, PSTR("Aweful:("));
+    break;
+    case 2:
+      sprintf_P(retbuf, PSTR("Poor  :["));
+    break;
+    case 3: //This is our Average result
+      sprintf_P(retbuf, PSTR("OK    :|"));
+    break;
+    case 4:
+      sprintf_P(retbuf, PSTR("Good  :]"));
+    break;
+    case 5:
+      sprintf_P(retbuf, PSTR("Great :)"));
+    break;
+    case 6:
+      sprintf_P(retbuf, PSTR("Adroit:D"));
+    break;
+    case 7:
+      sprintf_P(retbuf, PSTR("HyprM 8D"));
+    break;
+    default://We shouldn't end up here
+      sprintf_P(retbuf, PSTR("Im Broke"));
   }
-  decs[stars] = '\0';
-  sprintf_P(retbuf, pctspcts, decs);
+  
   
 }
-*/
+
