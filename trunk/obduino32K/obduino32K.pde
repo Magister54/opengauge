@@ -23,6 +23,7 @@ To-Do:
     Aero-Drag calculations?
     Display "CAR Alarm On" when car is off :)
     SD Card logging       
+    When selecting PID's, have it display a descriptive name, not numbers.
  
  This program is free software; you can redistribute it and/or modify it under
  the terms of the GNU General Public License as published by the Free Software
@@ -181,6 +182,10 @@ unsigned long  pid41to60_support=0;
 #define LAST_PID      0x4E  // same as the last one defined above
 
 /* our internal fake PIDs */
+
+#define FIRST_FAKE_PID 0xEF // same as the first one defiend below
+
+#define ENGINE_ON     0xEF    // The length of time car has been running.
 #define NO_DISPLAY    0xF0
 #define FUEL_CONS     0xF1    // instant cons
 #define TANK_CONS     0xF2    // average cons of tank
@@ -191,14 +196,12 @@ unsigned long  pid41to60_support=0;
 #define TRIP_FUEL     0xF7    // fuel used in trip
 #define TRIP_DIST     0xF8    // distance of trip
 #define BATT_VOLTAGE  0xF9
-#define OUTING_CONS   0xFA
-#define OUTING_FUEL   0xFB
-#define OUTING_DIST   0xFC
+#define OUTING_CONS   0xFA    // cons since the engine turned on
+#define OUTING_FUEL   0xFB    // fuel used since engine turned on
+#define OUTING_DIST   0xFC    // distance since engine turned on
 #define CAN_STATUS    0xFD
 #define PID_SEC       0xFE
-
-//why waste a valueable PID space,
-#ifdef DEBUG
+#ifdef DEBUG                  //why waste a valueable PID space!!
 #define FREE_MEM      0xFF
 #else
 #define ECO_VISUAL    0xFF   // Visually dispay relative economy with text (at end of program)
@@ -239,7 +242,7 @@ prog_char select_yes[] PROGMEM="NO (YES)"; // for config menu
 // to differenciate trips
 #define TANK         0
 #define TRIP         1
-#define OUTING_TRIP 2  //Tracks your current outing 
+#define OUTING_TRIP  2  //Tracks your current outing 
 #define NBTRIP       3
 
 // parameters
@@ -314,6 +317,7 @@ unsigned long old_time;
 byte has_rpm=0;
 long vss=0;  // speed
 long maf=0;  // MAF
+unsigned long engine_on, engine_off; //used to track time of trip.
 
 unsigned long getpid_time;
 byte nbpid_per_second=0;
@@ -465,15 +469,21 @@ void serial_rx_off() {
   UCSR0B &= ~(_BV(RXEN0));  //disable UART RX
 }
 
+#ifdef DEBUG
+#define READ_ATTEMPTS 2
+#else
+#define READ_ATTEMPTS 125
+#endif
+
 int iso_read_byte()
 {
   int b;
   byte t=0;
-  while(t!=125  && (b=Serial.read())==-1) {
+  while(t != READ_ATTEMPTS  && (b=Serial.read())==-1) {
     delay(1);
     t++;
   }
-  if (t>=125) {
+  if (t>=READ_ATTEMPTS) {
     b = 0;
   }
   return b;
@@ -616,7 +626,7 @@ byte is_pid_supported(byte pid, byte mode)
   if(  (pid>0x00 && pid<=0x20 && ( 1L<<(0x20-pid) & pid01to20_support ) == 0 )
     || (pid>0x20 && pid<=0x40 && ( 1L<<(0x40-pid) & pid21to40_support ) == 0 )
     || (pid>0x40 && pid<=0x60 && ( 1L<<(0x60-pid) & pid41to60_support ) == 0 )
-    || (pid>LAST_PID && (pid<0xF0 || mode==0) )
+    || (pid>LAST_PID && (pid<FIRST_FAKE_PID || mode==0) )
     )
     {
       return 0;
@@ -1233,6 +1243,8 @@ void display(byte corner, byte pid)
   /* check if it's a real PID or our internal one */
   if(pid==NO_DISPLAY)
     return;
+  else if(pid==ENGINE_ON)
+    get_engine_on_time(str);
   else if(pid==FUEL_CONS)
     get_icons(str);
   else if(pid==TANK_CONS)
@@ -1255,15 +1267,12 @@ void display(byte corner, byte pid)
   else if(pid==CAN_STATUS)
     elm_command(str, PSTR("ATCS\r"));
 #endif
-
-#ifndef ELM
   else if (pid==OUTING_CONS)
     get_cons(str,OUTING_TRIP);
   else if (pid==OUTING_FUEL)
     get_fuel(str,OUTING_TRIP);
   else if (pid==OUTING_DIST)
     get_dist(str,OUTING_TRIP);
-#endif
   else if(pid==PID_SEC)
   {
     sprintf_P(str, PSTR("%d pid/s"), nbpid_per_second);
@@ -1735,7 +1744,7 @@ void setup()                    // run once, when the sketch starts
   delay(100);
 
   lcd_init();
-  lcd_print_P(PSTR("OBDuino32k  v132"));
+  lcd_print_P(PSTR("OBDuino32k  v133"));
   delay(2000);
 #ifndef ELM
   do // init loop
@@ -1788,6 +1797,7 @@ void loop()                     // run over and over again
     params.trip[OUTING_TRIP].dist=0;
     params.trip[OUTING_TRIP].fuel=0;
     params.trip[OUTING_TRIP].waste=0;
+    engine_on = millis();  //Reset the time at witch the car starts at
     engine_started=1;
     param_saved=0;
     analogWrite(BrightnessPin,255-brightness[brightnessIdx]);
@@ -1797,19 +1807,18 @@ void loop()                     // run over and over again
   // save param only once, by flopping param_saved
   if(has_rpm==0 && param_saved==0 && engine_started!=0)
   {
+    engine_off = millis();  //record the time the engine was shut off
     params_save();
     param_saved=1;
     engine_started=0;
     lcd_cls_print_P(PSTR("TRIPS SAVED!"));
     //Lets Display how much fuel for the tank we wasted.
-    #ifndef ELM  //Just not enough room for ELM
     lcd_gotoXY(0,1);
     char decs[16];
     long_to_dec_str((params.trip[TANK].waste/10000), decs, 2);
     lcd_print(decs);
     lcd_gotoXY(8,1);
     lcd_print_P(PSTR("L wasted"));
-    #endif
     delay(2000);
     //Turn the Backlight off
     analogWrite(BrightnessPin,255);
@@ -2113,3 +2122,26 @@ void eco_visual(char *retbuf) {
   
 }
 
+//get_engine_on_time will return the time since the engine has started
+#define MILLIS_PER_HOUR    3600000
+#define MILLIS_PER_MINUTE  60000
+#define MILLIS_PER_SECOND  1000
+void get_engine_on_time(char *retbuf) 
+{
+  unsigned long run_time;
+  int hours, minutes, seconds;  //to store the time
+  //We will ignore the possibility of the millis function rollover (every 49 days?)
+  if(has_rpm) {//update with current time, if the car is running
+    run_time = millis() - engine_on;    //We now have the number of ms
+  } else { //car is not running.  Display final time when stopped.
+    run_time = engine_off - engine_on;
+  }
+  //Lets display the running time
+  //hh:mm:ss
+  hours = run_time / MILLIS_PER_HOUR;
+  minutes = (run_time % MILLIS_PER_HOUR) / MILLIS_PER_MINUTE;
+  seconds = (run_time % MILLIS_PER_MINUTE) / MILLIS_PER_SECOND;
+  
+  //Now we have our varriables parsed, lets display them
+  sprintf_P(retbuf, PSTR("%d:%02d:%02d"), hours, minutes, seconds);
+}
