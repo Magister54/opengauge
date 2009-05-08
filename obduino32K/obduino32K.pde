@@ -1,4 +1,4 @@
-#define DEBUG
+//#define DEBUG
 
 // comment to use MC33290 ISO K line chip
 // uncomment to use ELM327
@@ -19,11 +19,10 @@ To-Do:
     Fix code to retrieve stored trouble codes.
     
   Features Requested:
-    Trip Cost
     Aero-Drag calculations?
     Display "CAR Alarm On" when car is off :)
     SD Card logging       
-    When selecting PID's, have it display a descriptive name, not numbers.
+
  
  This program is free software; you can redistribute it and/or modify it under
  the terms of the GNU General Public License as published by the Free Software
@@ -76,8 +75,9 @@ byte menu_select_yes_no(byte p);
 void long_to_dec_str(long value, char *decs, byte prec);
 int memoryTest(void);
 void test_buttons(void);
+void get_cost(char *retbuf, byte ctrip);
 
-#define BUTTON_DELAY  250
+#define BUTTON_DELAY  125
 // use analog pins as digital pins for buttons
 #define lbuttonPin 17 // Left Button, on analog 3
 #define mbuttonPin 18 // Middle Button, on analog 4
@@ -183,10 +183,13 @@ unsigned long  pid41to60_support=0;
 
 /* our internal fake PIDs */
 
-#define FIRST_FAKE_PID 0xEF // same as the first one defiend below
+#define FIRST_FAKE_PID 0xEC // same as the first one defiend below
 
+#define OUTING_COST   0xEC    // the money spent since car started
+#define TRIP_COST     0xED    // money spent since on trip
+#define TANK_COST     0xEE    // money spent of current tank
 #define ENGINE_ON     0xEF    // The length of time car has been running.
-#define NO_DISPLAY    0xF0
+#define NO_DISPLAY    0xF0   
 #define FUEL_CONS     0xF1    // instant cons
 #define TANK_CONS     0xF2    // average cons of tank
 #define TANK_FUEL     0xF3    // fuel used in tank
@@ -212,7 +215,7 @@ unsigned long  pid41to60_support=0;
 //Should be put in PROGMEM, only 270 bytes remaining of SRAM (this takes 512 bytes)
 prog_char *PID_Desc[] =
  {
-"PID Sprt", // 0x00   PIDs supported
+"PID00-21", // 0x00   PIDs supported
 "Stat DTC", // 0x01   Monitor status since DTCs cleared.
 "Frz DTC ", // 0x02   Freeze DTC
 "Fuel SS",  // 0x03   Fuel system status
@@ -447,10 +450,10 @@ prog_char *PID_Desc[] =
 "", // 0xE8   
 "", // 0xE9   
 "", // 0xEA   
-"", // 0xEB   
-"", // 0xEC   
-"", // 0xED   
-"", // 0xEE   
+"", // 0xEB     
+"Out Cost", // 0xEC   outing cost
+"trp Cost", // 0xED   trip cost
+"tnk Cost", // 0xEE   tank cost
 "Out Time", // 0xEF   The length of time car has been running
 "No Disp",  // 0xF0   No display
 "InstCons", // 0xF1   instant cons
@@ -533,6 +536,7 @@ typedef struct
   byte fuel_adjust;    // because of variation from car to car, temperature, etc
   byte speed_adjust;   // because of variation from car to car, tire size, etc
   byte eng_dis;        // engine displacement in dL
+  unsigned int gas_price; // price per unit of fuel in 10th of cents. 905 = $0.905
   unsigned int  tank_size;   // tank size in dL or dgal depending of unit
   trip_t trip[NBTRIP];        // trip0=tank, trip1=a trip
   screen_t screen[NBSCREEN];  // screen
@@ -548,6 +552,7 @@ params_t params=
   100,
   100,
   16,
+  905,
   450,
   {
     { 0,0 },
@@ -1506,6 +1511,12 @@ void display(byte corner, byte pid)
   /* check if it's a real PID or our internal one */
   if(pid==NO_DISPLAY)
     return;
+  else if(pid==OUTING_COST)
+    get_cost(str, OUTING_TRIP);
+  else if(pid==TRIP_COST)
+    get_cost(str, TRIP);
+  else if(pid==TANK_COST)
+    get_cost(str, TANK);
   else if(pid==ENGINE_ON)
     get_engine_on_time(str);
   else if(pid==FUEL_CONS)
@@ -1747,6 +1758,7 @@ void config_menu(void)
   char str[STRLEN];
   char decs[16];
   byte p;
+  int lastButton = 0;  //we'll use this to speed up button pushes
 
 #ifdef ELM
 #ifndef DEBUG  // it takes 98 bytes
@@ -1827,6 +1839,47 @@ void config_menu(void)
     sprintf_P(str, PSTR("- %s + "), decs);
     lcd_print(str);
     delay_reset_button();
+  }
+  while(buttonState&mbuttonBit);
+  
+    // fuel price
+  lcd_cls_print_P(PSTR("Fuel Price"));
+  // set value with left/right and set with middle
+  do
+  {
+    if(!(buttonState&lbuttonBit)){
+      lastButton--;      
+      if(lastButton >= 0) {
+        lastButton = 0;
+        params.gas_price--;
+      } else if (lastButton < -3 && lastButton > -7) {
+        params.gas_price-=2;
+      } else if (lastButton <= -7) {
+        params.gas_price-=10;
+      } else {
+        params.gas_price--;
+      }
+               
+    
+    } else if(!(buttonState&rbuttonBit)){
+      lastButton++;      
+      if(lastButton <= 0) {
+        lastButton = 0;
+        params.gas_price++;
+      } else if (lastButton > 3 && lastButton < 7) {
+        params.gas_price+=2;
+      } else if (lastButton >= 7) {
+        params.gas_price+=10;
+      } else {
+        params.gas_price++;
+      }      
+    }
+
+    lcd_gotoXY(5,1);
+    long_to_dec_str(params.gas_price, decs, 1);
+    sprintf_P(str, PSTR("- %s + "), decs);
+    lcd_print(str);
+    delay_reset_button(); 
   }
   while(buttonState&mbuttonBit);
 
@@ -2016,7 +2069,7 @@ void setup()                    // run once, when the sketch starts
   delay(100);
 
   lcd_init();
-  lcd_print_P(PSTR("OBDuino32k  v134"));
+  lcd_print_P(PSTR("OBDuino32k  v136"));
   delay(2000);
 #ifndef ELM
   do // init loop
@@ -2419,5 +2472,14 @@ void get_engine_on_time(char *retbuf)
 }
 
 
-
-
+void get_cost(char *retbuf, byte ctrip)
+{
+  unsigned long cents;
+  unsigned long fuel;
+  char decs[16];
+  params.gas_price;  // x/1000 = dollars
+  fuel = params.trip[ctrip].fuel / 10000; //cL
+  cents =  fuel * params.gas_price / 1000; //now have $$$$cc
+  long_to_dec_str(cents, decs, 2);
+  sprintf_P(retbuf, PSTR("$%s"), decs);
+}
