@@ -1,0 +1,31 @@
+#summary Frequently Asked Questions regarding the OBDuino Project
+<wiki:toc max_depth="1" />
+
+= Q1: What protocol does my vehicle support =
+A good start is to take a look at [http://www.etools.org/files/public/generic-protocols-02-17-03.htm this chart] to see if your vehicle is listed. Or [http://www.blafusel.de/obd/obd2_scanned.php Here] or [http://www.myscantool.com/vehicles.html here]
+
+However, the best way to determine the protocol your vehicle supports is to look at the available pins on the OBD II port of your car.  This is usually located under the steering wheel.
+
+http://www.onboarddiagnostics.com/page03.htm lists the five different protocols and their pin outs as follows:
+  * PWM (J1850)
+http://www.onboarddiagnostics.com/images/j1962pwm.gif
+  * VPW (J1850)
+http://www.onboarddiagnostics.com/images/j1962vpw.gif
+  * ISO (9141-2)  and  KWP2000
+http://www.onboarddiagnostics.com/images/j1962iso.gif
+  * CAN (ISO 15765)
+http://www.onboarddiagnostics.com/images/j1962can.gif
+
+= Q2: I tried running OBDuino, but all I get is ISO 9141 Init... Failed. What do I do? =
+The problem could be in several areas: Protocol, Software Bugs, Wiring, Car Design.
+  # Protocol
+    * Using Question 1, verify that your car is indeed the ISO-9141 protocol.
+  # Software Bugs
+    * Remember that the program does not try to re-initialize despite it appearing to do so.  You must reset the OBDuino for the device to try again.  (This may be fixed eventually)
+  # Wiring
+    * Double check all your connections thoroughly. 
+    * Try re-soldering each pin to ensure good connections.
+  # Car Design
+    * Most cars have the ECU (The car's computer) shut off unless the key is in the "Run" state (Not off, or ACC).  This means, the OBDuino can not communicate with the car, and initialization will fail.  (See Software Bugs)
+    * Ensure the car is running before you power up the OBDuino for the first time.
+    
