@@ -21,7 +21,9 @@ To-Do:
   Features Requested:
     Aero-Drag calculations?
     Display "CAR Alarm On" when car is off :)
-    SD Card logging       
+    SD Card logging    
+    Add a Fake PID to track max values ( Speed, RPM, Tank KM's, etc...)
+    Add another auto trip called day, only resets after 8 hours of inactivity   
 
  
  This program is free software; you can redistribute it and/or modify it under
@@ -737,6 +739,12 @@ void serial_rx_off() {
   UCSR0B &= ~(_BV(RXEN0));  //disable UART RX
 }
 
+void serial_tx_off() {
+
+   UCSR0B &= ~(_BV(TXEN0));  //disable UART TX
+   delay(20);                 //allow time for buffers to flush
+}
+
 #ifdef DEBUG
 #define READ_ATTEMPTS 2
 #else
@@ -837,6 +845,9 @@ byte iso_init()
 {
   byte b;
   byte kw1, kw2;
+  serial_tx_off(); //disable UART so we can "bit-Bang" the slow init.
+  serial_rx_off();
+  delay(3000); //k line should be free of traffic for at least two secconds.
   // drive K line high for 300ms
   digitalWrite(K_OUT, HIGH);
   delay(300);
@@ -862,8 +873,14 @@ byte iso_init()
   // switch now to 10400 bauds
   Serial.begin(10400);
 
-  // wait for 0x55 from the ECU
-  b=iso_read_byte();
+  // wait for 0x55 from the ECU (up to 300ms)
+  //since our time out for reading is 125ms, we will try it three times
+  for(int i=0; i<3; i++) {
+    b=iso_read_byte(); 
+    if(b!=0)
+      break;
+  }
+  
   if(b!=0x55)
     return -1;
 
@@ -2069,8 +2086,7 @@ void setup()                    // run once, when the sketch starts
   delay(100);
 
   lcd_init();
-  lcd_print_P(PSTR("OBDuino32k  v136"));
-  delay(2000);
+  lcd_print_P(PSTR("OBDuino32k  v138"));
 #ifndef ELM
   do // init loop
   {
