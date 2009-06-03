@@ -39,9 +39,9 @@ Example of my home made cable:
 
 http://opengauge.org/%7Eobduino/hardware/obd2_cable.jpg
 
-You can make it yourself with an OBD-II plug available at http://www.carplugs.com/ for $5+$3sh. Use AWG24 wires for battery and ground if you can.
+A nice place to get OBD-II plugs and already made cable is [http://www.sensolutions.com/products/browse-products/ Senso] which are located in Canada.
 
-Or buy an already made cable at http://www.obd2allinone.com/sc/details.asp?item=obd2cable for $10+$5sh or elsewhere.
+You can also find plugs at http://www.carplugs.com/ or http://www.obd2allinone.com/sc/details.asp?item=obd2cable and others.
 
 ==CAN only cable==
 
