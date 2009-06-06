@@ -1,7 +1,11 @@
 #include "WProgram.h"
-/* YOU NEED TO USE ARDUINO VERSION 0011 !!!!!!  */
-//it won't fit with the new math libraries that come with 0012, sorry.
-//GPL Software    
+//mpguino, open source fuel consumption system
+//GPL Software, mass production use rights reserved, personal use is perfectly fine, no warranties expressed or implied
+
+//uses arduino0011 libraries and related avr-gcc tools for building from the command line.
+
+//Special thanks to the good folks at ecomodder.com, ardunio.cc, avrfreaks.net, cadsoft.de, atmel.com, 
+//and all the folks who donate their time and resources and share what their experience freely
 
 #include <avr/pgmspace.h>  
 
