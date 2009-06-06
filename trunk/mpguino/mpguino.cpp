@@ -5,7 +5,7 @@
 //uses arduino0011 libraries and related avr-gcc tools for building from the command line.
 
 //Special thanks to the good folks at ecomodder.com, ardunio.cc, avrfreaks.net, cadsoft.de, atmel.com, 
-//and all the folks who donate their time and resources and share what their experience freely
+//and all the folks who donate their time and resources and share there experiences freely
 
 #include <avr/pgmspace.h>  
 
