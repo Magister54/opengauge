@@ -12,13 +12,14 @@
 #define dispadj 800
 #define dispadj2 1250
 #define looptime 1250000ul/loopsPerSecond //1/2 second    
+#define myubbr (20000000/16/9600-1)
 
 //use with 16mhz
 //#define cyclesperhour 3600
 //#define dispadj 1000
 //#define dispadj2 1250
 //#define looptime 1000000ul/loopsPerSecond //1/2 second    
-
+//#define myubbr (16000000/16/9600-1)
 
 //#define usedefaults true
 void enableLButton();
@@ -1309,7 +1310,6 @@ void init2(){
 	// disable timer 0 overflow interrupt
 	TIMSK0&=!(1<<TOIE0);
 }
-#define myubbr (16000000/16/9600-1)
 void simpletx( char * string ){
  if (UCSR0B != (1<<TXEN0)){ //do we need to init the uart?
     UBRR0H = (unsigned char)(myubbr>>8);
