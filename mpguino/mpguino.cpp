@@ -17,13 +17,15 @@
 #define dispadj2 1250
 #define looptime 1250000ul/loopsPerSecond //1/2 second    
 #define myubbr (20000000/16/9600-1)
+#define injhold (parms[injectorSettleTimeIdx]*5)/4
 
-//use with 16mhz
+//use with 16mhz, not tested
 //#define cyclesperhour 3600
 //#define dispadj 1000
 //#define dispadj2 1250
 //#define looptime 1000000ul/loopsPerSecond //1/2 second    
 //#define myubbr (16000000/16/9600-1)
+//#define injhold parms[injectorSettleTimeIdx]
 
 //#define usedefaults true
 void enableLButton();
@@ -378,6 +380,7 @@ void setup (void){
   LCD::gotoXY(0,1);      
   LCD::print(getStr(PSTR("  MPGuino  v0.82")));      
 
+  injectorSettleTime=injhold;
   pinMode(InjectorOpenPin, INPUT);       
   pinMode(InjectorClosedPin, INPUT);       
   pinMode(VSSPin, INPUT);            
@@ -1253,7 +1256,7 @@ void initGuino(){ //edit all the parameters
   for(int x = 0;x<parmsLength;x++)
     editParm(x);
   save();
-  injectorSettleTime=(parms[injectorSettleTimeIdx]*5)/4;
+  injectorSettleTime=injhold;
 
 
   detachInterrupt(0);      
