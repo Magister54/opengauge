@@ -1,6 +1,8 @@
+
 //current development moved outside of arduino proper, reference
 //http://opengauge.googlecode.com/svn/trunk/mpguino/mpguino.cpp
 //
+
 /* YOU NEED TO USE ARDUINO VERSION 0011 !!!!!!  */
 //it won't fit with the new math libraries that come with 0012, sorry.
 //GPL Software    
@@ -8,8 +10,9 @@
 #include <avr/pgmspace.h>  
 
 //#define usedefaults true
-unsigned long  parms[]={55ul,8208ul,500000000ul,3ul,420000000ul,10300ul,500ul,2400ul,0ul,2ul,0ul};//default values
-char *  parmLabels[]={"Contrast","VSS Pulses/Mile", "MicroSec/Gallon","Pulses/2 revs","Timout(microSec)","Tank Gal * 1000","Injector DelayuS","Weight (lbs)","Scratchpad(odo?)","VSS Delay ms","InjTrg 0-Dn 1-Up"};
+unsigned long  parms[]={95ul,8208ul,500000000ul,3ul,420000000ul,10300ul,500ul,2400ul,0ul,2ul};//default values
+char *  parmLabels[]={"Contrast","VSS Pulses/Mile", "MicroSec/Gallon","Pulses/2 revs","Timout(microSec)","Tank Gal * 1000","Injector DelayuS","Weight (lbs)","Scratchpad(odo?)","VSS Delay ms"};
+
 byte brightness[]={255,214,171,128}; //middle button cycles through these brightness settings      
 #define brightnessLength (sizeof(brightness)/sizeof(byte)) //array size      
 byte brightnessIdx=1;      
@@ -24,8 +27,7 @@ byte brightnessIdx=1;
 #define injectorSettleTimeIdx 6
 #define weightIdx 7
 #define scratchpadIdx 8
-#define vsspauseIdx 9
-#define injEdgeIdx 10
+#define vsspause 9
 #define parmsLength (sizeof(parms)/sizeof(unsigned long)) //array size      
 
 #define nil 3999999999ul
@@ -95,20 +97,17 @@ void addEvent(byte eventID, unsigned int ms){
     eventFuncCounts[eventID]=ms;
 }
 
-/* this ISR gets called every 0.512 milliseconds, we will call that a millisecond for our purposes
+/* this ISR gets called every 1.024 milliseconds, we will call that a millisecond for our purposes
 go through all the event counts, 
   if any are non zero subtract 1 and call the associated function if it just turned zero.  */
 ISR(TIMER2_OVF_vect){
-  TCNT2 += 96;
   timer2_overflow_count++;
-  if(timer2_overflow_count &1){
-    for(byte eventID = 0; eventID < eventFuncSize; eventID++){
-      if(eventFuncCounts[eventID]!= 0){
-        eventFuncCounts[eventID]--;
-        if(eventFuncCounts[eventID] == 0)
-            eventFuncs[eventID](); 
-      }  
-    }
+  for(byte eventID = 0; eventID < eventFuncSize; eventID++){
+    if(eventFuncCounts[eventID]!= 0){
+      eventFuncCounts[eventID]--;
+      if(eventFuncCounts[eventID] == 0)
+          eventFuncs[eventID](); 
+    }  
   }
 }
 
@@ -131,7 +130,7 @@ unsigned long microSeconds (void){
   tmp_timer2_overflow_count = timer2_overflow_count;    
   tmp_tcnt2 = TCNT2;    
   sei(); // enable interrupts    
-  tmp = ((tmp_timer2_overflow_count << 7) + (tmp_tcnt2-96)) * 4;     
+  tmp = ((tmp_timer2_overflow_count << 8) + tmp_tcnt2) * 4;     
   if((tmp<=lastMicroSeconds) && (lastMicroSeconds<4290560000ul))    
     return microSeconds();     
   lastMicroSeconds=tmp;   
@@ -245,7 +244,7 @@ ISR( PCINT1_vect ){
   static byte vsspinstate=0;      
   byte p = PINC;//bypassing digitalRead for interrupt performance      
   if ((p & vssBit) != (vsspinstate & vssBit)){      
-    addEvent(enableVSSID,parms[vsspauseIdx] ); //check back in a couple milli
+    addEvent(enableVSSID,parms[vsspause] ); //check back in a couple milli
   }
   if(lastVssFlop != vssFlop){
     lastVSS1=lastVSS2;
@@ -288,7 +287,7 @@ void setup (void){
   displayFuncNames[x++]=  PSTR("BIG Tank "); 
   displayFuncNames[x++]=  PSTR("Current "); 
   displayFuncNames[x++]=  PSTR("Tank "); 
-  displayFuncNames[x++]=  PSTR("EOC/Idle "); 
+  displayFuncNames[x++]=  PSTR("EOC mi/Idle gal "); 
   displayFuncNames[x++]=  PSTR("CPU Monitor ");      
  
   pinMode(BrightnessPin,OUTPUT);      
@@ -309,13 +308,13 @@ void setup (void){
   LCD::gotoXY(0,0); 
   LCD::print(getStr(PSTR("OpenGauge       ")));      
   LCD::gotoXY(0,1);      
-  LCD::print(getStr(PSTR("  MPGuino  v0.82")));      
+  LCD::print(getStr(PSTR("  MPGuino  v0.75")));      
 
   pinMode(InjectorOpenPin, INPUT);       
   pinMode(InjectorClosedPin, INPUT);       
   pinMode(VSSPin, INPUT);            
-  attachInterrupt(0, processInjOpen, parms[injEdgeIdx]==1? RISING:FALLING);      
-  attachInterrupt(1, processInjClosed, parms[injEdgeIdx]==1? FALLING:RISING);      
+  attachInterrupt(0, processInjOpen, FALLING);      
+  attachInterrupt(1, processInjClosed, RISING);      
  
   pinMode( lbuttonPin, INPUT );       
   pinMode( mbuttonPin, INPUT );       
@@ -1137,8 +1136,14 @@ void editParm(byte parmIdx){
 
      if(keyLock == 0){ 
         if(!(buttonState&lbuttonBit) && !(buttonState&rbuttonBit)){// left & right
-          LCD::LcdCommandWrite(B00001100);
-          return;
+            if(p<10)p=10;
+            else if(p==10) p=11;
+            else{
+              for(int x=9 ; x>=0 ;x--){ //do a nice thing and put the cursor at the first non zero number
+                if(fmtv[x] != '0')
+               p=x; 
+              }
+            }
         }else  if(!(buttonState&lbuttonBit)){// left
             p=p-1;
             if(p==255)p=11;
@@ -1185,16 +1190,11 @@ void initGuino(){ //edit all the parameters
   for(int x = 0;x<parmsLength;x++)
     editParm(x);
   save();
-  detachInterrupt(0);      
-  detachInterrupt(1);      
-  attachInterrupt(0, processInjOpen, parms[injEdgeIdx]==1? RISING:FALLING);      
-  attachInterrupt(1, processInjClosed, parms[injEdgeIdx]==1? FALLING:RISING);      
-  
   holdDisplay=1;
 }  
 
 unsigned long millis2(){
-	return timer2_overflow_count * 64UL * 2 / (20000000UL / 128000UL);
+	return timer2_overflow_count * 64UL * 2 / (16000000UL / 128000UL);
 }
 
 void delay2(unsigned long ms){
@@ -1243,7 +1243,7 @@ void init2(){
 	// disable timer 0 overflow interrupt
 	TIMSK0&=!(1<<TOIE0);
 }
-#define myubbr (20000000/16/9600-1)
+#define myubbr (16000000/16/9600-1)
 void simpletx( char * string ){
  if (UCSR0B != (1<<TXEN0)){ //do we need to init the uart?
     UBRR0H = (unsigned char)(myubbr>>8);
