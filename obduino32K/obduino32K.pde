@@ -1,29 +1,31 @@
-//#define DEBUG
-
-// comment to use MC33290 ISO K line chip
-// uncomment to use ELM327
-//#define ELM
-
 /* OBDuino32K  (Requres Atmega328 for your Arduino)
 
  Copyright (C) 2008-2009
 
  Main coding/ISO/ELM: Frédéric (aka Magister on ecomodder.com)
  LCD part: Dave (aka dcb on ecomodder.com), optimized by Frédéric
- ISO Communication Timing: Russ
- Features: Mike
+ ISO Communication Protocol: Russ, Antony, Mike
+ Features: Mike, Antony
+ Bugs & Fixes: Antony, Frédéric, Mike
+
+Latest Changes(June 9th, 2009):
+ ISO 9141 re-init, ECU polling, Car alarm and other tweaks by Antony
 
 To-Do:
   Bugs:
-    Modify iso_init to allow re-init without resetting arduino.
     Fix code to retrieve stored trouble codes.
     
   Features Requested:
     Aero-Drag calculations?
-    Display "CAR Alarm On" when car is off :)
     SD Card logging    
-    Add a Fake PID to track max values ( Speed, RPM, Tank KM's, etc...)
-    Add another auto trip called day, only resets after 8 hours of inactivity   
+    Add another Fake PID to track max values ( Speed, RPM, Tank KM's, etc...)
+  Other:
+    Rework the Menu system to require less button pushes.
+    Add a varriable for the age of the last reading of a PID, for the chance it 
+        could be reused. (Great for RPM, SPEED, since they are used multiple 
+        times in one loop of the program) 
+    Add a "dirty" flag to tank data when the obduino detects that it has been
+        disconnected from the car to indicate that the data may no longer be complete
 
  
  This program is free software; you can redistribute it and/or modify it under
@@ -40,8 +42,55 @@ To-Do:
  59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
  */
 
+
+// Compilation modifiers:
+// The following will cause the compiler to add or remove features from the OBDuino build this keeps the
+// build size down, will not allow 'on the fly' changes. Some features are dependant on other features.
+
+// Comment for normal build
+// Uncomment for a debug build
+//#define DEBUG
+
+// Comment to use MC33290 ISO K line chip
+// Uncomment to use ELM327
+//#define ELM
+
+// Comment out to use only the ISO 9141 K line
+// Uncomment to also use the ISO 9141 L line
+// This option requires additional wiring to function!
+// Most newer cars do NOT require this
+//#define useL_Line
+
+// Uncomment only one of the below init sequences if using ISO
+#define ISO_9141
+//#define ISO_14230_fast
+//#define ISO_14230_slow
+
+// Comment out to just try the PIDs without need to find ECU 
+// Uncomment to use ECU polling to see if car is On or Off 
+//#define useECUState
+
+// Comment out if ISO 9141 does not need to reinit
+// Uncomment define below to force reinitialization of ISO 9141 after no ECU communication
+// this requires ECU polling
+//#define do_ISO_Reinit 
+
+// Comment out to always use the '.' decimal seperator even when useing metric
+// Uncomment define below to allow metric to use the ',' decimal seperator
+//#define changeDecimalSeparator
+
+// Comment out to only reset OUTING trip every time car is started.
+// Uncomment to at startup time, reset outing or trip data if the vehicle has been off longer then the times
+// See OutingStopOver and TripStopOver variables to define stop over times.
+//#define autoResetOutingTrip
+
+// Comment out to use the PID screen when the car is off (This will interfere with ISO reinit process)
+// Uncomment to use the Car Alarm Screen when the car is off
+//#define carAlarmScreen
+
 #undef int
 #include <stdio.h>
+#include <limits.h>
 #include <avr/eeprom.h>
 #include <avr/pgmspace.h>
 
@@ -96,6 +145,16 @@ byte brightness[]={
 #define brightnessLength 4 //array size
 byte brightnessIdx=1;
 
+
+#ifdef autoResetOutingTrip
+// These can easily be used as parameters. Perhaps 15 minutes to 3 hours for outings and 8 to 12 hours for trips.
+// Perhaps another option is to allow trips to be days from beginning. Like a week's worth of driving, or a month? 31 days 30 days???
+//const unsigned long OutingStopOver = 0L; // Always reset outings on every start up.
+const unsigned long OutingStopOver = 3600000L; // 1 hour stop or less will not cause outing reset
+//const unsigned long TripStopOver  = 0L; // Never reset trips on a start up. Only manually reset.
+const unsigned long TripStopOver  = 43200000L; // Half a day stop or less will not cause trip reset
+#endif
+
 /* PID stuff */
 
 unsigned long  pid01to20_support;  // this one always initialized at setup()
@@ -107,10 +166,10 @@ unsigned long  pid41to60_support=0;
 #define FUEL_STATUS   0x03
 #define LOAD_VALUE    0x04
 #define COOLANT_TEMP  0x05
-#define STFT_BANK1     0x06
-#define LTFT_BANK1     0x07
-#define STFT_BANK2     0x08
-#define LTFT_BANK2     0x09
+#define STFT_BANK1    0x06
+#define LTFT_BANK1    0x07
+#define STFT_BANK2    0x08
+#define LTFT_BANK2    0x09
 #define FUEL_PRESSURE 0x0A
 #define MAN_PRESSURE  0x0B
 #define ENGINE_RPM    0x0C
@@ -212,14 +271,12 @@ unsigned long  pid41to60_support=0;
 #define ECO_VISUAL    0xFF   // Visually dispay relative economy with text (at end of program)
 #endif
 
-
 //The Textual Description of each PID
-//Should be put in PROGMEM, only 270 bytes remaining of SRAM (this takes 512 bytes)
-prog_char *PID_Desc[] =
+prog_char *PID_Desc[] PROGMEM=
  {
 "PID00-21", // 0x00   PIDs supported
 "Stat DTC", // 0x01   Monitor status since DTCs cleared.
-"Frz DTC ", // 0x02   Freeze DTC
+"Frz DTC",  // 0x02   Freeze DTC
 "Fuel SS",  // 0x03   Fuel system status
 "Eng Load", // 0x04   Calculated engine load value
 "CoolantT", // 0x05   Engine coolant temperature
@@ -282,7 +339,7 @@ prog_char *PID_Desc[] =
 "C T B2S1", // 0x3E   Catalyst Temperature Bank 2 Sensor 1
 "C T B2S2", // 0x3F   Catalyst Temperature Bank 2 Sensor 2
 "PID41-60", // 0x40   PIDs supported 41-60
-"MStDC",    // 0x41   Monitor status this drive cycle
+" MStDC",   // 0x41   Monitor status this drive cycle
 "Ctrl M V", // 0x42   Control module voltage
 "Abs L V",  // 0x43   Absolute load value
 "Cmd E R",  // 0x44   Command equivalence ratio
@@ -296,8 +353,8 @@ prog_char *PID_Desc[] =
 "Cmd T A",  // 0x4C   Commanded throttle actuator
 "T MIL On", // 0x4D   Time run with MIL on
 "T TC Crl", // 0x4E   Time since trouble codes cleared
-" 0x4F   ",  // 0x4F   Unknown
-" 0x50   ",  // 0x50   Unknown
+"  0x4F",   // 0x4F   Unknown
+"  0x50",   // 0x50   Unknown
 "Fuel Typ", // 0x51   Fuel Type
 "Ethyl F%", // 0x52   Ethanol fuel %
 "", // 0x53   
@@ -454,8 +511,8 @@ prog_char *PID_Desc[] =
 "", // 0xEA   
 "", // 0xEB     
 "Out Cost", // 0xEC   outing cost
-"trp Cost", // 0xED   trip cost
-"tnk Cost", // 0xEE   tank cost
+"Trp Cost", // 0xED   trip cost
+"Tnk Cost", // 0xEE   tank cost
 "Out Time", // 0xEF   The length of time car has been running
 "No Disp",  // 0xF0   No display
 "InstCons", // 0xF1   instant cons
@@ -472,7 +529,7 @@ prog_char *PID_Desc[] =
 "Out Dist", // 0xFC   distance since engine turned on
 "Can Stat", // 0xFD   Can Status
 "PID_SEC",  // 0xFE   
-"Eco Vis ", // 0xFF   Visually dispay relative economy with text
+"Eco Vis",  // 0xFF   Visually dispay relative economy with text
 };
 
 // returned length of the PID response.
@@ -504,14 +561,21 @@ prog_char pctd[] PROGMEM="- %d + "; // used in a couple of place
 prog_char pctdpctpct[] PROGMEM="- %d%% + "; // used in a couple of place
 prog_char pctspcts[] PROGMEM="%s %s"; // used in a couple of place
 prog_char pctldpcts[] PROGMEM="%ld %s"; // used in a couple of place
-prog_char select_no[]  PROGMEM="(NO) YES"; // for config menu
-prog_char select_yes[] PROGMEM="NO (YES)"; // for config menu
+prog_char select_no[]  PROGMEM="(NO) YES "; // for config menu
+prog_char select_yes[] PROGMEM=" NO (YES)"; // for config menu
 
 // to differenciate trips
 #define TANK         0
 #define TRIP         1
-#define OUTING_TRIP  2  //Tracks your current outing 
+#define OUTING       2  //Tracks your current outing 
 #define NBTRIP       3
+
+prog_char * tripNames[NBTRIP] PROGMEM =
+{
+  "Tank",
+  "Trip",
+  "Outing"
+};
 
 // parameters
 // each trip contains fuel used and distance done
@@ -557,14 +621,27 @@ params_t params=
   905,
   450,
   {
-    { 0,0 },
-    { 0,0 }
+    { 0,0,0 }, // tank: dist, fuel, waste
+    { 0,0,0 }, // trip: dist, fuel, waste 
+    { 0,0,0 }  // outing:dist, fuel, waste
   },
   {
     { { FUEL_CONS,LOAD_VALUE,TANK_CONS, OUTING_FUEL} },
     { {TRIP_CONS,TRIP_DIST,TRIP_FUEL,COOLANT_TEMP} } ,
     { {TANK_CONS,TANK_DIST,TANK_FUEL,REMAIN_DIST} }
   }
+};
+
+prog_char * econ_Visual[] PROGMEM=
+{
+  "Yuck!!8{",
+  "Aweful:(",
+  "Poor  :[",
+  "OK    :|",
+  "Good  :]",
+  "Great :)",
+  "Adroit:D",
+  "HyprM 8D"
 };
 
 #define STRLEN  40
@@ -580,7 +657,12 @@ params_t params=
  */
 #define K_IN    0
 #define K_OUT   1
+#ifdef useL_Line
+  #define L_OUT 2
 #endif
+#endif
+
+long tempLong; // Useful for transitory values while getting PID information.
 
 // some globals, for trip calculation and others
 unsigned long old_time;
@@ -595,6 +677,32 @@ byte nbpid_per_second=0;
 // flag used to save distance/average consumption in eeprom only if required
 byte engine_started=0;
 byte param_saved=0;
+
+#ifdef ELM
+#if defined do_ISO_Reinit
+#error do_ISO_Reinit is ONLY ISO 9141 It is not to be used with ELM!
+#endif
+#endif
+
+#ifndef useECUState
+#if defined do_ISO_Reinit
+#error do_ISO_Reinit must have useECUState also defined
+#endif
+#endif
+
+#ifdef useECUState
+boolean oldECUconnection;  // Used to test for change in ECU connection state
+#endif
+
+#ifdef carAlarmScreen
+boolean refreshAlarmScreen; // Used to cause non-repeating screen data to display
+#endif
+
+#ifndef ELM
+// ISO 9141 communication variables
+byte ISO_InitStep = 0;  // Init is multistage, this is the counter
+boolean ECUconnection;  // Have we connected to the ECU or not
+#endif  
 
 // the buttons interrupt
 // this is the interrupt handler for button presses
@@ -751,18 +859,27 @@ void serial_tx_off() {
 #define READ_ATTEMPTS 125
 #endif
 
-int iso_read_byte()
+// User must pass in a pointer to a byte to recieve the data.
+// Return value reflects success of the read attempt.
+boolean iso_read_byte(byte * b)
 {
-  int b;
+  int readData;
+  boolean success = true;
   byte t=0;
-  while(t != READ_ATTEMPTS  && (b=Serial.read())==-1) {
+
+  while(t != READ_ATTEMPTS  && (readData=Serial.read())==-1) {
     delay(1);
     t++;
   }
   if (t>=READ_ATTEMPTS) {
-    b = 0;
+    success = false;
   }
-  return b;
+  if (success)
+  {
+    *b = (byte) readData;
+  }
+
+  return success;
 }
 
 void iso_write_byte(byte b)
@@ -814,20 +931,27 @@ byte iso_write_data(byte *data, byte len)
   return 0;
 }
 
-// read n byte of data (+ header + cmd and crc)
-// return the result only in data
+// read n byte(s) of data (+ header + cmd and crc)
+// return the count of bytes of message (includes all data in message)
 byte iso_read_data(byte *data, byte len)
 {
   byte i;
   byte buf[20];
+  byte dataSize = 0;
 
   // header 3 bytes: [80+datalen] [destination=f1] [source=01]
   // data 1+1+len bytes: [40+cmd0] [cmd1] [result0]
   // checksum 1 bytes: [sum(header)+sum(data)]
+  // a total of six extra bytes of data
 
-    for(i=0; i<3+1+1+1+len; i++)
-    buf[i]=iso_read_byte();
-
+  for(i=0; i<len+6; i++)
+  {
+    if (iso_read_byte(buf+i))
+    {
+      dataSize++;
+    }
+  }
+  
   // test, skip header comparison
   // ignore failure for the moment (0x7f)
   // ignore crc for the moment
@@ -837,92 +961,326 @@ byte iso_read_data(byte *data, byte len)
 
   delay(55);    //guarantee 55 ms pause between requests
 
-  return len;
+  return dataSize;
 }
 
 /* ISO 9141 init */
-byte iso_init()
+// The init process is done in timed sections now so that during the reinit process
+// the user can use the buttons, and the screen can be updated.
+// Note: Due to the timed nature of this init process, if the display screen takes up too much CPU time, this will not succeed
+void iso_init()
 {
-  byte b;
-  byte kw1, kw2;
-  serial_tx_off(); //disable UART so we can "bit-Bang" the slow init.
-  serial_rx_off();
-  delay(3000); //k line should be free of traffic for at least two secconds.
-  // drive K line high for 300ms
-  digitalWrite(K_OUT, HIGH);
-  delay(300);
-
-  // send 0x33 at 5 bauds
-  // start bit
-  digitalWrite(K_OUT, LOW);
-  delay(200);
-  // data
-  b=0x33;
-  for (byte mask = 0x01; mask; mask <<= 1)
+  long currentTime = millis();
+  static long initTime;
+#ifdef ISO_9141
+  switch (ISO_InitStep)
   {
-    if (b & mask) // choose bit
-      digitalWrite(K_OUT, HIGH); // send 1
-    else
-      digitalWrite(K_OUT, LOW); // send 0
-    delay(200);
-  }
-  // stop bit + 60 ms delay
-  digitalWrite(K_OUT, HIGH);
-  delay(260);
+    case 0:
+      // setup
+      ECUconnection = false; 
+      serial_tx_off(); //disable UART so we can "bit-Bang" the slow init.
+      serial_rx_off();
+      initTime = currentTime + 3000;
+      ISO_InitStep++;
+      break;
+    case 1:
+      if (currentTime >= initTime)
+      {
+        // drive K line high for 300ms
+        digitalWrite(K_OUT, HIGH);
+        #ifdef useL_Line
+          digitalWrite(L_OUT, HIGH);
+        #endif
+        initTime = currentTime + 300;
+        ISO_InitStep++;
+      }
+      break;
+    case 2:       
+    case 7:
+      if (currentTime >= initTime)
+      {
+        // start or stop bit
+        digitalWrite(K_OUT, (ISO_InitStep == 2 ? LOW : HIGH));
+        #ifdef useL_Line
+          digitalWrite(L_OUT, (ISO_InitStep == 2 ? LOW : HIGH));
+        #endif
+        initTime = currentTime + (ISO_InitStep == 2 ? 200 : 260);
+        ISO_InitStep++;
+      }
+      break;
+    case 3:       
+    case 5:       
+      if (currentTime >= initTime)
+      {
+        // two bits HIGH
+        digitalWrite(K_OUT, HIGH);
+        #ifdef useL_Line
+          digitalWrite(L_OUT, HIGH);
+        #endif
+        initTime = currentTime + 400;
+        ISO_InitStep++;
+      }
+      break;
+    case 4:       
+    case 6:       
+      if (currentTime >= initTime)
+      {
+        // two bits LOW
+        digitalWrite(K_OUT, LOW);
+        #ifdef useL_Line
+          digitalWrite(L_OUT, LOW);
+          // Note: after this do we drive the L line back up high, or just leave it alone???          
+        #endif
+        initTime = currentTime + 400;
+        ISO_InitStep++;
+      }
+      break;
+    case 8:      
+      if (currentTime >= initTime)
+      {
+        #ifdef useL_Line
+          digitalWrite(L_OUT, LOW);
+        #endif
 
-  // switch now to 10400 bauds
-  Serial.begin(10400);
+        // bit banging done, now verify connection at 10400 baud
+        byte b = 0;
+        // switch now to 10400 bauds
+        Serial.begin(10400);
 
-  // wait for 0x55 from the ECU (up to 300ms)
-  //since our time out for reading is 125ms, we will try it three times
-  for(int i=0; i<3; i++) {
-    b=iso_read_byte(); 
-    if(b!=0)
+        // wait for 0x55 from the ECU (up to 300ms)
+        //since our time out for reading is 125ms, we will try it up to three times
+        byte i=0;
+        while(i<3 && !iso_read_byte(&b))
+        {
+          i++;
+        }
+        
+        if(b == 0x55)
+        {
+          ISO_InitStep++;
+        }
+        else 
+        {
+          // oops unexpected data, try again
+          ISO_InitStep = 0;
+        }
+      }
+      break;
+    case 9:        
+      if (currentTime >= initTime)
+      {
+        byte b;
+        iso_read_byte(&b);  // read kw1
+        iso_read_byte(&b);  // read kw2
+        
+        // send ~kw2 (invert of last keyword)
+        iso_write_byte(~b);
+
+        // ECU answer by 0xCC (~0x33)
+        iso_read_byte(&b);
+        if(b == 0xCC)
+        {
+           ECUconnection = true;
+           // update for correct delta time in trip calculations.
+           old_time = millis();
+        }
+        ISO_InitStep = 0;
+      }
       break;
   }
-  
-  if(b!=0x55)
-    return -1;
+#elif defined ISO_14230_fast
+  switch (ISO_InitStep)
+  {
+    case 0:
+      // setup
+      ECUconnection = false; 
+      serial_tx_off(); //disable UART so we can "bit-Bang" the slow init.
+      serial_rx_off();
+      initTime = currentTime + 3000;
+      ISO_InitStep++;
+      break;
+    case 1:
+      if (currentTime >= initTime)
+      {
+        // drive K line high for 300ms
+        digitalWrite(K_OUT, HIGH);
+        #ifdef useL_Line
+          digitalWrite(L_OUT, HIGH);
+        #endif
+        initTime = currentTime + 300;
+        ISO_InitStep++;
+      }
+      break;
+    case 2:       
+    case 3:       
+      if (currentTime >= initTime)
+      {
+        // start or stop bit
+        digitalWrite(K_OUT, (ISO_InitStep == 2 ? LOW : HIGH));
+        #ifdef useL_Line
+          digitalWrite(L_OUT, (ISO_InitStep == 2 ? LOW : HIGH));
+        #endif
+        initTime = currentTime + (ISO_InitStep == 2 ? 25 : 25);
+        ISO_InitStep++;
+      }
+      break;
+    case 4:      
+      if (currentTime >= initTime)
+      {
+        // bit banging done, now verify connection at 10400 baud
+        byte dataStream[] = {0xc1, 0x33, 0xf1, 0x81, 0x66};
+        byte dataStreamSize = sizeof(dataStream)/sizeof(dataStream[0]);
+        boolean gotData = false;
+        const byte dataResponseSize = 10;
+        byte dataResponse[dataResponseSize];
+      
+        // switch now to 10400 bauds
+        Serial.begin(10400);
 
-  // wait for kw1 and kw2
-  kw1=iso_read_byte();
+        iso_write_data(dataStream, dataStreamSize);
 
-  kw2=iso_read_byte();
-//  delay(25);
+        // Wait for response for 300 ms
+        initTime = currentTime + 300;
+        do
+        {
+           gotData = iso_read_data(dataResponse, dataResponseSize) > 0;
+        } while (millis() <= initTime && !gotData);
+        
+        if (gotData)
+        {
+           ECUconnection = true;
+           // update for correct delta time in trip calculations.
+           old_time = millis();
+           
+           // Note: we do not actually validate this connection. It would be best to validate the connection.
+           // Can someone validate this with a car that actually uses this connection?
+        }
+        
+        ISO_InitStep = 0;
+      }
+      break;
+  }
+#elif defined ISO_14230_slow
+  switch (ISO_InitStep)
+  {
+    case 0:
+      // setup
+      ECUconnection = false; 
+      serial_tx_off(); //disable UART so we can "bit-Bang" the slow init.
+      serial_rx_off();
+      initTime = currentTime + 3000;
+      ISO_InitStep++;
+      break;
+    case 1:
+      if (currentTime >= initTime)
+      {
+        // drive K line high for 300ms
+        digitalWrite(K_OUT, HIGH);
+        #ifdef useL_Line
+          digitalWrite(L_OUT, HIGH);
+        #endif
+        initTime = currentTime + 300;
+        ISO_InitStep++;
+      }
+      break;
+    case 2:       
+    case 7:
+      if (currentTime >= initTime)
+      {
+        // start or stop bit
+        digitalWrite(K_OUT, (ISO_InitStep == 2 ? LOW : HIGH));
+        #ifdef useL_Line
+          digitalWrite(L_OUT, (ISO_InitStep == 2 ? LOW : HIGH));
+        #endif
+        initTime = currentTime + (ISO_InitStep == 2 ? 200 : 260);
+        ISO_InitStep++;
+      }
+      break;
+    case 3:       
+    case 5:       
+      if (currentTime >= initTime)
+      {
+        // two bits HIGH
+        digitalWrite(K_OUT, HIGH);
+        #ifdef useL_Line
+          digitalWrite(L_OUT, HIGH);
+        #endif
+        initTime = currentTime + 400;
+        ISO_InitStep++;
+      }
+      break;
+    case 4:       
+    case 6:       
+      if (currentTime >= initTime)
+      {
+        // two bits LOW
+        digitalWrite(K_OUT, LOW);
+        #ifdef useL_Line
+          digitalWrite(L_OUT, LOW);
+          // Note: after this do we drive the L line back up high, or just leave it alone???          
+        #endif
+        initTime = currentTime + 400;
+        ISO_InitStep++;
+      }
+      break;
+    case 8:      
+      if (currentTime >= initTime)
+      {
+        // bit banging done, now verify connection at 10400 baud
+        byte dataStream[] = {0xc1, 0x33, 0xf1, 0x81, 0x66};
+        byte dataStreamSize = sizeof(dataStream)/sizeof(dataStream[0]);
+        boolean gotData = false;
+        const byte dataResponseSize = 10;
+        byte dataResponse[dataResponseSize];
+      
+        // switch now to 10400 bauds
+        Serial.begin(10400);
 
-  // sent ~kw2 (invert of last keyword)
-  iso_write_byte(~kw2);
+        iso_write_data(dataStream, dataStreamSize);
 
-  // ECU answer by 0xCC (~0x33)
-  b=iso_read_byte();
-  if(b!=0xCC)
-    return -1;
+        // Wait for response for 300 ms
+        initTime = currentTime + 300;
 
-  // init OK!
-  return 0;
+        do
+        {
+           gotData = iso_read_data(dataResponse, dataResponseSize) > 0;
+        } while (millis() <= initTime && !gotData);
+ 
+        if (gotData)
+        {
+           ECUconnection = true;
+           // update for correct delta time in trip calculations.
+           old_time = millis();
+
+           // Note: we do not actually validate this connection. It would be best to validate the connection.
+           // Can someone validate this with a car that actually uses this connection?
+        }
+        
+        ISO_InitStep = 0;
+      }
+      break;
+  }
+#else
+#error No ISO protocol defined
+#endif // protocol
 }
 #endif
 
-// return 0 if pid is not supported, 1 if it is.
+// return false if pid is not supported, true if it is.
 // mode is 0 for get_pid() and 1 for menu config to allow pid > 0xF0
-byte is_pid_supported(byte pid, byte mode)
+boolean is_pid_supported(byte pid, byte mode)
 {
-  // note that pid PID_SUPPORT00 (0x00) is always supported
-  if(  (pid>0x00 && pid<=0x20 && ( 1L<<(0x20-pid) & pid01to20_support ) == 0 )
-    || (pid>0x20 && pid<=0x40 && ( 1L<<(0x40-pid) & pid21to40_support ) == 0 )
-    || (pid>0x40 && pid<=0x60 && ( 1L<<(0x60-pid) & pid41to60_support ) == 0 )
-    || (pid>LAST_PID && (pid<FIRST_FAKE_PID || mode==0) )
-    )
-    {
-      return 0;
-    }
+   return !((pid>0x00 && pid<=0x20 && ( 1L<<(0x20-pid) & pid01to20_support ) == 0 ) ||
+            (pid>0x20 && pid<=0x40 && ( 1L<<(0x40-pid) & pid21to40_support ) == 0 ) ||
+            (pid>0x40 && pid<=0x60 && ( 1L<<(0x60-pid) & pid41to60_support ) == 0 ) ||
+            (pid>LAST_PID && (pid<FIRST_FAKE_PID || mode==0)));
+ }
 
-  return 1;
-}
-
-// get value of a PID, return as a long value
+// Get value of a PID, and place in long pointer
 // and also formatted for string output in the return buffer
-long get_pid(byte pid, char *retbuf)
+// Return value denotes successful retrieval of PID.
+// User must pass in a long pointer to get the PID value.
+boolean get_pid(byte pid, char *retbuf, long *ret)
 {
 #ifdef ELM
   char cmd_str[6];   // to send to ELM
@@ -932,7 +1290,6 @@ long get_pid(byte pid, char *retbuf)
 #endif
   byte i;
   byte buf[10];   // to receive the result
-  long ret;       // will be the return value
   byte reslen;
   char decs[16];
   unsigned long time_now, delta_time;
@@ -954,7 +1311,7 @@ long get_pid(byte pid, char *retbuf)
   {
     // nope
     sprintf_P(retbuf, PSTR("%02X N/A"), pid);
-    return -1;
+    return false;
   }
 
   // receive length depends on pid
@@ -968,7 +1325,7 @@ long get_pid(byte pid, char *retbuf)
   if(elm_check_response(cmd_str, str)!=0)
   {
     sprintf_P(retbuf, PSTR("ERROR"));
-    return -255;
+    return false;
   }
   // first 2 bytes are 0x41 and command, skip them,
   // convert response in hex and return in buf
@@ -980,51 +1337,57 @@ long get_pid(byte pid, char *retbuf)
   // send command, length 2
   iso_write_data(cmd, 2);
   // read requested length, n bytes received in buf
-  iso_read_data(buf, reslen);
+  if (!iso_read_data(buf, reslen))
+  {
+    #ifndef DEBUG
+      sprintf_P(retbuf, PSTR("ERROR"));
+      return false;
+    #endif     
+  }
 #endif
 
   // a lot of formulas are the same so calculate a default return value here
   // even if it's scrapped after, we still saved 40 bytes!
-  ret=buf[0]*256U+buf[1];
+  *ret=buf[0]*256U+buf[1];
 
   // formula and unit for each PID
   switch(pid)
   {
   case ENGINE_RPM:
 #ifdef DEBUG
-    ret=1726;
+    *ret=1726;
 #else
-    ret=ret/4U;
+    *ret=*ret/4U;
 #endif
-    sprintf_P(retbuf, PSTR("%ld RPM"), ret);
+    sprintf_P(retbuf, PSTR("%ld RPM"), *ret);
     break;
   case MAF_AIR_FLOW:
 #ifdef DEBUG
-    ret=2048;
+    *ret=2048;
 #endif
     // ret is not divided by 100 for return value!!
-    long_to_dec_str(ret, decs, 2);
+    long_to_dec_str(*ret, decs, 2);
     sprintf_P(retbuf, PSTR("%s g/s"), decs);
     break;
   case VEHICLE_SPEED:
 #ifdef DEBUG
-    ret=100;
+    *ret=100;
 #else
-    ret=(buf[0] * params.speed_adjust) / 100U;
+    *ret=(buf[0] * params.speed_adjust) / 100U;
 #endif
     if(!params.use_metric)
-      ret=(ret*1000U)/1609U;
-    sprintf_P(retbuf, pctldpcts, ret, params.use_metric?"\003\004":"\006\004");
+      *ret=(*ret*1000U)/1609U;
+    sprintf_P(retbuf, pctldpcts, *ret, params.use_metric?"\003\004":"\006\004");
     // do not touch vss, it is used by fuel calculation after, so reset it
 #ifdef DEBUG
-    ret=100;
+    *ret=100;
 #else
-    ret=(buf[0] * params.speed_adjust) / 100U;
+    *ret=(buf[0] * params.speed_adjust) / 100U;
 #endif
     break;
   case FUEL_STATUS:
 #ifdef DEBUG
-    ret=0x0200;
+    *ret=0x0200;
 #endif
     if(buf[0]==0x01)
       sprintf_P(retbuf, PSTR("OPENLOWT"));  // open due to insufficient engine temperature
@@ -1052,11 +1415,11 @@ long get_pid(byte pid, char *retbuf)
   case ACCEL_PEDAL_F:
   case CMD_THR_ACTU:
 #ifdef DEBUG
-    ret=17;
+    *ret=17;
 #else
-    ret=(buf[0]*100U)/255U;
+    *ret=(buf[0]*100U)/255U;
 #endif
-    sprintf_P(retbuf, PSTR("%ld %%"), ret);
+    sprintf_P(retbuf, PSTR("%ld %%"), *ret);
     break;
   case B1S1_O2_V:
   case B1S2_O2_V:
@@ -1066,11 +1429,11 @@ long get_pid(byte pid, char *retbuf)
   case B2S2_O2_V:
   case B2S3_O2_V:
   case B2S4_O2_V:
-    ret=buf[0]*5U;  // not divided by 1000 for return!!
+    *ret=buf[0]*5U;  // not divided by 1000 for return!!
     if(buf[1]==0xFF)  // not used in trim calculation
-      sprintf_P(retbuf, PSTR("%ld mV"), ret);
+      sprintf_P(retbuf, PSTR("%ld mV"), *ret);
     else
-      sprintf_P(retbuf, PSTR("%ldmV/%d%%"), ret, ((buf[1]-128)*100)/128);
+      sprintf_P(retbuf, PSTR("%ldmV/%d%%"), *ret, ((buf[1]-128)*100)/128);
     break;
   case O2S1_WR_V:
   case O2S2_WR_V:
@@ -1089,19 +1452,19 @@ long get_pid(byte pid, char *retbuf)
   case O2S7_WR_C:
   case O2S8_WR_C:
   case CMD_EQUIV_R:
-    ret=(ret*100)/32768; // not divided by 1000 for return!!
-    long_to_dec_str(ret, decs, 2);
+    *ret=(*ret*100)/32768; // not divided by 1000 for return!!
+    long_to_dec_str(*ret, decs, 2);
     sprintf_P(retbuf, PSTR("l:%s"), decs);
     break;
   case DIST_MIL_ON:
   case DIST_MIL_CLR:
     if(!params.use_metric)
-      ret=(ret*1000U)/1609U;
-    sprintf_P(retbuf, pctldpcts, ret, params.use_metric?"\003":"\006");
+      *ret=(*ret*1000U)/1609U;
+    sprintf_P(retbuf, pctldpcts, *ret, params.use_metric?"\003":"\006");
     break;
   case TIME_MIL_ON:
   case TIME_MIL_CLR:
-    sprintf_P(retbuf, PSTR("%ld min"), ret);
+    sprintf_P(retbuf, PSTR("%ld min"), *ret);
     break;
   case COOLANT_TEMP:
   case INT_AIR_TEMP:
@@ -1112,47 +1475,47 @@ long get_pid(byte pid, char *retbuf)
   case CAT_TEMP_B2S2:
     if(pid>=CAT_TEMP_B1S1 && pid<=CAT_TEMP_B2S2)
 #ifdef DEBUG
-      ret=600;
+      *ret=600;
 #else
-      ret=ret/10U - 40;
+      *ret=*ret/10U - 40;
 #endif
     else
 #ifdef DEBUG
-      ret=40;
+      *ret=40;
 #else
-      ret=buf[0]-40;
+      *ret=buf[0]-40;
 #endif
     if(!params.use_metric)
-      ret=(ret*9)/5+32;
-    sprintf_P(retbuf, PSTR("%ld\005%c"), ret, params.use_metric?'C':'F');
+      *ret=(*ret*9)/5+32;
+    sprintf_P(retbuf, PSTR("%ld\005%c"), *ret, params.use_metric?'C':'F');
     break;
   case STFT_BANK1:
   case LTFT_BANK1:
   case STFT_BANK2:
   case LTFT_BANK2:
-    ret=(buf[0]-128)*7812;  // not divided by 10000 for return value
-    long_to_dec_str(ret/100, decs, 2);
+    *ret=(buf[0]-128)*7812;  // not divided by 10000 for return value
+    long_to_dec_str(*ret/100, decs, 2);
     sprintf_P(retbuf, PSTR("%s %%"), decs);
     break;
   case FUEL_PRESSURE:
   case MAN_PRESSURE:
   case BARO_PRESSURE:
-    ret=buf[0];
+    *ret=buf[0];
     if(pid==FUEL_PRESSURE)
-      ret*=3U;
-    sprintf_P(retbuf, PSTR("%ld kPa"), ret);
+      *ret*=3U;
+    sprintf_P(retbuf, PSTR("%ld kPa"), *ret);
     break;
   case TIMING_ADV:
-    ret=(buf[0]/2)-64;
-    sprintf_P(retbuf, PSTR("%ld\005"), ret);
+    *ret=(buf[0]/2)-64;
+    sprintf_P(retbuf, PSTR("%ld\005"), *ret);
     break;
   case CTRL_MOD_V:
-    long_to_dec_str(ret/10, decs, 2);
+    long_to_dec_str(*ret/10, decs, 2);
     sprintf_P(retbuf, PSTR("%s V"), decs);
     break;
 #ifndef DEBUG  // takes 254 bytes, may be removed if necessary
   case OBD_STD:
-    ret=buf[0];
+    *ret=buf[0];
     if(buf[0]==0x01)
       sprintf_P(retbuf, PSTR("OBD2CARB"));
     else if(buf[0]==0x02)
@@ -1186,17 +1549,17 @@ long get_pid(byte pid, char *retbuf)
     // for the moment, everything else, display the raw answer
   default:
     // transform buffer to an hex value
-    ret=0;
+    *ret=0;
     for(i=0; i<reslen; i++)
     {
-      ret*=256L;
-      ret+=buf[i];
+      *ret*=256L;
+      *ret+=buf[i];
     }
-    sprintf_P(retbuf, PSTR("%08lX"), ret);
+    sprintf_P(retbuf, PSTR("%08lX"), *ret);
     break;
   }
 
-  return ret;
+  return true;
 }
 
 // ex: get a long as 687 with prec 2 and output the string "6.87"
@@ -1205,11 +1568,8 @@ void long_to_dec_str(long value, char *decs, byte prec)
 {
   byte pos;
 
-  // sprintf_P does not allow * for the width ?!?
-  if(prec==1)
-    sprintf_P(decs, PSTR("%02ld"), value);
-  else if(prec==2)
-    sprintf_P(decs, PSTR("%03ld"), value);
+  // sprintf_P does not allow * for the width so manually change precision
+  sprintf_P(decs, prec==2?PSTR("%03ld"):PSTR("%02ld"), value);
 
   pos=strlen(decs)+1;  // move the \0 too
   // a simple loop takes less space than memmove()
@@ -1220,19 +1580,19 @@ void long_to_dec_str(long value, char *decs, byte prec)
   }
 
   // then insert decimal separator
+#ifdef changeDecimalSeparator
   decs[pos]=params.use_metric?',':'.';
+#else
+  decs[pos]='.';
+#endif
 }
 
 // instant fuel consumption
 void get_icons(char *retbuf)
 {
-  long toggle_speed;
   long cons;
   char decs[16];
-
-  toggle_speed=params.per_hour_speed;
-  if(!params.use_metric)  // convert toggle speed to km/h if it's set in IMP
-    toggle_speed=(toggle_speed*1609)/1000;
+  long toggle_speed = params.use_metric ? params.per_hour_speed : (params.per_hour_speed*1609)/1000;
 
   // divide MAF by 100 because our function return MAF*100
   // but multiply by 100 for double digits precision
@@ -1281,6 +1641,7 @@ void get_icons(char *retbuf)
 
 // trip 0 is tank
 // trip 1 is trip
+// trip 2 is outing
 void get_cons(char *retbuf, byte ctrip)
 {
   unsigned long cfuel;
@@ -1338,7 +1699,7 @@ void get_cons(char *retbuf, byte ctrip)
 
 // trip 0 is tank
 // trip 1 is trip
-// trip 2 is outing trip
+// trip 2 is outing
 void get_fuel(char *retbuf, byte ctrip)
 {
   unsigned long cfuel;
@@ -1357,6 +1718,7 @@ void get_fuel(char *retbuf, byte ctrip)
 
 // trip 0 is tank
 // trip 1 is trip
+// trip 2 is outing
 void get_dist(char *retbuf, byte ctrip)
 {
   unsigned long cdist;
@@ -1416,6 +1778,9 @@ void accu_trip(void)
   unsigned long delta_dist, delta_fuel;
   unsigned long time_now, delta_time;
 
+  // if we return early set MAF to 0
+  maf=0;
+  
   // time elapsed
   time_now = millis();
   delta_time = time_now - old_time;
@@ -1425,7 +1790,11 @@ void accu_trip(void)
   // 3km/h = 83cm/s and we can sample n times per second or so with CAN
   // so having the value in cm is not too large, not too weak.
   // ulong so max value is 4'294'967'295 cm or 42'949 km or 26'671 miles
-  vss=get_pid(VEHICLE_SPEED, str);
+  if (!get_pid(VEHICLE_SPEED, str, &vss))
+  {
+    return; // not valid, exit
+  }
+  
   if(vss>0)
   {
     delta_dist=(vss*delta_time)/36;
@@ -1437,7 +1806,6 @@ void accu_trip(void)
   // if engine is stopped, we can get out now
   if(!has_rpm)
   {
-    maf=0;
     return;
   }
 
@@ -1445,22 +1813,39 @@ void accu_trip(void)
   // if throttle position is close to idle and we are in open loop -> DFCO
 
   // detect idle pos
-  throttle_pos=get_pid(THROTTLE_POS, str);
-  if(throttle_pos<min_throttle_pos && throttle_pos != 0) //And make sure its not '0' returned by no response in read byte function 
-    min_throttle_pos=throttle_pos;
-
+  if (get_pid(THROTTLE_POS, str, &tempLong))
+  {
+    throttle_pos = (byte)tempLong;
+  
+    if(throttle_pos<min_throttle_pos && throttle_pos != 0) //And make sure its not '0' returned by no response in read byte function 
+      min_throttle_pos=throttle_pos;
+  }
+  else
+  {
+    return;
+  }
+  
   // get fuel status
-  open_load=(get_pid(FUEL_STATUS, str) & 0x0400)?1:0;
-
+  if(get_pid(FUEL_STATUS, str, &tempLong))
+  {
+    open_load = (tempLong & 0x0400) ? 1 : 0;
+  }
+  else
+  {
+    return;
+  }
+ 
   if(throttle_pos<(min_throttle_pos+4) && open_load)
+  {
     maf=0;  // decellerate fuel cut-off, fake the MAF as 0 :)
+  }
   else
   {
     // check if MAF is supported
     if(is_pid_supported(MAF_AIR_FLOW, 0))
     {
       // yes, just request it
-      maf=get_pid(MAF_AIR_FLOW, str);
+      maf = (get_pid(MAF_AIR_FLOW, str, &tempLong)) ? tempLong : 0;
     }
     else
     {
@@ -1478,12 +1863,17 @@ void accu_trip(void)
        ED - Engine Displacement in liters
        This method requires tweaking of the VE for accuracy.
        */
-      long imap, rpm, map, iat;
+      long imap, rpm, manp, iat;
 
-      rpm=get_pid(ENGINE_RPM, str);
-      map=get_pid(MAN_PRESSURE, str);
-      iat=get_pid(INT_AIR_TEMP, str);
-      imap=(rpm*map)/(iat+273);
+      // get_pid successful, assign variable, otherwise quit
+      if (get_pid(ENGINE_RPM, str, &tempLong)) rpm = tempLong;
+      else return;
+      if (get_pid(MAN_PRESSURE, str, &tempLong)) manp = tempLong;
+      else return;
+      if (get_pid(INT_AIR_TEMP, str, &tempLong)) iat = tempLong;
+      else return;
+      
+      imap=(rpm*manp)/(iat+273);
 
       // does not divide by 100 because we use (MAF*100) in formula
       // but divide by 10 because engine displacement is in dL
@@ -1529,7 +1919,7 @@ void display(byte corner, byte pid)
   if(pid==NO_DISPLAY)
     return;
   else if(pid==OUTING_COST)
-    get_cost(str, OUTING_TRIP);
+    get_cost(str, OUTING);
   else if(pid==TRIP_COST)
     get_cost(str, TRIP);
   else if(pid==TANK_COST)
@@ -1559,11 +1949,11 @@ void display(byte corner, byte pid)
     elm_command(str, PSTR("ATCS\r"));
 #endif
   else if (pid==OUTING_CONS)
-    get_cons(str,OUTING_TRIP);
+    get_cons(str,OUTING);
   else if (pid==OUTING_FUEL)
-    get_fuel(str,OUTING_TRIP);
+    get_fuel(str,OUTING);
   else if (pid==OUTING_DIST)
-    get_dist(str,OUTING_TRIP);
+    get_dist(str,OUTING);
   else if(pid==PID_SEC)
   {
     sprintf_P(str, PSTR("%d pid/s"), nbpid_per_second);
@@ -1576,35 +1966,19 @@ void display(byte corner, byte pid)
     eco_visual(str);
 #endif
   else
-    (void)get_pid(pid, str);
+    //(void)get_pid(pid, str);
+    get_pid(pid, str, &tempLong);
 
   // left corners are left aligned
   // right corners are right aligned
-  if(corner==TOPLEFT)
-  {
-    lcd_gotoXY(0,0);
-    lcd_print_P(blkstr);
-    lcd_gotoXY(0,0);
-  }
-  else if(corner==TOPRIGHT)
-  {
-    lcd_gotoXY(8, 0);
-    lcd_print_P(blkstr);
-    lcd_gotoXY(16-strlen(str), 0);  // 16 = screen width
-  }
-  else if(corner==BOTTOMLEFT)
-  {
-    lcd_gotoXY(0,1);
-    lcd_print_P(blkstr);
-    lcd_gotoXY(0,1);
-  }
-  else if(corner==BOTTOMRIGHT)
-  {
-    lcd_gotoXY(8, 1);
-    lcd_print_P(blkstr);
-    lcd_gotoXY(16-strlen(str), 1);
-  }
 
+  byte row = corner==TOPLEFT || corner == TOPRIGHT ? 0 : 1;
+  byte leftEdge = corner==TOPLEFT || corner == BOTTOMLEFT ? 0 : 8;
+  byte start = leftEdge == 0 ? 0: 16 - strlen(str);  
+    
+  lcd_gotoXY(leftEdge,row);
+  lcd_print_P(blkstr);
+  lcd_gotoXY(start,row);
   lcd_print(str);
 }
 
@@ -1615,14 +1989,14 @@ void check_supported_pids(void)
 #ifdef DEBUG
   pid01to20_support=0xBE1FA812;
 #else
-  pid01to20_support=get_pid(PID_SUPPORT00, str);
+  pid01to20_support  = (get_pid(PID_SUPPORT00, str, &tempLong)) ? tempLong : 0;
 #endif
 
   if(is_pid_supported(PID_SUPPORT20, 0))
-    pid21to40_support=get_pid(PID_SUPPORT20, str);
+    pid21to40_support = (get_pid(PID_SUPPORT20, str, &tempLong)) ? tempLong : 0;
 
   if(is_pid_supported(PID_SUPPORT40, 0))
-    pid41to60_support=get_pid(PID_SUPPORT40, str);
+    pid41to60_support = (get_pid(PID_SUPPORT40, str, &tempLong)) ? tempLong : 0;
 }
 
 // might be incomplete
@@ -1637,7 +2011,10 @@ void check_mil_code(void)
   byte i, j, k;
 #endif
 
-  n=get_pid(MIL_CODE, str);
+  if (!get_pid(MIL_CODE, str, &tempLong))
+    return;  // Invalid return so abort 
+  
+  n = (unsigned long) tempLong;
 
   /* A request for this PID returns 4 bytes of data. The first byte contains
    two pieces of information. Bit A7 (the seventh bit of byte A, the first byte)
@@ -1752,24 +2129,47 @@ byte menu_select_yes_no(byte p)
   return p;
 }
 
-void trip_reset(byte ctrip)
+// Reworked a little to allow all trip types to be reset from one function.
+void trip_reset(byte ctrip, boolean ask)
 {
+  boolean reset = true;
   char str[STRLEN];
-  byte p;
-
-  // to reset trip
+ 
+  // Display the intent
   lcd_cls();
-  sprintf_P(str, PSTR("Reset %s data"), (ctrip==TANK)?"tank":"trip");
+  sprintf_P(str, PSTR("Zero %s data"), (char*)pgm_read_word(&(tripNames[ctrip])));
   lcd_print(str);
-  p=menu_select_yes_no(0);  // init to "no"
-  if(p==1)
+  
+  if(ask)
   {
-    params.trip[ctrip].dist=0;
-    params.trip[ctrip].fuel=0;
-    params.trip[ctrip].waste=0;
+    reset=menu_select_yes_no(0);  // init to "no"
   }
+
+  if(reset)
+  {
+    params.trip[ctrip].dist=0L;
+    params.trip[ctrip].fuel=0L;
+    params.trip[ctrip].waste=0L;
+    
+    if (ctrip == OUTING && ask)
+    {
+      // Reset the start time to now too
+      engine_on = millis();
+    }
+  }
+ 
+  if (!ask)
+  {
+    delay(750); // let user see (if they are paying attention)
+  }  
 }
 
+// This might benefit from a rework to cut down on how many button presses to go through the choices.
+// Perhaps Change Display (yes no), could cover contrast, metric, and fuel/hour,
+// Adjust Vehicle (yes no) could cover the tanks size, diplacement, adjustments,
+// fuel could have it's own top level or fall into adjust vehicle
+// PIDs would remain as they are.
+// This will get the user through the menu quickly.
 void config_menu(void)
 {
   char str[STRLEN];
@@ -1851,7 +2251,7 @@ void config_menu(void)
     else if(!(buttonState&rbuttonBit))
       params.tank_size++;
 
-    lcd_gotoXY(5,1);
+    lcd_gotoXY(4,1);
     long_to_dec_str(params.tank_size, decs, 1);
     sprintf_P(str, PSTR("- %s + "), decs);
     lcd_print(str);
@@ -1892,7 +2292,7 @@ void config_menu(void)
       }      
     }
 
-    lcd_gotoXY(5,1);
+    lcd_gotoXY(4,1);
     long_to_dec_str(params.gas_price, decs, 1);
     sprintf_P(str, PSTR("- %s + "), decs);
     lcd_print(str);
@@ -1910,7 +2310,7 @@ void config_menu(void)
     else if(!(buttonState&rbuttonBit))
       params.fuel_adjust++;
 
-    lcd_gotoXY(5,1);
+    lcd_gotoXY(4,1);
     sprintf_P(str, pctdpctpct, params.fuel_adjust);
     lcd_print(str);
     delay_reset_button();
@@ -1927,7 +2327,7 @@ void config_menu(void)
     else if(!(buttonState&rbuttonBit))
       params.speed_adjust++;
 
-    lcd_gotoXY(5,1);
+    lcd_gotoXY(4,1);
     sprintf_P(str, pctdpctpct, params.speed_adjust);
     lcd_print(str);
     delay_reset_button();
@@ -1981,7 +2381,7 @@ void config_menu(void)
             while(!is_pid_supported(++p, 1));
 
           lcd_gotoXY(2,1);
-          sprintf_P(str, PSTR("- %s +  "), PID_Desc[p]);
+          sprintf_P(str, PSTR("- %8s +  "), (char*)pgm_read_word(&(PID_Desc[p])));
           lcd_print(str);
           delay_reset_button();
         }
@@ -2003,27 +2403,28 @@ void test_buttons(void)
   // middle + left = tank reset
   if(!(buttonState&mbuttonBit) && !(buttonState&lbuttonBit))
   {
-    trip_reset(TANK);
+    needBacklight(true);
+    trip_reset(TANK, true);
   }
   // middle + right = trip reset
   else if(!(buttonState&mbuttonBit) && !(buttonState&rbuttonBit))
   {
-    trip_reset(TRIP);
+    // Added choice to reset OUTING trip also. We could merge TANK here too, and then just ask user
+    //if they want to reset any trip data, and then if yes, go through all trip types.
+    needBacklight(true);    
+    trip_reset(TRIP, true);
+    trip_reset(OUTING, true);
+  }
+  // left + right = flash pid info
+  else if(!(buttonState&lbuttonBit) && !(buttonState&rbuttonBit))
+  {
+    display_PID_names();
   }
   // left is cycle through active screen
   else if(!(buttonState&lbuttonBit))
   {
     active_screen = (active_screen+1) % NBSCREEN;
-    lcd_cls();
-    // Lets flash up the description of the PID's we use when screen changes
-     lcd_gotoXY(0,0);
-     lcd_print(PID_Desc[params.screen[active_screen].corner[TOPLEFT]]);
-     lcd_gotoXY(8,0);
-     lcd_print(PID_Desc[params.screen[active_screen].corner[TOPRIGHT]]);
-     lcd_gotoXY(0,1);
-     lcd_print(PID_Desc[params.screen[active_screen].corner[BOTTOMLEFT]]);
-     lcd_gotoXY(8,1);  
-     lcd_print(PID_Desc[params.screen[active_screen].corner[BOTTOMRIGHT]]);
+    display_PID_names();
   }
   // right is cycle through brightness settings
   else if(!(buttonState&rbuttonBit))
@@ -2033,15 +2434,55 @@ void test_buttons(void)
   }
   // middle is go into menu
   else if(!(buttonState&mbuttonBit))
+  {
+    needBacklight(true);    
     config_menu();
-
+  }
+  
   // reset buttons state
   if(buttonState!=buttonsUp)
   {
+    #ifdef carAlarmScreen
+      refreshAlarmScreen = true;
+    #endif
+   
     delay(BUTTON_DELAY);
     buttonState=buttonsUp;
+    needBacklight(false);    
   }
 }
+
+void display_PID_names(void)
+{
+  needBacklight(true);    
+  lcd_cls();
+  // Lets flash up the description of the PID's we use when screen changes
+  byte count = TOPLEFT;
+  for (byte row = 0; row < 2; row++)
+  {
+    for (byte col = 0; col < 9; col+=8)
+    {
+      lcd_gotoXY(col,row);  
+      lcd_print((char*)pgm_read_word(&(PID_Desc[params.screen[active_screen].corner[count++]])));
+    }  
+  }
+  
+  delay(750); // give user some time to see new PID titles
+} 
+
+void needBacklight(boolean On)
+{
+  //only if ECU or engine are off do we need the backlight
+#ifdef useECUState
+  if (!ECUconnection)
+#else
+  if (!engine_started)
+#endif
+  {
+    // Assume backlight is normally off, so set according to input On  
+    analogWrite(BrightnessPin, 255 - (On ? brightness[brightnessIdx] : 0));
+  }
+}  
 
 /*
  * Initialization
@@ -2050,11 +2491,14 @@ void test_buttons(void)
 void setup()                    // run once, when the sketch starts
 {
 #ifndef ELM
-  byte r;
+  boolean success;
 
   // init pinouts
   pinMode(K_OUT, OUTPUT);
   pinMode(K_IN, INPUT);
+  #ifdef useL_Line
+  pinMode(L_OUT, OUTPUT);
+  #endif
 #endif
 
   // buttons init
@@ -2085,31 +2529,52 @@ void setup()                    // run once, when the sketch starts
   pinMode(DB7Pin,OUTPUT);
   delay(100);
 
+  engine_off = engine_on = millis();
+
   lcd_init();
-  lcd_print_P(PSTR("OBDuino32k  v138"));
+  //lcd_print_P(PSTR("OBDuino32k  v151"));
+  lcd_print_P(PSTR("OBD32k beta v151"));
 #ifndef ELM
   do // init loop
   {
-    lcd_gotoXY(0,1);
-    lcd_print_P(PSTR("  ISO9141 Init"));
-    #ifdef DEBUG // In debug mode we need to skip init.
-    r=0;
-    #else
-    r=iso_init();
+    lcd_gotoXY(2,1);
+    #ifdef ISO_9141
+      lcd_print_P(PSTR("ISO9141 Init"));
+    #elif defined ISO_14230_fast
+      lcd_print_P(PSTR("ISO14230 fast"));
+    #elif defined ISO_14230_slow
+      lcd_print_P(PSTR("ISO14230 slow"));
     #endif
     
-    lcd_gotoXY(0,1);
-    if(r==0)
-      lcd_print_P(PSTR("Successful!     "));
-    else 
-      lcd_print_P(PSTR("Failed!         "));
+    
+    #ifdef DEBUG // In debug mode we need to skip init.
+      success=true;
+    #else 
+      ISO_InitStep = 0;
+      do
+      {
+        iso_init();
+      } while (ISO_InitStep != 0);
+
+      success = ECUconnection;
+      #ifdef useECUState
+        oldECUconnection != ECUconnection; // force 'turn on' stuff in main loop
+      #endif
+   #endif
+    
+    lcd_gotoXY(2,1);
+    lcd_print_P(success ? PSTR("Successful!  ") : PSTR("Failed!         "));
 
     delay(1000);
   }
-  while(r!=0); // end init loop
+  while(!success); // end init loop
 #else
   elm_init();
 #endif
+
+#ifdef carAlarmScreen
+   refreshAlarmScreen = true;
+#endif      
 
   // check supported PIDs
   check_supported_pids();
@@ -2128,20 +2593,135 @@ void setup()                    // run once, when the sketch starts
 
 void loop()                     // run over and over again
 {
+  #ifdef useECUState
+    #ifdef DEBUG
+      ECUconnection = true;
+    #else
+      ECUconnection = verifyECUAlive();
+    #endif
+
+  if (oldECUconnection != ECUconnection)
+  {
+    if (ECUconnection)
+    {
+      unsigned long nowOn = millis();
+      analogWrite(BrightnessPin,255-brightness[brightnessIdx]);
+      
+      #ifdef autoResetOutingTrip
+      unsigned long engineOffPeriod = calcTimeDiff(engine_off, nowOn);
+      if (engineOffPeriod == 0 || engineOffPeriod > OutingStopOver)
+      {
+        trip_reset(OUTING, false);
+        engine_on = nowOn;
+      }
+      else
+      {
+        // combine last trip time to this one! Not including the stop over time
+        engine_on = nowOn - calcTimeDiff(engine_on, engine_off);
+      }  
+ 
+      if (TripStopOver > 0 && engineOffPeriod > TripStopOver)
+      {
+        trip_reset(TRIP, false);
+      }
+      #else
+      // reset Outing everytime car is started
+      trip_reset(OUTING, false);
+      engine_on = nowOn;
+      #endif
+    }
+    else  // Car is off
+    {
+      #ifdef do_ISO_Reinit
+        ISO_InitStep = 0;
+      #endif
+
+      engine_off = millis();  //record the time the engine was shut off
+      params_save();
+      lcd_cls_print_P(PSTR("TRIPS SAVED!"));
+      //Lets Display how much fuel for the tank we wasted.
+      lcd_gotoXY(0,1);
+      char decs[16];
+      long_to_dec_str((params.trip[TANK].waste/10000), decs, 2);
+      lcd_print(decs);
+      lcd_gotoXY(8,1);
+      lcd_print_P(PSTR("L wasted"));
+      delay(2000);
+      //Turn the Backlight off
+      analogWrite(BrightnessPin,255);
+
+      #ifdef carAlarmScreen
+      refreshAlarmScreen = true;
+      #endif
+    }  
+    oldECUconnection = ECUconnection;
+  } 
+
+  if (ECUconnection)
+  {
+    char str[STRLEN];
+    has_rpm = (get_pid(ENGINE_RPM, str, &tempLong) && tempLong > 0) ? 1 : 0;
+   
+    // this read and assign vss and maf and accumulate trip data
+    accu_trip();
+  
+    // display on LCD
+    for(byte cur_corner=0; cur_corner<NBCORNER; cur_corner++)
+      display(cur_corner, params.screen[active_screen].corner[cur_corner]);
+  }
+  else
+  {
+    #ifdef carAlarmScreen
+      // ECU is off so print ready screen instead of PIDS while we wait for ECU action
+      displayAlarmScreen();
+    #else
+    // for some reason the display on LCD
+    for(byte cur_corner=0; cur_corner<NBCORNER; cur_corner++)
+      display(cur_corner, params.screen[active_screen].corner[cur_corner]);
+    #endif
+
+    #ifdef do_ISO_Reinit
+      #ifndef carAlarmScreen  
+      #error ISO reinit will not function when not displaying the car alarm screen (#define carAlarmScreen)
+      #endif
+      iso_init();
+    #endif
+  }    
+#else
   char str[STRLEN];
 
   // test if engine is started
-  has_rpm=(get_pid(ENGINE_RPM, str)>0)?1:0;
+  has_rpm = (get_pid(ENGINE_RPM, str, &tempLong) && tempLong > 0) ? 1 : 0;
+
   if(engine_started==0 && has_rpm!=0)
   {
-    //Reset the current outing trip from last trip
-    params.trip[OUTING_TRIP].dist=0;
-    params.trip[OUTING_TRIP].fuel=0;
-    params.trip[OUTING_TRIP].waste=0;
-    engine_on = millis();  //Reset the time at witch the car starts at
+    unsigned long nowOn = millis();
     engine_started=1;
     param_saved=0;
     analogWrite(BrightnessPin,255-brightness[brightnessIdx]);
+
+    #ifdef autoResetOutingTrip
+    unsigned long engineOffPeriod = calcTimeDiff(engine_off, nowOn);
+    if (engineOffPeriod > OutingStopOver)
+    {
+      //Reset the current outing trip from last trip
+      trip_reset(OUTING, false);
+      engine_on = nowOn; //Reset the time at which the car starts at
+    }
+    else
+    {
+       // combine last trip time to this one! Not including the stop over time
+       engine_on = nowOn - calcTimeDiff(engine_on, engine_off);
+    }  
+    
+    if (engineOffPeriod > TripStopOver)
+    {
+      trip_reset(TRIP, false);
+    }
+    #else
+      // reset Outing everytime car is started
+      trip_reset(OUTING, false);
+    #endif
   }
 
   // if engine was started but RPM is now 0
@@ -2164,8 +2744,15 @@ void loop()                     // run over and over again
     //Turn the Backlight off
     analogWrite(BrightnessPin,255);
 
+    #ifdef carAlarmScreen
+      refreshAlarmScreen = true;
+    #endif
   }
 
+  #ifdef carAlarmScreen
+    displayAlarmScreen();
+  #else
+  
   // this read and assign vss and maf and accumulate trip data
   accu_trip();
 
@@ -2173,9 +2760,106 @@ void loop()                     // run over and over again
   for(byte cur_corner=0; cur_corner<NBCORNER; cur_corner++)
     display(cur_corner, params.screen[active_screen].corner[cur_corner]);
 
+  #endif
+
+#endif
+
   // test buttons
   test_buttons();
 }
+
+// Calculate the time difference, and account for roll over too
+unsigned long calcTimeDiff(unsigned long start, unsigned long end)
+{
+  if (start < end)
+  {
+    return end - start;
+  }
+  else // roll over
+  {
+    return ULONG_MAX - start + end;
+  }
+}    
+
+#ifdef useECUState
+boolean verifyECUAlive(void)
+{
+#ifdef ELM
+  char cmd_str[6];   // to send to ELM
+  char str[STRLEN];   // to receive from ELM
+  sprintf_P(cmd_str, PSTR("01%02X\r"), ENGINE_RPM);
+  elm_write(cmd_str);
+  elm_read(str, STRLEN);
+  return elm_check_response(cmd_str, str) == 0;
+#else //ISO
+  #ifdef do_ISO_Reinit
+  if (!ECUconnection) // only check for off, finding active ECU is handled by successful reiniting 
+  {
+    return ECUconnection;
+  }
+  #endif
+  byte cmd[] = {0x01, ENGINE_RPM};
+  byte buf[5];
+  // send command to ECU, if it is active, we will get two bytes back
+  iso_write_data(cmd, 2);
+  // verify that we actually get data back from ECU
+  return iso_read_data(buf, 5) != 0;
+#endif
+}
+#endif
+
+#ifdef carAlarmScreen
+// This screen will display a fake security heading,
+// then emulate an array of LED's blinking in Knight Rider style.
+// This could be modified to blink a real LED (or maybe a short array depending on available pins)
+void displayAlarmScreen(void)
+{
+  static byte pingPosition;
+  static boolean pingDirection;
+  static long nextMoveTime;
+  const long pingTimeOut = 1000;
+  const byte lastLCDChar = 15;
+ 
+  if (refreshAlarmScreen)
+  {
+    pingPosition = 0;
+    pingDirection = 0;
+
+    lcd_cls_print_P(PSTR("OBDuino Security" ));
+    lcd_gotoXY(pingPosition,1);
+    lcd_dataWrite('*');
+    
+    refreshAlarmScreen = false;
+    nextMoveTime = millis() + pingTimeOut;
+  }
+  else if (millis() > nextMoveTime)
+  {
+    lcd_gotoXY(pingPosition,1);
+    lcd_dataWrite(' ');
+
+    if(pingPosition == 0 || pingPosition == lastLCDChar)
+    {
+      // Change direction
+      pingDirection = !pingDirection;
+    }
+    
+    // Move the character    
+    if(pingDirection)
+    {
+      pingPosition+= 3;
+    }
+    else
+    {
+      pingPosition-=3;
+    }
+    
+    lcd_gotoXY(pingPosition,1);
+    lcd_dataWrite('*');
+    
+    nextMoveTime = millis() + pingTimeOut;
+  }
+}  
+#endif
 
 /*
  * Memory related functions
@@ -2396,8 +3080,8 @@ void eco_visual(char *retbuf) {
   unsigned long tfuel, tdist;
   int stars;
 
-  tfuel = params.trip[OUTING_TRIP].fuel;
-  tdist = params.trip[OUTING_TRIP].dist;
+  tfuel = params.trip[OUTING].fuel;
+  tdist = params.trip[OUTING].dist;
   
   if(tdist > 100 && tfuel!=0) {//Make sure no devisions by Zero.
     outing_cons = tfuel / (tdist / 1000);  //our current trip since engine start
@@ -2429,39 +3113,9 @@ void eco_visual(char *retbuf) {
     } 
   } //else they are equal, do nothing.
  
-  //Now we have our star count!
-  
-  switch(stars){
-    case 0:
-      sprintf_P(retbuf, PSTR("Yuck!!8{"));
-    break;
-    case 1:
-      sprintf_P(retbuf, PSTR("Aweful:("));
-    break;
-    case 2:
-      sprintf_P(retbuf, PSTR("Poor  :["));
-    break;
-    case 3: //This is our Average result
-      sprintf_P(retbuf, PSTR("OK    :|"));
-    break;
-    case 4:
-      sprintf_P(retbuf, PSTR("Good  :]"));
-    break;
-    case 5:
-      sprintf_P(retbuf, PSTR("Great :)"));
-    break;
-    case 6:
-      sprintf_P(retbuf, PSTR("Adroit:D"));
-    break;
-    case 7:
-      sprintf_P(retbuf, PSTR("HyprM 8D"));
-    break;
-    default://We shouldn't end up here
-      sprintf_P(retbuf, PSTR("Im Broke"));
-  }
-  
-  
-}
+  //Now we have our star count, use it as an index to access the text
+  sprintf_P(retbuf, PSTR("%s"), (char*)pgm_read_word(&(econ_Visual[stars])));
+} 
 
 //get_engine_on_time will return the time since the engine has started
 #define MILLIS_PER_HOUR    3600000
@@ -2471,15 +3125,19 @@ void get_engine_on_time(char *retbuf)
 {
   unsigned long run_time;
   int hours, minutes, seconds;  //to store the time
-  //We will ignore the possibility of the millis function rollover (every 49 days?)
+  
+#ifdef useECUState
+  if (ECUconnection) {//update with current time, if the car is running
+#else
   if(has_rpm) {//update with current time, if the car is running
-    run_time = millis() - engine_on;    //We now have the number of ms
+#endif
+    run_time = calcTimeDiff(engine_on, millis());    //We now have the number of ms
   } else { //car is not running.  Display final time when stopped.
-    run_time = engine_off - engine_on;
+    run_time = calcTimeDiff(engine_on, engine_off);
   }
   //Lets display the running time
   //hh:mm:ss
-  hours = run_time / MILLIS_PER_HOUR;
+  hours =   run_time / MILLIS_PER_HOUR;
   minutes = (run_time % MILLIS_PER_HOUR) / MILLIS_PER_MINUTE;
   seconds = (run_time % MILLIS_PER_MINUTE) / MILLIS_PER_SECOND;
   
