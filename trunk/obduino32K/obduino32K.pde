@@ -10,6 +10,9 @@
 
 Latest Changes(June 9th, 2009):
  ISO 9141 re-init, ECU polling, Car alarm and other tweaks by Antony
+June 24, 1009:
+ Added three parameters to the mix, removed unrequired RPM call,
+   added off and full to backlight levels, added waste PIDs: Antony
 
 To-Do:
   Bugs:
@@ -21,7 +24,7 @@ To-Do:
     Add another Fake PID to track max values ( Speed, RPM, Tank KM's, etc...)
   Other:
     Rework the Menu system to require less button pushes.
-    Add a varriable for the age of the last reading of a PID, for the chance it 
+    Add a variable for the age of the last reading of a PID, for the chance it 
         could be reused. (Great for RPM, SPEED, since they are used multiple 
         times in one loop of the program) 
     Add a "dirty" flag to tank data when the obduino detects that it has been
@@ -74,15 +77,6 @@ To-Do:
 // Uncomment define below to force reinitialization of ISO 9141 after no ECU communication
 // this requires ECU polling
 //#define do_ISO_Reinit 
-
-// Comment out to always use the '.' decimal seperator even when useing metric
-// Uncomment define below to allow metric to use the ',' decimal seperator
-//#define changeDecimalSeparator
-
-// Comment out to only reset OUTING trip every time car is started.
-// Uncomment to at startup time, reset outing or trip data if the vehicle has been off longer then the times
-// See OutingStopOver and TripStopOver variables to define stop over times.
-//#define autoResetOutingTrip
 
 // Comment out to use the PID screen when the car is off (This will interfere with ISO reinit process)
 // Uncomment to use the Car Alarm Screen when the car is off
@@ -140,20 +134,16 @@ void get_cost(char *retbuf, byte ctrip);
 #define buttonsUp  lbuttonBit + mbuttonBit + rbuttonBit  // start with the buttons in the right state
 byte buttonState = buttonsUp;
 
-byte brightness[]={
-  40,80,120,160}; // right button cycles through these brightness settings
-#define brightnessLength 4 //array size
-byte brightnessIdx=1;
-
-
-#ifdef autoResetOutingTrip
-// These can easily be used as parameters. Perhaps 15 minutes to 3 hours for outings and 8 to 12 hours for trips.
-// Perhaps another option is to allow trips to be days from beginning. Like a week's worth of driving, or a month? 31 days 30 days???
-//const unsigned long OutingStopOver = 0L; // Always reset outings on every start up.
-const unsigned long OutingStopOver = 3600000L; // 1 hour stop or less will not cause outing reset
-//const unsigned long TripStopOver  = 0L; // Never reset trips on a start up. Only manually reset.
-const unsigned long TripStopOver  = 43200000L; // Half a day stop or less will not cause trip reset
-#endif
+#define brightnessLength 7 //array size
+const byte brightness[brightnessLength]={
+   0xFF,
+   0xFF/brightnessLength*(brightnessLength-1),
+   0xFF/brightnessLength*(brightnessLength-2),
+   0xFF/brightnessLength*(brightnessLength-3),
+   0xFF/brightnessLength*(brightnessLength-4),
+   0xFF/brightnessLength*(brightnessLength-5),
+   0x00}; // right button cycles through these brightness settings (off to on full)
+byte brightnessIdx=2;
 
 /* PID stuff */
 
@@ -244,8 +234,11 @@ unsigned long  pid41to60_support=0;
 
 /* our internal fake PIDs */
 
-#define FIRST_FAKE_PID 0xEC // same as the first one defiend below
+#define FIRST_FAKE_PID 0xE9 // same as the first one defined below
 
+#define OUTING_WASTE  0xE9    // fuel wasted since car started
+#define TRIP_WASTE    0xEA    // fuel wasted during trip
+#define TANK_WASTE    0xEB    // fuel wasted for this tank
 #define OUTING_COST   0xEC    // the money spent since car started
 #define TRIP_COST     0xED    // money spent since on trip
 #define TANK_COST     0xEE    // money spent of current tank
@@ -507,9 +500,9 @@ prog_char *PID_Desc[] PROGMEM=
 "", // 0xE6   
 "", // 0xE7   
 "", // 0xE8   
-"", // 0xE9   
-"", // 0xEA   
-"", // 0xEB     
+"OutWaste", // 0xE9   outing waste
+"TrpWaste", // 0xEA   trip waste
+"TnkWaste", // 0xEB   tank waste  
 "Out Cost", // 0xEC   outing cost
 "Trp Cost", // 0xED   trip cost
 "Tnk Cost", // 0xEE   tank cost
@@ -564,6 +557,10 @@ prog_char pctldpcts[] PROGMEM="%ld %s"; // used in a couple of place
 prog_char select_no[]  PROGMEM="(NO) YES "; // for config menu
 prog_char select_yes[] PROGMEM=" NO (YES)"; // for config menu
 
+#define MILLIS_PER_HOUR    3600000L
+#define MILLIS_PER_MINUTE    60000L
+#define MILLIS_PER_SECOND     1000L
+
 // to differenciate trips
 #define TANK         0
 #define TRIP         1
@@ -594,16 +591,21 @@ typedef struct
 }
 screen_t;
 
+#define MINUTES_GRANULARITY 10
+
 typedef struct
 {
   byte contrast;       // we only use 0-100 value in step 20
   byte use_metric;     // 0=rods and hogshead, 1=SI
+  boolean use_comma;   // When using metric, also use the comma decimal separator
   byte per_hour_speed; // speed from which we toggle to fuel/hour (km/h or mph)
   byte fuel_adjust;    // because of variation from car to car, temperature, etc
   byte speed_adjust;   // because of variation from car to car, tire size, etc
   byte eng_dis;        // engine displacement in dL
   unsigned int gas_price; // price per unit of fuel in 10th of cents. 905 = $0.905
   unsigned int  tank_size;   // tank size in dL or dgal depending of unit
+  byte OutingStopOver; // Allowable stop over time (in tens of minutes). Exceeding time starts a new outing.
+  byte TripStopOver;   // Allowable stop over time (in hours). Exceeding time starts a new outing.
   trip_t trip[NBTRIP];        // trip0=tank, trip1=a trip
   screen_t screen[NBSCREEN];  // screen
 }
@@ -614,20 +616,23 @@ params_t params=
 {
   40,
   1,
+  true,
   20,
   100,
   100,
   16,
   905,
   450,
+  6, // 60 minutes (6 X 10) stop or less will not cause outing reset
+  12, // 12 hour stop or less will not cause trip reset
   {
     { 0,0,0 }, // tank: dist, fuel, waste
     { 0,0,0 }, // trip: dist, fuel, waste 
     { 0,0,0 }  // outing:dist, fuel, waste
   },
   {
-    { { FUEL_CONS,LOAD_VALUE,TANK_CONS, OUTING_FUEL} },
-    { {TRIP_CONS,TRIP_DIST,TRIP_FUEL,COOLANT_TEMP} } ,
+    { {FUEL_CONS,LOAD_VALUE,TANK_CONS,OUTING_FUEL} },
+    { {TRIP_CONS,TRIP_DIST,TRIP_FUEL,COOLANT_TEMP} },
     { {TANK_CONS,TANK_DIST,TANK_FUEL,REMAIN_DIST} }
   }
 };
@@ -1145,7 +1150,7 @@ void iso_init()
         {
            gotData = iso_read_data(dataResponse, dataResponseSize) > 0;
         } while (millis() <= initTime && !gotData);
-        
+
         if (gotData)
         {
            ECUconnection = true;
@@ -1580,11 +1585,7 @@ void long_to_dec_str(long value, char *decs, byte prec)
   }
 
   // then insert decimal separator
-#ifdef changeDecimalSeparator
-  decs[pos]=params.use_metric?',':'.';
-#else
-  decs[pos]='.';
-#endif
+  decs[pos] = (params.use_metric && params.use_comma) ? ',' : '.';
 }
 
 // instant fuel consumption
@@ -1707,6 +1708,25 @@ void get_fuel(char *retbuf, byte ctrip)
 
   // convert from µL to cL
   cfuel=params.trip[ctrip].fuel/10000;
+
+  // convert in gallon if requested
+  if(!params.use_metric)
+    cfuel=(cfuel*100)/378;
+
+  long_to_dec_str(cfuel, decs, 2);
+  sprintf_P(retbuf, pctspcts, decs, params.use_metric?"L":"G" );
+}
+
+// trip 0 is tank
+// trip 1 is trip
+// trip 2 is outing
+void get_waste(char *retbuf, byte ctrip)
+{
+  unsigned long cfuel;
+  char decs[16];
+
+  // convert from µL to cL
+  cfuel=params.trip[ctrip].waste/10000;
 
   // convert in gallon if requested
   if(!params.use_metric)
@@ -1932,6 +1952,8 @@ void display(byte corner, byte pid)
     get_cons(str, TANK);
   else if(pid==TANK_FUEL)
     get_fuel(str, TANK);
+  else if (pid==TANK_WASTE)
+    get_waste(str,TANK);
   else if(pid==TANK_DIST)
     get_dist(str, TANK);
   else if(pid==REMAIN_DIST)
@@ -1940,6 +1962,8 @@ void display(byte corner, byte pid)
     get_cons(str, TRIP);
   else if(pid==TRIP_FUEL)
     get_fuel(str, TRIP);
+  else if (pid==TRIP_WASTE)
+    get_waste(str,TRIP);
   else if(pid==TRIP_DIST)
     get_dist(str, TRIP);
 #ifdef ELM
@@ -1952,8 +1976,11 @@ void display(byte corner, byte pid)
     get_cons(str,OUTING);
   else if (pid==OUTING_FUEL)
     get_fuel(str,OUTING);
+  else if (pid==OUTING_WASTE)
+    get_waste(str,OUTING);
   else if (pid==OUTING_DIST)
     get_dist(str,OUTING);
+    
   else if(pid==PID_SEC)
   {
     sprintf_P(str, PSTR("%d pid/s"), nbpid_per_second);
@@ -2224,6 +2251,13 @@ void config_menu(void)
   lcd_cls_print_P(PSTR("Use metric unit"));
   params.use_metric=menu_select_yes_no(params.use_metric);
 
+  // Only if metric do we have the option of using the comma as a decimal
+  if(params.use_metric)
+  {
+    lcd_cls_print_P(PSTR("Use comma format"));
+    params.use_comma = menu_select_yes_no(params.use_comma);
+  }
+
   // speed from which we toggle to fuel/hour
   lcd_cls_print_P(PSTR("Fuel/hour speed"));
   // set value with left/right and set with middle
@@ -2259,7 +2293,7 @@ void config_menu(void)
   }
   while(buttonState&mbuttonBit);
   
-    // fuel price
+  // fuel price
   lcd_cls_print_P(PSTR("Fuel Price"));
   // set value with left/right and set with middle
   do
@@ -2276,8 +2310,6 @@ void config_menu(void)
       } else {
         params.gas_price--;
       }
-               
-    
     } else if(!(buttonState&rbuttonBit)){
       lastButton++;      
       if(lastButton <= 0) {
@@ -2356,6 +2388,43 @@ void config_menu(void)
   while(buttonState&mbuttonBit);
   }
 
+  // Outing stop over
+  lcd_cls_print_P(PSTR("Outing stop over"));
+  // set value with left/right and set with middle
+  do
+  {
+    if(!(buttonState&lbuttonBit) && params.OutingStopOver > 0)
+      params.OutingStopOver--;
+    else if(!(buttonState&rbuttonBit) && params.OutingStopOver < UCHAR_MAX)
+      params.OutingStopOver++;
+
+    lcd_gotoXY(3,1);
+    sprintf_P(str, PSTR("- %2d Min + "), params.OutingStopOver * MINUTES_GRANULARITY);
+    lcd_print(str);
+    delay_reset_button();
+  }
+  while(buttonState&mbuttonBit);
+
+  // Trip stop over
+  lcd_cls_print_P(PSTR("Trip stop over"));
+  // set value with left/right and set with middle
+  do
+  {
+    unsigned long TripStopOver;   // Allowable stop over time (in milliseconds). Exceeding time starts a new outing.
+ 
+    if(!(buttonState&lbuttonBit) && params.TripStopOver > 1)
+      params.TripStopOver--;
+    else if(!(buttonState&rbuttonBit) && params.TripStopOver < UCHAR_MAX)
+      params.TripStopOver++;
+
+    lcd_gotoXY(3,1);
+    sprintf_P(str, PSTR("- %2d Hrs + "), params.TripStopOver);
+    lcd_print(str);
+    delay_reset_button();
+  }
+  while(buttonState&mbuttonBit);
+
+
   // pid for the 4 corners, and for the n screen
   lcd_cls_print_P(PSTR("Configure PIDs"));
   p=menu_select_yes_no(0);  // init to "no"
@@ -2429,8 +2498,16 @@ void test_buttons(void)
   // right is cycle through brightness settings
   else if(!(buttonState&rbuttonBit))
   {
+    char str[STRLEN] = {0};
+
     brightnessIdx = (brightnessIdx + 1) % brightnessLength;
-    analogWrite(BrightnessPin, 255-brightness[brightnessIdx]);
+    analogWrite(BrightnessPin, brightness[brightnessIdx]);
+
+    lcd_cls_print_P(PSTR(" LCD backlight"));
+    lcd_gotoXY(6,1);
+    sprintf_P(str,PSTR("%d / %d"),brightnessIdx + 1,brightnessLength);
+    lcd_print(str);
+    delay(500);
   }
   // middle is go into menu
   else if(!(buttonState&mbuttonBit))
@@ -2480,7 +2557,7 @@ void needBacklight(boolean On)
 #endif
   {
     // Assume backlight is normally off, so set according to input On  
-    analogWrite(BrightnessPin, 255 - (On ? brightness[brightnessIdx] : 0));
+    analogWrite(BrightnessPin, brightness[On ? brightnessIdx : 0]);
   }
 }  
 
@@ -2519,7 +2596,7 @@ void setup()                    // run once, when the sketch starts
   params_load();  // if something is wrong, default parms are used
 
   // LCD pin init
-  analogWrite(BrightnessPin,255-brightness[brightnessIdx]);
+  analogWrite(BrightnessPin,brightness[brightnessIdx]);
   analogWrite(ContrastPin, params.contrast);
   pinMode(EnablePin,OUTPUT);
   pinMode(DIPin,OUTPUT);
@@ -2532,8 +2609,7 @@ void setup()                    // run once, when the sketch starts
   engine_off = engine_on = millis();
 
   lcd_init();
-  //lcd_print_P(PSTR("OBDuino32k  v151"));
-  lcd_print_P(PSTR("OBD32k beta v151"));
+  lcd_print_P(PSTR("OBDuino32k  v152"));
 #ifndef ELM
   do // init loop
   {
@@ -2541,9 +2617,9 @@ void setup()                    // run once, when the sketch starts
     #ifdef ISO_9141
       lcd_print_P(PSTR("ISO9141 Init"));
     #elif defined ISO_14230_fast
-      lcd_print_P(PSTR("ISO14230 fast"));
+      lcd_print_P(PSTR("ISO14230 Fast"));
     #elif defined ISO_14230_slow
-      lcd_print_P(PSTR("ISO14230 slow"));
+      lcd_print_P(PSTR("ISO14230 Slow"));
     #endif
     
     
@@ -2605,11 +2681,11 @@ void loop()                     // run over and over again
     if (ECUconnection)
     {
       unsigned long nowOn = millis();
-      analogWrite(BrightnessPin,255-brightness[brightnessIdx]);
-      
-      #ifdef autoResetOutingTrip
       unsigned long engineOffPeriod = calcTimeDiff(engine_off, nowOn);
-      if (engineOffPeriod == 0 || engineOffPeriod > OutingStopOver)
+      
+      analogWrite(BrightnessPin,brightness[brightnessIdx]);
+ 
+      if (engineOffPeriod > (params.OutingStopOver * MINUTES_GRANULARITY * MILLIS_PER_MINUTE))
       {
         trip_reset(OUTING, false);
         engine_on = nowOn;
@@ -2620,15 +2696,10 @@ void loop()                     // run over and over again
         engine_on = nowOn - calcTimeDiff(engine_on, engine_off);
       }  
  
-      if (TripStopOver > 0 && engineOffPeriod > TripStopOver)
+      if (engineOffPeriod > (params.TripStopOver * MILLIS_PER_HOUR))
       {
         trip_reset(TRIP, false);
       }
-      #else
-      // reset Outing everytime car is started
-      trip_reset(OUTING, false);
-      engine_on = nowOn;
-      #endif
     }
     else  // Car is off
     {
@@ -2640,15 +2711,16 @@ void loop()                     // run over and over again
       params_save();
       lcd_cls_print_P(PSTR("TRIPS SAVED!"));
       //Lets Display how much fuel for the tank we wasted.
+      char str[STRLEN] = {0};
       lcd_gotoXY(0,1);
-      char decs[16];
-      long_to_dec_str((params.trip[TANK].waste/10000), decs, 2);
-      lcd_print(decs);
+      lcd_print_P(PSTR("Wasted:"));
       lcd_gotoXY(8,1);
-      lcd_print_P(PSTR("L wasted"));
+      get_waste(str,TANK);
+      lcd_print(str);
+
       delay(2000);
       //Turn the Backlight off
-      analogWrite(BrightnessPin,255);
+      analogWrite(BrightnessPin, brightness[0]);
 
       #ifdef carAlarmScreen
       refreshAlarmScreen = true;
@@ -2659,9 +2731,6 @@ void loop()                     // run over and over again
 
   if (ECUconnection)
   {
-    char str[STRLEN];
-    has_rpm = (get_pid(ENGINE_RPM, str, &tempLong) && tempLong > 0) ? 1 : 0;
-   
     // this read and assign vss and maf and accumulate trip data
     accu_trip();
   
@@ -2696,13 +2765,12 @@ void loop()                     // run over and over again
   if(engine_started==0 && has_rpm!=0)
   {
     unsigned long nowOn = millis();
+    unsigned long engineOffPeriod = calcTimeDiff(engine_off, nowOn);
     engine_started=1;
     param_saved=0;
-    analogWrite(BrightnessPin,255-brightness[brightnessIdx]);
+    analogWrite(BrightnessPin,brightness[brightnessIdx]);
 
-    #ifdef autoResetOutingTrip
-    unsigned long engineOffPeriod = calcTimeDiff(engine_off, nowOn);
-    if (engineOffPeriod > OutingStopOver)
+    if (engineOffPeriod > (params.OutingStopOver * MINUTES_GRANULARITY * MILLIS_PER_MINUTE))
     {
       //Reset the current outing trip from last trip
       trip_reset(OUTING, false);
@@ -2714,14 +2782,10 @@ void loop()                     // run over and over again
        engine_on = nowOn - calcTimeDiff(engine_on, engine_off);
     }  
     
-    if (engineOffPeriod > TripStopOver)
+    if (engineOffPeriod > (params.TripStopOver * MILLIS_PER_HOUR))
     {
       trip_reset(TRIP, false);
     }
-    #else
-      // reset Outing everytime car is started
-      trip_reset(OUTING, false);
-    #endif
   }
 
   // if engine was started but RPM is now 0
@@ -2734,15 +2798,15 @@ void loop()                     // run over and over again
     engine_started=0;
     lcd_cls_print_P(PSTR("TRIPS SAVED!"));
     //Lets Display how much fuel for the tank we wasted.
+    char str[STRLEN] = {0};
     lcd_gotoXY(0,1);
-    char decs[16];
-    long_to_dec_str((params.trip[TANK].waste/10000), decs, 2);
-    lcd_print(decs);
+    lcd_print_P(PSTR("Wasted:"));
     lcd_gotoXY(8,1);
-    lcd_print_P(PSTR("L wasted"));
+    get_waste(str,TANK);
+    lcd_print(str);
     delay(2000);
     //Turn the Backlight off
-    analogWrite(BrightnessPin,255);
+    analogWrite(BrightnessPin,brightness[0]);
 
     #ifdef carAlarmScreen
       refreshAlarmScreen = true;
@@ -2798,12 +2862,18 @@ boolean verifyECUAlive(void)
     return ECUconnection;
   }
   #endif
-  byte cmd[] = {0x01, ENGINE_RPM};
-  byte buf[5];
+//  byte cmd[] = {0x01, ENGINE_RPM};
+//  byte buf[5];
   // send command to ECU, if it is active, we will get two bytes back
-  iso_write_data(cmd, 2);
+//  iso_write_data(cmd, 2);
   // verify that we actually get data back from ECU
-  return iso_read_data(buf, 5) != 0;
+//  return iso_read_data(buf, 5) != 0;
+
+    char str[STRLEN];
+    boolean connected = get_pid(ENGINE_RPM, str, &tempLong);
+    has_rpm = (connected && tempLong > 0) ? 1 : 0;
+
+    return connected;
 #endif
 }
 #endif
@@ -3118,9 +3188,6 @@ void eco_visual(char *retbuf) {
 } 
 
 //get_engine_on_time will return the time since the engine has started
-#define MILLIS_PER_HOUR    3600000
-#define MILLIS_PER_MINUTE  60000
-#define MILLIS_PER_SECOND  1000
 void get_engine_on_time(char *retbuf) 
 {
   unsigned long run_time;
