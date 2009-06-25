@@ -13,6 +13,8 @@ Latest Changes(June 9th, 2009):
 June 24, 1009:
  Added three parameters to the mix, removed unrequired RPM call,
    added off and full to backlight levels, added waste PIDs: Antony
+June 25, 2009:
+ Use the metric parameter for fuel price and tank size: Antony
 
 To-Do:
   Bugs:
@@ -2203,6 +2205,8 @@ void config_menu(void)
   char decs[16];
   byte p;
   int lastButton = 0;  //we'll use this to speed up button pushes
+  unsigned int fuelUnits = 0;
+  boolean changed = false;
 
 #ifdef ELM
 #ifndef DEBUG  // it takes 98 bytes
@@ -2275,63 +2279,126 @@ void config_menu(void)
   }
   while(buttonState&mbuttonBit);
 
+
+
   // tank size
   lcd_cls_print_P(PSTR("Tank size"));
+
+  // convert in gallon if requested
+  if(!params.use_metric)
+  {
+    lcd_print_P(PSTR(" (G)"));
+    fuelUnits = convertToGallons(params.tank_size);
+  }  
+  else
+  {
+    lcd_print_P(PSTR(" (L)"));
+    fuelUnits = params.tank_size;
+  }
+    
+
   // set value with left/right and set with middle
   do
   {
     if(!(buttonState&lbuttonBit))
-      params.tank_size--;
+    {
+      changed = true;
+      fuelUnits--;
+    }
     else if(!(buttonState&rbuttonBit))
-      params.tank_size++;
-
+    {
+      changed = true;
+      fuelUnits++;
+    }
     lcd_gotoXY(4,1);
-    long_to_dec_str(params.tank_size, decs, 1);
+    long_to_dec_str(fuelUnits, decs, 1);
     sprintf_P(str, PSTR("- %s + "), decs);
     lcd_print(str);
     delay_reset_button();
   }
   while(buttonState&mbuttonBit);
   
+  if (changed)
+  {
+    if(!params.use_metric)
+    {
+      params.tank_size = convertToLitres(fuelUnits);
+    }
+    else
+    {
+      params.tank_size = fuelUnits;
+    }
+    changed = false;
+  }
+  
   // fuel price
   lcd_cls_print_P(PSTR("Fuel Price"));
+
+  // convert in gallon if requested
+  if(!params.use_metric)
+  {
+    lcd_print_P(PSTR(" ($/G)"));
+    // Convert unit price to litres for the cost per gallon. (ie $1 a litre = $3.785 per gallon)
+    fuelUnits = convertToLitres(params.gas_price);
+  }
+  else
+  {
+    lcd_print_P(PSTR(" (\354/L)"));  // Character \354 should be the cent sign
+    fuelUnits = params.gas_price;
+  }
+  
   // set value with left/right and set with middle
   do
   {
     if(!(buttonState&lbuttonBit)){
+      changed = true;
       lastButton--;      
       if(lastButton >= 0) {
         lastButton = 0;
-        params.gas_price--;
+        fuelUnits--;
       } else if (lastButton < -3 && lastButton > -7) {
-        params.gas_price-=2;
+        fuelUnits-=2;
       } else if (lastButton <= -7) {
-        params.gas_price-=10;
+        fuelUnits-=10;
       } else {
-        params.gas_price--;
+        fuelUnits--;
       }
     } else if(!(buttonState&rbuttonBit)){
+      changed = true;
       lastButton++;      
       if(lastButton <= 0) {
         lastButton = 0;
-        params.gas_price++;
+        fuelUnits++;
       } else if (lastButton > 3 && lastButton < 7) {
-        params.gas_price+=2;
+        fuelUnits+=2;
       } else if (lastButton >= 7) {
-        params.gas_price+=10;
+        fuelUnits+=10;
       } else {
-        params.gas_price++;
+        fuelUnits++;
       }      
     }
 
     lcd_gotoXY(4,1);
-    long_to_dec_str(params.gas_price, decs, 1);
+    long_to_dec_str(fuelUnits, decs, params.use_metric ? 1 : 3);
+       
     sprintf_P(str, PSTR("- %s + "), decs);
     lcd_print(str);
     delay_reset_button(); 
   }
   while(buttonState&mbuttonBit);
 
+  if (changed)
+  {
+    if(!params.use_metric)
+    {
+      params.gas_price = convertToGallons(fuelUnits);
+    }
+    else
+    {
+      params.gas_price = fuelUnits;
+    }
+    changed = false;
+  }
   // fuel adjust
   lcd_cls_print_P(PSTR("Fuel adjust"));
   // set value with left/right and set with middle
@@ -2466,6 +2533,18 @@ void config_menu(void)
   lcd_print_P(PSTR("Please wait..."));
   params_save();
 }
+
+
+unsigned int convertToGallons(unsigned int litres)
+{
+  return (unsigned int) ((float) litres / 3.785411);
+}
+
+unsigned int convertToLitres(unsigned int gallons)
+{
+  return (unsigned int) ((float) gallons / 0.264172);
+}
+
 
 void test_buttons(void)
 {
@@ -2609,7 +2688,7 @@ void setup()                    // run once, when the sketch starts
   engine_off = engine_on = millis();
 
   lcd_init();
-  lcd_print_P(PSTR("OBDuino32k  v152"));
+  lcd_print_P(PSTR("OBDuino32k  v153"));
 #ifndef ELM
   do // init loop
   {
