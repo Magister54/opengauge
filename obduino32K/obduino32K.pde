@@ -15,6 +15,9 @@ June 24, 1009:
    added off and full to backlight levels, added waste PIDs: Antony
 June 25, 2009:
  Use the metric parameter for fuel price and tank size: Antony
+June 27, 2009:
+ Minor corrections and tweaks: Antony
+
 
 To-Do:
   Bugs:
@@ -558,6 +561,7 @@ prog_char pctspcts[] PROGMEM="%s %s"; // used in a couple of place
 prog_char pctldpcts[] PROGMEM="%ld %s"; // used in a couple of place
 prog_char select_no[]  PROGMEM="(NO) YES "; // for config menu
 prog_char select_yes[] PROGMEM=" NO (YES)"; // for config menu
+prog_char gasPrice[][10] PROGMEM={"-  %s\354 + ", "- $%s +  "}; // for config menu
 
 #define MILLIS_PER_HOUR    3600000L
 #define MILLIS_PER_MINUTE    60000L
@@ -1713,8 +1717,8 @@ void get_fuel(char *retbuf, byte ctrip)
 
   // convert in gallon if requested
   if(!params.use_metric)
-    cfuel=(cfuel*100)/378;
-
+    cfuel = convertToGallons(cfuel);
+    
   long_to_dec_str(cfuel, decs, 2);
   sprintf_P(retbuf, pctspcts, decs, params.use_metric?"L":"G" );
 }
@@ -1732,7 +1736,7 @@ void get_waste(char *retbuf, byte ctrip)
 
   // convert in gallon if requested
   if(!params.use_metric)
-    cfuel=(cfuel*100)/378;
+    cfuel = convertToGallons(cfuel);
 
   long_to_dec_str(cfuel, decs, 2);
   sprintf_P(retbuf, pctspcts, decs, params.use_metric?"L":"G" );
@@ -1765,10 +1769,8 @@ void get_remain_dist(char *retbuf)
   long remain_fuel;
   long tank_cons;
 
+  // tank size is in litres (converted at input time)
   tank_tmp=params.tank_size;
-
-  if(!params.use_metric)  // if tank is in dgallon, convert to dL
-    tank_tmp=(tank_tmp*378)/100;
 
   // convert from µL to dL
   remain_fuel=tank_tmp - params.trip[TANK].fuel/100000;
@@ -1995,7 +1997,6 @@ void display(byte corner, byte pid)
     eco_visual(str);
 #endif
   else
-    //(void)get_pid(pid, str);
     get_pid(pid, str, &tempLong);
 
   // left corners are left aligned
@@ -2282,17 +2283,17 @@ void config_menu(void)
 
 
   // tank size
-  lcd_cls_print_P(PSTR("Tank size"));
+  lcd_cls_print_P(PSTR("Tank size ("));
 
   // convert in gallon if requested
   if(!params.use_metric)
   {
-    lcd_print_P(PSTR(" (G)"));
+    lcd_print_P(PSTR("G)"));
     fuelUnits = convertToGallons(params.tank_size);
   }  
   else
   {
-    lcd_print_P(PSTR(" (L)"));
+    lcd_print_P(PSTR("L)"));
     fuelUnits = params.tank_size;
   }
     
@@ -2332,18 +2333,18 @@ void config_menu(void)
   }
   
   // fuel price
-  lcd_cls_print_P(PSTR("Fuel Price"));
+  lcd_cls_print_P(PSTR("Fuel Price ("));
 
-  // convert in gallon if requested
+  // convert in gallons if requested
   if(!params.use_metric)
   {
-    lcd_print_P(PSTR(" ($/G)"));
+    lcd_print_P(PSTR("G)"));
     // Convert unit price to litres for the cost per gallon. (ie $1 a litre = $3.785 per gallon)
     fuelUnits = convertToLitres(params.gas_price);
   }
   else
   {
-    lcd_print_P(PSTR(" (\354/L)"));  // Character \354 should be the cent sign
+    lcd_print_P(PSTR("L)"));
     fuelUnits = params.gas_price;
   }
   
@@ -2378,10 +2379,9 @@ void config_menu(void)
       }      
     }
 
-    lcd_gotoXY(4,1);
-    long_to_dec_str(fuelUnits, decs, params.use_metric ? 1 : 3);
-       
-    sprintf_P(str, PSTR("- %s + "), decs);
+    lcd_gotoXY(3,1);
+    long_to_dec_str(fuelUnits, decs, fuelUnits > 999 ? 3 : 1);
+    sprintf_P(str, gasPrice[fuelUnits > 999], decs);
     lcd_print(str);
     delay_reset_button(); 
   }
@@ -2688,7 +2688,7 @@ void setup()                    // run once, when the sketch starts
   engine_off = engine_on = millis();
 
   lcd_init();
-  lcd_print_P(PSTR("OBDuino32k  v153"));
+  lcd_print_P(PSTR("OBDuino32k  v155"));
 #ifndef ELM
   do // init loop
   {
