@@ -17,7 +17,8 @@ June 25, 2009:
  Use the metric parameter for fuel price and tank size: Antony
 June 27, 2009:
  Minor corrections and tweaks: Antony
-
+July 23, 2009:
+ New menuing system for parameters, and got rid of display flicker: Antony
 
 To-Do:
   Bugs:
@@ -28,7 +29,6 @@ To-Do:
     SD Card logging    
     Add another Fake PID to track max values ( Speed, RPM, Tank KM's, etc...)
   Other:
-    Rework the Menu system to require less button pushes.
     Add a variable for the age of the last reading of a PID, for the chance it 
         could be reused. (Great for RPM, SPEED, since they are used multiple 
         times in one loop of the program) 
@@ -121,6 +121,7 @@ void params_load(void);
 void params_save(void);
 
 // Others prototypes
+byte menu_selection(char ** menu, byte arraySize);
 byte menu_select_yes_no(byte p);
 void long_to_dec_str(long value, char *decs, byte prec);
 int memoryTest(void);
@@ -149,6 +150,19 @@ const byte brightness[brightnessLength]={
    0xFF/brightnessLength*(brightnessLength-5),
    0x00}; // right button cycles through these brightness settings (off to on full)
 byte brightnessIdx=2;
+
+/* LCD Display parameters */
+/* Adjust LCD_width or LCD_rows if LCD is different than 16 characters by 2 rows*/
+// Note: Not currently tested on display larger than 16x2
+
+// How many rows of characters for the LCD (must be at least two)
+#define LCD_ROWS 2 
+// How many characters across for the LCD (must be at least sixteen)
+const byte LCD_width = 16;
+// Calculate the middle point of the LCD display width
+const byte LCD_split = LCD_width / 2;
+//Calculate how many PIDs fit on a data screen (two per line)
+const byte LCD_PID_count = LCD_ROWS * 2;
 
 /* PID stuff */
 
@@ -271,7 +285,7 @@ unsigned long  pid41to60_support=0;
 
 //The Textual Description of each PID
 prog_char *PID_Desc[] PROGMEM=
- {
+{
 "PID00-21", // 0x00   PIDs supported
 "Stat DTC", // 0x01   Monitor status since DTCs cleared.
 "Frz DTC",  // 0x02   Freeze DTC
@@ -546,22 +560,25 @@ prog_uchar pid_reslen[] PROGMEM=
   4,8,2,2,2,1,1,1,1,1,1,1,1,2,2
 };
 
-// for the 4 display corners
-#define TOPLEFT  0
-#define TOPRIGHT 1
-#define BOTTOMLEFT  2
-#define BOTTOMRIGHT 3
-#define NBCORNER 4   // with a 16x4 display you could use 8 'corners'
+// Number of screens of PIDs
 #define NBSCREEN  3  // 12 PIDs should be enough for everyone
 byte active_screen=0;  // 0,1,2,... selected by left button
-prog_char blkstr[] PROGMEM="        "; // 8 spaces, used to clear part of screen
+
 prog_char pctd[] PROGMEM="- %d + "; // used in a couple of place
 prog_char pctdpctpct[] PROGMEM="- %d%% + "; // used in a couple of place
 prog_char pctspcts[] PROGMEM="%s %s"; // used in a couple of place
 prog_char pctldpcts[] PROGMEM="%ld %s"; // used in a couple of place
 prog_char select_no[]  PROGMEM="(NO) YES "; // for config menu
 prog_char select_yes[] PROGMEM=" NO (YES)"; // for config menu
-prog_char gasPrice[][10] PROGMEM={"-  %s\354 + ", "- $%s +  "}; // for config menu
+prog_char gasPrice[][10] PROGMEM={"-  %s\354 + ", "- $%s +  "}; // dual string for fuel price
+
+// menu items used by menu_selection.
+prog_char *topMenu[] PROGMEM = {"Configure menu", "Exit", "Display", "Adjust", "PIDs"};
+prog_char *displayMenu[] PROGMEM = {"Display menu", "Exit", "Contrast", "Metric", "Fuel/Hour"};
+prog_char *adjustMenu[] PROGMEM = {"Adjust menu", "Exit", "Tank Size", "Fuel Cost", "Fuel %", "Speed %", "Out Wait", "Trip Wait", "Eng Disp"};
+prog_char *PIDMenu[] PROGMEM = {"PID Screen menu", "Exit", "Scr 1", "Scr 2", "Scr 3"};
+
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof(*(x)))
 
 #define MILLIS_PER_HOUR    3600000L
 #define MILLIS_PER_MINUTE    60000L
@@ -590,10 +607,10 @@ typedef struct
 }
 trip_t;
 
-// each screen contains n corners
+// each screen contains n PIDs (two per line)
 typedef struct
 {
-  byte corner[NBCORNER];
+  byte PID[LCD_PID_count];
 }
 screen_t;
 
@@ -637,9 +654,21 @@ params_t params=
     { 0,0,0 }  // outing:dist, fuel, waste
   },
   {
-    { {FUEL_CONS,LOAD_VALUE,TANK_CONS,OUTING_FUEL} },
-    { {TRIP_CONS,TRIP_DIST,TRIP_FUEL,COOLANT_TEMP} },
-    { {TANK_CONS,TANK_DIST,TANK_FUEL,REMAIN_DIST} }
+    { {FUEL_CONS,LOAD_VALUE,TANK_CONS,OUTING_FUEL
+       #if LCD_ROWS == 4
+         ,OUTING_WASTE,OUTING_COST,ENGINE_ON,LOAD_VALUE
+       #endif
+       } },
+    { {TRIP_CONS,TRIP_DIST,TRIP_FUEL,COOLANT_TEMP
+       #if LCD_ROWS == 4
+         ,TRIP_WASTE,TRIP_COST,INT_AIR_TEMP,THROTTLE_POS
+       #endif
+       } },
+    { {TANK_CONS,TANK_DIST,TANK_FUEL,REMAIN_DIST
+       #if LCD_ROWS == 4
+         ,TANK_WASTE,TANK_COST,ENGINE_RPM,VEHICLE_SPEED
+       #endif
+       } }
   }
 };
 
@@ -1140,7 +1169,7 @@ void iso_init()
       {
         // bit banging done, now verify connection at 10400 baud
         byte dataStream[] = {0xc1, 0x33, 0xf1, 0x81, 0x66};
-        byte dataStreamSize = sizeof(dataStream)/sizeof(dataStream[0]);
+        byte dataStreamSize = ARRAY_SIZE(dataStream);
         boolean gotData = false;
         const byte dataResponseSize = 10;
         byte dataResponse[dataResponseSize];
@@ -1239,7 +1268,7 @@ void iso_init()
       {
         // bit banging done, now verify connection at 10400 baud
         byte dataStream[] = {0xc1, 0x33, 0xf1, 0x81, 0x66};
-        byte dataStreamSize = sizeof(dataStream)/sizeof(dataStream[0]);
+        byte dataStreamSize = ARRAY_SIZE(dataStream);
         boolean gotData = false;
         const byte dataResponseSize = 10;
         byte dataResponse[dataResponseSize];
@@ -1411,7 +1440,7 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
     else if(buf[0]==0x10)
       sprintf_P(retbuf, PSTR("CLSEBADF"));  // Closed loop, using at least one oxygen sensor but there is a fault in the feedback system
     else
-      sprintf_P(retbuf, PSTR("%04lX"), ret);
+      sprintf_P(retbuf, PSTR("%04lX"), *ret);
     break;
   case LOAD_VALUE:
   case THROTTLE_POS:
@@ -1935,7 +1964,7 @@ void accu_trip(void)
   }
 }
 
-void display(byte corner, byte pid)
+void display(byte location, byte pid)
 {
   char str[STRLEN];
 
@@ -1999,17 +2028,27 @@ void display(byte corner, byte pid)
   else
     get_pid(pid, str, &tempLong);
 
-  // left corners are left aligned
-  // right corners are right aligned
-
-  byte row = corner==TOPLEFT || corner == TOPRIGHT ? 0 : 1;
-  byte leftEdge = corner==TOPLEFT || corner == BOTTOMLEFT ? 0 : 8;
-  byte start = leftEdge == 0 ? 0: 16 - strlen(str);  
+  // left locations are left aligned
+  // right locations are right aligned
+  
+  // truncate any string that is too long to display correctly
+  str[LCD_split] = '\0';
+  
+  byte row = location / 2;  // Two PIDs per line
+  boolean isLeft = location % 2 == 0; // First PID per line is always left
+  byte textPos    = isLeft ? 0 : LCD_width - strlen(str);  
+  byte clearStart = isLeft ? strlen(str) : LCD_split; 
+  byte clearEnd   = isLeft ? LCD_split : textPos;  
     
-  lcd_gotoXY(leftEdge,row);
-  lcd_print_P(blkstr);
-  lcd_gotoXY(start,row);
+  lcd_gotoXY(textPos,row);
   lcd_print(str);
+
+  // clean up any possible leading or trailing data
+  lcd_gotoXY(clearStart,row);
+  for (byte cleanup = clearStart; cleanup < clearEnd; cleanup++)
+  {
+    lcd_dataWrite(' ');
+  }  
 }
 
 void check_supported_pids(void)
@@ -2159,6 +2198,523 @@ byte menu_select_yes_no(byte p)
   return p;
 }
 
+// Menu selection
+// 
+// This function is passed in a array of strings which comprise of the menu
+// The first string is the MENU TITLE,
+// The second string is the EXIT option (always first option)
+// The following strings are the other options in the menu
+//
+// The returned value denotes the selection of the user:
+// A return of zero represents the exit
+// A return of a real number represents the selection from the menu past exit (ie 2 would be the second item past EXIT)
+byte menu_selection(char ** menu, byte arraySize)
+{
+  byte selection = 1; // Menu title takes up the first string in the list so skip it
+  byte screenChars = 0;  // Characters currently sent to screen
+  byte menuItem = 0;     // Menu items past current selection
+
+  // Note: values are changed with left/right and set with middle
+  // Default selection is always the first selection, which should be 'Exit'
+  
+  lcd_cls();
+  lcd_print((char *)pgm_read_word(&(menu[0])));
+  buttonState=buttonsUp;  // make sure to clear button
+
+  do
+  {
+    if(!(buttonState&lbuttonBit) && selection > 1)
+    {
+      selection--;
+    }
+    else if(!(buttonState&rbuttonBit) && selection < arraySize - 1)
+    {
+      selection++;
+    }
+        
+    // Potential improvements:
+    // Currently the selection is ALWAYS the first presented menu item.
+    // Current selection could be in the middle if possible.
+    // If few selections and screen size permits, selections could be centered?
+    
+    lcd_gotoXY(0,1);
+    screenChars = 1;
+    lcd_dataWrite('('); // Wrap the current selection with brackets
+    menuItem = 0;
+    do
+    {
+      lcd_print((char*)pgm_read_word(&(menu[selection+menuItem])));
+
+      if (menuItem == 0) 
+      {
+        // include closing bracket
+        lcd_dataWrite(')');
+        screenChars++;
+      }  
+      lcd_dataWrite(' ');
+      screenChars += (strlen((char*)pgm_read_word(&(menu[selection+menuItem]))) + 1);
+      menuItem++;
+    }
+    while (screenChars < LCD_width && selection + menuItem < arraySize);
+
+    // Do any cover up of old data
+    while (screenChars < LCD_width)
+    {
+      lcd_dataWrite(' ');
+      screenChars++;
+    }
+
+    delay_reset_button();
+  }
+  while(buttonState&mbuttonBit);
+
+  return selection - 1;
+}
+
+void config_menu(void)
+{
+  char str[STRLEN];
+  char decs[16];
+  int lastButton = 0;  //we'll use this to speed up button pushes
+  unsigned int fuelUnits = 0;
+  boolean changed = false;
+
+#ifdef ELM
+#ifndef DEBUG  // it takes 98 bytes
+  // display protocol, just for fun
+  lcd_cls();
+  memset(str, 0, STRLEN);
+  elm_command(str, PSTR("ATDP\r"));
+  if(str[0]=='A')  // string start with "AUTO, ", skip it
+  {
+    lcd_print(str+6);
+    lcd_gotoXY(0,1);
+    lcd_print(str+6+16);
+  }
+  else
+  {
+    lcd_print(str);
+    lcd_gotoXY(0,1);
+    lcd_print(str+16);
+  }
+  delay(2000);
+#endif
+#endif
+
+  boolean saveParams = false;  // Currently a button press will cause a save, smarter would be to verify a change in value...
+  byte selection = 0;
+  byte oldByteValue;             // used to determine if new value is different and we need to save the change
+  unsigned int oldUIntValue;     // ditto
+
+  do
+  {
+    selection = menu_selection(topMenu, ARRAY_SIZE(topMenu));
+
+    if (selection == 1) // display
+    {
+      byte displaySelection = 0;
+    
+      do
+      {
+        displaySelection = menu_selection(displayMenu, ARRAY_SIZE(displayMenu));
+
+        if (displaySelection == 1) // Contrast
+        {
+          lcd_cls_print_P(PSTR("LCD contrast"));
+          oldByteValue = params.contrast;
+          
+          do
+          {
+            if(!(buttonState&lbuttonBit) && params.contrast!=0)
+              params.contrast-=10;
+            else if(!(buttonState&rbuttonBit) && params.contrast!=100)
+              params.contrast+=10;
+
+            analogWrite(ContrastPin, params.contrast);  // change dynamicaly
+            sprintf_P(str, pctd, params.contrast);
+            displaySecondLine(5, str);
+          } while(buttonState&mbuttonBit);
+
+          if (oldByteValue != params.contrast)
+          {
+            saveParams = true;
+          }
+        }
+        else if (displaySelection == 2)  // Metric
+        {
+          lcd_cls_print_P(PSTR("Use metric unit"));
+          oldByteValue = params.use_metric;
+          params.use_metric=menu_select_yes_no(params.use_metric);
+          if (oldByteValue != params.use_metric)
+          {
+            saveParams = true;
+          }
+
+          // Only if metric do we have the option of using the comma as a decimal
+          if(params.use_metric)
+          {
+            lcd_cls_print_P(PSTR("Use comma format"));
+            oldByteValue = (byte) params.use_comma;
+            params.use_comma = menu_select_yes_no(params.use_comma);
+   
+            if (oldByteValue != (byte) params.use_comma)
+            {
+              saveParams = true;
+            }
+          }
+        }
+        else if (displaySelection == 3) // Display speed
+        {
+          oldByteValue = params.per_hour_speed;
+
+          // speed from which we toggle to fuel/hour
+          lcd_cls_print_P(PSTR("Fuel/hour speed"));
+          // set value with left/right and set with middle
+          do
+          {
+            if(!(buttonState&lbuttonBit) && params.per_hour_speed!=0)
+              params.per_hour_speed--;
+            else if(!(buttonState&rbuttonBit) && params.per_hour_speed!=255)
+              params.per_hour_speed++;
+
+            sprintf_P(str, pctd, params.per_hour_speed);
+            displaySecondLine(5, str);
+          } while(buttonState&mbuttonBit);
+
+          if (oldByteValue != params.per_hour_speed)
+          {
+            saveParams = true;
+          }
+        }
+      } while (displaySelection != 0); // exit from this menu
+    }
+    else if (selection == 2) // Adjust
+    {
+      byte adjustSelection = 0;
+      byte count = ARRAY_SIZE(adjustMenu);
+      if (is_pid_supported(MAF_AIR_FLOW, 0))
+      {
+        // Use the "Eng Displ" parameter (the last one) only when MAF_AIR_FLOW is not supported
+        count--;
+      }
+  
+      do
+      {
+        adjustSelection = menu_selection(adjustMenu, count);
+
+        if (adjustSelection == 1) 
+        {   
+          lcd_cls_print_P(PSTR("Tank size ("));
+
+          oldUIntValue = params.tank_size;
+
+          // convert in gallon if requested
+          if(!params.use_metric)
+          {
+            lcd_print_P(PSTR("G)"));
+            fuelUnits = convertToGallons(params.tank_size);
+          }  
+          else
+          {
+            lcd_print_P(PSTR("L)"));
+            fuelUnits = params.tank_size;
+          }
+  
+          // set value with left/right and set with middle
+          do
+          {
+            if(!(buttonState&lbuttonBit))
+            {
+              changed = true;
+              fuelUnits--;
+            }
+            else if(!(buttonState&rbuttonBit))
+            {
+              changed = true;
+              fuelUnits++;
+            }
+
+            long_to_dec_str(fuelUnits, decs, 1);
+            sprintf_P(str, PSTR("- %s + "), decs);
+            displaySecondLine(4, str);
+          } while(buttonState&mbuttonBit);
+   
+          if (changed)
+          {
+            if(!params.use_metric)
+            {
+              params.tank_size = convertToLitres(fuelUnits);
+            }
+            else
+            {
+              params.tank_size = fuelUnits;
+            } 
+            changed = false;
+          }
+
+          if (oldUIntValue != params.tank_size)
+          {
+            saveParams = true;
+          }          
+        }
+        else if (adjustSelection == 2)  // cost
+        {
+          int lastButton = 0;
+ 
+          lcd_cls_print_P(PSTR("Fuel Price ("));
+          oldUIntValue = params.gas_price;
+
+          // convert in gallons if requested
+          if(!params.use_metric)
+          {
+            lcd_print_P(PSTR("G)"));
+            // Convert unit price to litres for the cost per gallon. (ie $1 a litre = $3.785 per gallon)
+            fuelUnits = convertToLitres(params.gas_price);
+          }
+          else
+          {
+            lcd_print_P(PSTR("L)"));
+            fuelUnits = params.gas_price;
+          }
+  
+          // set value with left/right and set with middle
+          do
+          {
+            if(!(buttonState&lbuttonBit)){
+              changed = true;
+              lastButton--;      
+              if(lastButton >= 0) {
+                lastButton = 0;
+                fuelUnits--;
+              } else if (lastButton < -3 && lastButton > -7) {
+                fuelUnits-=2;
+              } else if (lastButton <= -7) {
+                fuelUnits-=10;
+              } else {
+                fuelUnits--;
+              }
+            } else if(!(buttonState&rbuttonBit)){
+              changed = true;
+              lastButton++;      
+              if(lastButton <= 0) {
+                lastButton = 0;
+                fuelUnits++;
+              } else if (lastButton > 3 && lastButton < 7) {
+                fuelUnits+=2;
+              } else if (lastButton >= 7) {
+                fuelUnits+=10;
+              } else {
+                fuelUnits++;
+              }      
+            }
+
+            long_to_dec_str(fuelUnits, decs, fuelUnits > 999 ? 3 : 1);
+            sprintf_P(str, gasPrice[fuelUnits > 999], decs);
+            displaySecondLine(3, str);
+          } while(buttonState&mbuttonBit);
+
+          if (changed)
+          {
+            if(!params.use_metric)
+            {
+              params.gas_price = convertToGallons(fuelUnits);
+            }
+            else
+            {
+              params.gas_price = fuelUnits;
+            }
+            changed = false;
+          }
+
+          if (oldUIntValue != params.gas_price)
+          {
+            saveParams = true;
+          }          
+        }
+        else if (adjustSelection == 3)
+        {
+          lcd_cls_print_P(PSTR("Fuel adjust"));
+          oldByteValue = params.fuel_adjust;
+
+          do
+          {
+            if(!(buttonState&lbuttonBit))
+              params.fuel_adjust--;
+            else if(!(buttonState&rbuttonBit))
+              params.fuel_adjust++;
+
+            sprintf_P(str, pctdpctpct, params.fuel_adjust);
+            displaySecondLine(4, str);
+          } while(buttonState&mbuttonBit);
+
+          if (oldByteValue != params.fuel_adjust)
+          {
+            saveParams = true;
+          }     
+        }
+        else if (adjustSelection == 4)
+        {
+          lcd_cls_print_P(PSTR("Speed adjust"));
+          oldByteValue = params.speed_adjust;
+
+          do
+          { 
+            if(!(buttonState&lbuttonBit))
+              params.speed_adjust--;
+            else if(!(buttonState&rbuttonBit))
+              params.speed_adjust++;
+
+            sprintf_P(str, pctdpctpct, params.speed_adjust);
+            displaySecondLine(4, str);
+          } while(buttonState&mbuttonBit);
+
+          if (oldByteValue != params.fuel_adjust)
+          {
+            saveParams = true;
+          }     
+        }
+        else if (adjustSelection == 5)
+        {
+          lcd_cls_print_P(PSTR("Outing stop over"));
+          oldByteValue = params.OutingStopOver;
+
+          do
+          {
+            if(!(buttonState&lbuttonBit) && params.OutingStopOver > 0)
+              params.OutingStopOver--;
+            else if(!(buttonState&rbuttonBit) && params.OutingStopOver < UCHAR_MAX)
+              params.OutingStopOver++;
+
+            sprintf_P(str, PSTR("- %2d Min + "), params.OutingStopOver * MINUTES_GRANULARITY);
+            displaySecondLine(3, str);
+          } while(buttonState&mbuttonBit);
+
+          if (oldByteValue != params.OutingStopOver)
+          {
+            saveParams = true;
+          }     
+
+        }
+        else if (adjustSelection == 6)
+        {
+          lcd_cls_print_P(PSTR("Trip stop over"));
+          oldByteValue = params.TripStopOver;
+
+          do
+          {
+            unsigned long TripStopOver;   // Allowable stop over time (in milliseconds). Exceeding time starts a new outing.
+  
+            if(!(buttonState&lbuttonBit) && params.TripStopOver > 1)
+              params.TripStopOver--;
+            else if(!(buttonState&rbuttonBit) && params.TripStopOver < UCHAR_MAX)
+              params.TripStopOver++;
+
+            sprintf_P(str, PSTR("- %2d Hrs + "), params.TripStopOver);
+            displaySecondLine(3, str);
+          } while(buttonState&mbuttonBit);
+
+          if (oldByteValue != params.TripStopOver)
+          {
+            saveParams = true;
+          }     
+        }
+        else if (adjustSelection == 7)
+        {
+          lcd_cls_print_P(PSTR("Eng dplcmt (MAP)"));
+          oldByteValue = params.eng_dis;
+
+          // the following setting is for MAP only
+          // engine displacement
+
+          do
+          {
+            if(!(buttonState&lbuttonBit) && params.eng_dis!=0)
+              params.eng_dis--;
+            else if(!(buttonState&rbuttonBit) && params.eng_dis!=100)
+              params.eng_dis++;
+
+            long_to_dec_str(params.eng_dis, decs, 1);
+            sprintf_P(str, PSTR("- %sL + "), decs);
+            displaySecondLine(4, str);
+          }
+          while(buttonState&mbuttonBit);
+
+          if (oldByteValue != params.eng_dis)
+          {
+            saveParams = true;
+          }     
+        }
+      } while (adjustSelection != 0);
+    }   
+    else if (selection == 3) // PIDs
+    { 
+      // go through all the configurable items
+      byte PIDSelection = 0;
+      byte cur_screen;
+      byte pid = 0;
+     
+      // Set PIDs required for the selected screen
+      do
+      {
+        PIDSelection = menu_selection(PIDMenu, ARRAY_SIZE(PIDMenu));
+       
+        if (PIDSelection != 0 && PIDSelection <= NBSCREEN)
+        {
+          cur_screen = PIDSelection - 1;
+          for(byte current_PID=0; current_PID<LCD_PID_count; current_PID++)
+          {
+            lcd_cls();
+            sprintf_P(str, PSTR("Scr %d      PID %d"), cur_screen+1, current_PID+1);
+            lcd_print(str);
+            oldByteValue = pid = params.screen[cur_screen].PID[current_PID];
+
+            do
+            {
+              if(!(buttonState&lbuttonBit))
+              {
+                // while we do not find a supported PID, decrease
+                while(!is_pid_supported(--pid, 1));
+              }
+              else if(!(buttonState&rbuttonBit))
+              {
+                // while we do not find a supported PID, increase
+                while(!is_pid_supported(++pid, 1));
+              }
+              
+              sprintf_P(str, PSTR("- %8s +  "), (char*)pgm_read_word(&(PID_Desc[pid])));
+              displaySecondLine(2, str);
+            } while(buttonState&mbuttonBit);
+ 
+            // PID has changed so set it
+            if (oldByteValue != pid)
+            {
+              params.screen[cur_screen].PID[current_PID]=pid;
+              saveParams = true;
+            }
+          }
+        }
+      } while (PIDSelection != 0);
+    }  
+  } while (selection != 0);  
+
+  if (saveParams)
+  {
+    // save params in EEPROM
+    lcd_cls_print_P(PSTR("Saving config"));
+    lcd_gotoXY(0,1);
+    lcd_print_P(PSTR("Please wait..."));
+    params_save();
+  }
+}
+
+// This helps reduce code size by containing repeated functionality.
+void displaySecondLine(byte position, char * str)
+{
+  lcd_gotoXY(position,1);
+  lcd_print(str);
+  delay_reset_button(); 
+}
+
 // Reworked a little to allow all trip types to be reset from one function.
 void trip_reset(byte ctrip, boolean ask)
 {
@@ -2194,347 +2750,6 @@ void trip_reset(byte ctrip, boolean ask)
   }  
 }
 
-// This might benefit from a rework to cut down on how many button presses to go through the choices.
-// Perhaps Change Display (yes no), could cover contrast, metric, and fuel/hour,
-// Adjust Vehicle (yes no) could cover the tanks size, diplacement, adjustments,
-// fuel could have it's own top level or fall into adjust vehicle
-// PIDs would remain as they are.
-// This will get the user through the menu quickly.
-void config_menu(void)
-{
-  char str[STRLEN];
-  char decs[16];
-  byte p;
-  int lastButton = 0;  //we'll use this to speed up button pushes
-  unsigned int fuelUnits = 0;
-  boolean changed = false;
-
-#ifdef ELM
-#ifndef DEBUG  // it takes 98 bytes
-  // display protocol, just for fun
-  lcd_cls();
-  memset(str, 0, STRLEN);
-  elm_command(str, PSTR("ATDP\r"));
-  if(str[0]=='A')  // string start with "AUTO, ", skip it
-  {
-    lcd_print(str+6);
-    lcd_gotoXY(0,1);
-    lcd_print(str+6+16);
-  }
-  else
-  {
-    lcd_print(str);
-    lcd_gotoXY(0,1);
-    lcd_print(str+16);
-  }
-  delay(2000);
-#endif
-#endif
-
-  // go through all the configurable items
-
-  // first one is contrast
-  lcd_cls_print_P(PSTR("LCD contrast"));
-  // set value with left/right and set with middle
-  buttonState=buttonsUp;  // make sure to clear button
-  do
-  {
-    if(!(buttonState&lbuttonBit) && params.contrast!=0)
-      params.contrast-=10;
-    else if(!(buttonState&rbuttonBit) && params.contrast!=100)
-      params.contrast+=10;
-
-    lcd_gotoXY(5,1);
-    sprintf_P(str, pctd, params.contrast);
-    lcd_print(str);
-    analogWrite(ContrastPin, params.contrast);  // change dynamicaly
-    delay_reset_button();
-  }
-  while(buttonState&mbuttonBit);
-
-  // then the use of metric
-  lcd_cls_print_P(PSTR("Use metric unit"));
-  params.use_metric=menu_select_yes_no(params.use_metric);
-
-  // Only if metric do we have the option of using the comma as a decimal
-  if(params.use_metric)
-  {
-    lcd_cls_print_P(PSTR("Use comma format"));
-    params.use_comma = menu_select_yes_no(params.use_comma);
-  }
-
-  // speed from which we toggle to fuel/hour
-  lcd_cls_print_P(PSTR("Fuel/hour speed"));
-  // set value with left/right and set with middle
-  do
-  {
-    if(!(buttonState&lbuttonBit) && params.per_hour_speed!=0)
-      params.per_hour_speed--;
-    else if(!(buttonState&rbuttonBit) && params.per_hour_speed!=255)
-      params.per_hour_speed++;
-
-    lcd_gotoXY(5,1);
-    sprintf_P(str, pctd, params.per_hour_speed);
-    lcd_print(str);
-    delay_reset_button();
-  }
-  while(buttonState&mbuttonBit);
-
-
-
-  // tank size
-  lcd_cls_print_P(PSTR("Tank size ("));
-
-  // convert in gallon if requested
-  if(!params.use_metric)
-  {
-    lcd_print_P(PSTR("G)"));
-    fuelUnits = convertToGallons(params.tank_size);
-  }  
-  else
-  {
-    lcd_print_P(PSTR("L)"));
-    fuelUnits = params.tank_size;
-  }
-    
-
-  // set value with left/right and set with middle
-  do
-  {
-    if(!(buttonState&lbuttonBit))
-    {
-      changed = true;
-      fuelUnits--;
-    }
-    else if(!(buttonState&rbuttonBit))
-    {
-      changed = true;
-      fuelUnits++;
-    }
-    lcd_gotoXY(4,1);
-    long_to_dec_str(fuelUnits, decs, 1);
-    sprintf_P(str, PSTR("- %s + "), decs);
-    lcd_print(str);
-    delay_reset_button();
-  }
-  while(buttonState&mbuttonBit);
-  
-  if (changed)
-  {
-    if(!params.use_metric)
-    {
-      params.tank_size = convertToLitres(fuelUnits);
-    }
-    else
-    {
-      params.tank_size = fuelUnits;
-    }
-    changed = false;
-  }
-  
-  // fuel price
-  lcd_cls_print_P(PSTR("Fuel Price ("));
-
-  // convert in gallons if requested
-  if(!params.use_metric)
-  {
-    lcd_print_P(PSTR("G)"));
-    // Convert unit price to litres for the cost per gallon. (ie $1 a litre = $3.785 per gallon)
-    fuelUnits = convertToLitres(params.gas_price);
-  }
-  else
-  {
-    lcd_print_P(PSTR("L)"));
-    fuelUnits = params.gas_price;
-  }
-  
-  // set value with left/right and set with middle
-  do
-  {
-    if(!(buttonState&lbuttonBit)){
-      changed = true;
-      lastButton--;      
-      if(lastButton >= 0) {
-        lastButton = 0;
-        fuelUnits--;
-      } else if (lastButton < -3 && lastButton > -7) {
-        fuelUnits-=2;
-      } else if (lastButton <= -7) {
-        fuelUnits-=10;
-      } else {
-        fuelUnits--;
-      }
-    } else if(!(buttonState&rbuttonBit)){
-      changed = true;
-      lastButton++;      
-      if(lastButton <= 0) {
-        lastButton = 0;
-        fuelUnits++;
-      } else if (lastButton > 3 && lastButton < 7) {
-        fuelUnits+=2;
-      } else if (lastButton >= 7) {
-        fuelUnits+=10;
-      } else {
-        fuelUnits++;
-      }      
-    }
-
-    lcd_gotoXY(3,1);
-    long_to_dec_str(fuelUnits, decs, fuelUnits > 999 ? 3 : 1);
-    sprintf_P(str, gasPrice[fuelUnits > 999], decs);
-    lcd_print(str);
-    delay_reset_button(); 
-  }
-  while(buttonState&mbuttonBit);
-
-  if (changed)
-  {
-    if(!params.use_metric)
-    {
-      params.gas_price = convertToGallons(fuelUnits);
-    }
-    else
-    {
-      params.gas_price = fuelUnits;
-    }
-    changed = false;
-  }
-  // fuel adjust
-  lcd_cls_print_P(PSTR("Fuel adjust"));
-  // set value with left/right and set with middle
-  do
-  {
-    if(!(buttonState&lbuttonBit))
-      params.fuel_adjust--;
-    else if(!(buttonState&rbuttonBit))
-      params.fuel_adjust++;
-
-    lcd_gotoXY(4,1);
-    sprintf_P(str, pctdpctpct, params.fuel_adjust);
-    lcd_print(str);
-    delay_reset_button();
-  }
-  while(buttonState&mbuttonBit);
-
-  // speed adjust
-  lcd_cls_print_P(PSTR("Speed adjust"));
-  // set value with left/right and set with middle
-  do
-  {
-    if(!(buttonState&lbuttonBit))
-      params.speed_adjust--;
-    else if(!(buttonState&rbuttonBit))
-      params.speed_adjust++;
-
-    lcd_gotoXY(4,1);
-    sprintf_P(str, pctdpctpct, params.speed_adjust);
-    lcd_print(str);
-    delay_reset_button();
-  }
-  while(buttonState&mbuttonBit);
-
-  // following setting is for MAP only
-  if(!is_pid_supported(MAF_AIR_FLOW, 0))
-  {
-  // engine displacement
-    lcd_cls_print_P(PSTR("Eng dplcmt (MAP)"));
-  // set value with left/right and set with middle
-  do
-  {
-    if(!(buttonState&lbuttonBit) && params.eng_dis!=0)
-      params.eng_dis--;
-    else if(!(buttonState&rbuttonBit) && params.eng_dis!=100)
-      params.eng_dis++;
-
-    lcd_gotoXY(4,1);
-    long_to_dec_str(params.eng_dis, decs, 1);
-    sprintf_P(str, PSTR("- %sL + "), decs);
-    lcd_print(str);
-      delay_reset_button();
-  }
-  while(buttonState&mbuttonBit);
-  }
-
-  // Outing stop over
-  lcd_cls_print_P(PSTR("Outing stop over"));
-  // set value with left/right and set with middle
-  do
-  {
-    if(!(buttonState&lbuttonBit) && params.OutingStopOver > 0)
-      params.OutingStopOver--;
-    else if(!(buttonState&rbuttonBit) && params.OutingStopOver < UCHAR_MAX)
-      params.OutingStopOver++;
-
-    lcd_gotoXY(3,1);
-    sprintf_P(str, PSTR("- %2d Min + "), params.OutingStopOver * MINUTES_GRANULARITY);
-    lcd_print(str);
-    delay_reset_button();
-  }
-  while(buttonState&mbuttonBit);
-
-  // Trip stop over
-  lcd_cls_print_P(PSTR("Trip stop over"));
-  // set value with left/right and set with middle
-  do
-  {
-    unsigned long TripStopOver;   // Allowable stop over time (in milliseconds). Exceeding time starts a new outing.
- 
-    if(!(buttonState&lbuttonBit) && params.TripStopOver > 1)
-      params.TripStopOver--;
-    else if(!(buttonState&rbuttonBit) && params.TripStopOver < UCHAR_MAX)
-      params.TripStopOver++;
-
-    lcd_gotoXY(3,1);
-    sprintf_P(str, PSTR("- %2d Hrs + "), params.TripStopOver);
-    lcd_print(str);
-    delay_reset_button();
-  }
-  while(buttonState&mbuttonBit);
-
-
-  // pid for the 4 corners, and for the n screen
-  lcd_cls_print_P(PSTR("Configure PIDs"));
-  p=menu_select_yes_no(0);  // init to "no"
-
-  if(p==1)
-    for(byte cur_screen=0; cur_screen<NBSCREEN; cur_screen++)
-    {
-      for(byte cur_corner=0; cur_corner<NBCORNER; cur_corner++)
-      {
-        lcd_cls();
-        sprintf_P(str, PSTR("Scr %d Corner %d"), cur_screen+1, cur_corner+1);
-        lcd_print(str);
-        p=params.screen[cur_screen].corner[cur_corner];
-
-        // set value with left/right and set with middle
-        do
-        {
-          if(!(buttonState&lbuttonBit))
-            // while we do not find a supported PID, decrease
-            while(!is_pid_supported(--p, 1));
-          else if(!(buttonState&rbuttonBit))
-            // while we do not find a supported PID, increase
-            while(!is_pid_supported(++p, 1));
-
-          lcd_gotoXY(2,1);
-          sprintf_P(str, PSTR("- %8s +  "), (char*)pgm_read_word(&(PID_Desc[p])));
-          lcd_print(str);
-          delay_reset_button();
-        }
-        while(buttonState&mbuttonBit);
-        // PID is choosen, set it
-        params.screen[cur_screen].corner[cur_corner]=p;
-      }
-    }
-
-  // save params in EEPROM
-  lcd_cls_print_P(PSTR("Saving config"));
-  lcd_gotoXY(0,1);
-  lcd_print_P(PSTR("Please wait..."));
-  params_save();
-}
-
-
 unsigned int convertToGallons(unsigned int litres)
 {
   return (unsigned int) ((float) litres / 3.785411);
@@ -2557,8 +2772,8 @@ void test_buttons(void)
   // middle + right = trip reset
   else if(!(buttonState&mbuttonBit) && !(buttonState&rbuttonBit))
   {
-    // Added choice to reset OUTING trip also. We could merge TANK here too, and then just ask user
-    //if they want to reset any trip data, and then if yes, go through all trip types.
+    // Added choice to reset OUTING trip also. We could merge TANK here too, and then just use the menu selection
+    // to select the trip type to reset (maybe ask confirmation or not, since the menu has an exit).
     needBacklight(true);    
     trip_reset(TRIP, true);
     trip_reset(OUTING, true);
@@ -2613,13 +2828,13 @@ void display_PID_names(void)
   needBacklight(true);    
   lcd_cls();
   // Lets flash up the description of the PID's we use when screen changes
-  byte count = TOPLEFT;
-  for (byte row = 0; row < 2; row++)
+  byte count = 0;
+  for (byte row = 0; row < LCD_ROWS; row++)
   {
-    for (byte col = 0; col < 9; col+=8)
+    for (byte col = 0; col == 0 || col == LCD_split; col+=LCD_split)
     {
       lcd_gotoXY(col,row);  
-      lcd_print((char*)pgm_read_word(&(PID_Desc[params.screen[active_screen].corner[count++]])));
+      lcd_print((char*)pgm_read_word(&(PID_Desc[params.screen[active_screen].PID[count++]])));
     }  
   }
   
@@ -2628,7 +2843,7 @@ void display_PID_names(void)
 
 void needBacklight(boolean On)
 {
-  //only if ECU or engine are off do we need the backlight
+  //only if ECU or engine are off do we need the backlight.
 #ifdef useECUState
   if (!ECUconnection)
 #else
@@ -2688,7 +2903,7 @@ void setup()                    // run once, when the sketch starts
   engine_off = engine_on = millis();
 
   lcd_init();
-  lcd_print_P(PSTR("OBDuino32k  v155"));
+  lcd_print_P(PSTR("OBDuino32k  v157"));
 #ifndef ELM
   do // init loop
   {
@@ -2793,7 +3008,7 @@ void loop()                     // run over and over again
       char str[STRLEN] = {0};
       lcd_gotoXY(0,1);
       lcd_print_P(PSTR("Wasted:"));
-      lcd_gotoXY(8,1);
+      lcd_gotoXY(LCD_split,1);
       get_waste(str,TANK);
       lcd_print(str);
 
@@ -2814,8 +3029,8 @@ void loop()                     // run over and over again
     accu_trip();
   
     // display on LCD
-    for(byte cur_corner=0; cur_corner<NBCORNER; cur_corner++)
-      display(cur_corner, params.screen[active_screen].corner[cur_corner]);
+    for(byte current_PID=0; current_PID<LCD_PID_count; current_PID++)
+      display(current_PID, params.screen[active_screen].PID[current_PID]);
   }
   else
   {
@@ -2824,8 +3039,8 @@ void loop()                     // run over and over again
       displayAlarmScreen();
     #else
     // for some reason the display on LCD
-    for(byte cur_corner=0; cur_corner<NBCORNER; cur_corner++)
-      display(cur_corner, params.screen[active_screen].corner[cur_corner]);
+    for(byte current_PID=0; current_PID<LCD_PID_count; current_PID++)
+      display(current_PID, params.screen[active_screen].PID[current_PID]);
     #endif
 
     #ifdef do_ISO_Reinit
@@ -2880,7 +3095,7 @@ void loop()                     // run over and over again
     char str[STRLEN] = {0};
     lcd_gotoXY(0,1);
     lcd_print_P(PSTR("Wasted:"));
-    lcd_gotoXY(8,1);
+    lcd_gotoXY(LCD_split,1);
     get_waste(str,TANK);
     lcd_print(str);
     delay(2000);
@@ -2900,8 +3115,8 @@ void loop()                     // run over and over again
   accu_trip();
 
   // display on LCD
-  for(byte cur_corner=0; cur_corner<NBCORNER; cur_corner++)
-    display(cur_corner, params.screen[active_screen].corner[cur_corner]);
+  for(byte current_PID=0; current_PID<LCD_PID_count; current_PID++)
+    display(current_PID, params.screen[active_screen].PID[current_PID]);
 
   #endif
 
@@ -2941,13 +3156,8 @@ boolean verifyECUAlive(void)
     return ECUconnection;
   }
   #endif
-//  byte cmd[] = {0x01, ENGINE_RPM};
-//  byte buf[5];
-  // send command to ECU, if it is active, we will get two bytes back
-//  iso_write_data(cmd, 2);
-  // verify that we actually get data back from ECU
-//  return iso_read_data(buf, 5) != 0;
-
+    // Send command to ECU, if it is active, we will get data back.
+    // Set RPM to 1 if ECU active and RPM above 0, otherwise zero.
     char str[STRLEN];
     boolean connected = get_pid(ENGINE_RPM, str, &tempLong);
     has_rpm = (connected && tempLong > 0) ? 1 : 0;
