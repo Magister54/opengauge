@@ -19,6 +19,8 @@ June 27, 2009:
  Minor corrections and tweaks: Antony
 July 23, 2009:
  New menuing system for parameters, and got rid of display flicker: Antony
+Sept 01, 2009:
+ Better handling of 14230 protocol. Tweak in clear button routine: Antony
 
 To-Do:
   Bugs:
@@ -128,6 +130,8 @@ int memoryTest(void);
 void test_buttons(void);
 void get_cost(char *retbuf, byte ctrip);
 
+#define KEY_WAIT 1000 // Wait for potential other key press
+#define ACCU_WAIT 500 // Only accumulate data so often.
 #define BUTTON_DELAY  125
 // use analog pins as digital pins for buttons
 #define lbuttonPin 17 // Left Button, on analog 3
@@ -137,8 +141,14 @@ void get_cost(char *retbuf, byte ctrip);
 #define lbuttonBit 8 //  pin17 is a bitmask 8 on port C
 #define mbuttonBit 16 // pin18 is a bitmask 16 on port C
 #define rbuttonBit 32 // pin19 is a bitmask 32 on port C
-#define buttonsUp  lbuttonBit + mbuttonBit + rbuttonBit  // start with the buttons in the right state
+#define buttonsUp 0 // start with the buttons in the 'not pressed' state
+
 byte buttonState = buttonsUp;
+
+// Easy to read macros
+#define LEFT_BUTTON_PRESSED (buttonState&lbuttonBit)
+#define MIDDLE_BUTTON_PRESSED (buttonState&mbuttonBit)
+#define RIGHT_BUTTON_PRESSED (buttonState&rbuttonBit)
 
 #define brightnessLength 7 //array size
 const byte brightness[brightnessLength]={
@@ -580,6 +590,7 @@ prog_char *PIDMenu[] PROGMEM = {"PID Screen menu", "Exit", "Scr 1", "Scr 2", "Sc
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(*(x)))
 
+// Time information
 #define MILLIS_PER_HOUR    3600000L
 #define MILLIS_PER_MINUTE    60000L
 #define MILLIS_PER_SECOND     1000L
@@ -754,12 +765,12 @@ ISR(PCINT1_vect)
 
   if (m - last_millis > 20)
   { // do pushbutton stuff
-    buttonState &= PINC;
+    buttonState |= ~PINC;
   }
   //  else ignore interrupt: probably a bounce problem
   last_millis = m;
 #else
-  buttonState &= PINC;
+  buttonState |= ~PINC;
 #endif
 }
 
@@ -949,10 +960,19 @@ byte iso_write_data(byte *data, byte len)
   byte i, n;
   byte buf[20];
 
+
+  #ifdef ISO_9141
   // ISO header
   buf[0]=0x68;
   buf[1]=0x6A;		// 0x68 0x6A is an OBD-II request
   buf[2]=0xF1;		// our requester’s address (off-board tool)
+  #else
+  // 14230 protocol header
+  buf[0]=0xc2; // Request of 2 bytes
+  buf[1]=0x33; // Target address
+  buf[2]=0xF1; // our requester’s address (off-board tool)
+  #endif
+
   // append message
   for(i=0; i<len; i++)
     buf[i+3]=data[i];
@@ -1173,20 +1193,32 @@ void iso_init()
         boolean gotData = false;
         const byte dataResponseSize = 10;
         byte dataResponse[dataResponseSize];
-      
+        byte responseIndex = 0;
+        byte dataCaught = '\0';
+           
         // switch now to 10400 bauds
         Serial.begin(10400);
 
-        iso_write_data(dataStream, dataStreamSize);
+        // Send the message
+        for (byte i = 0; i < dataStreamSize; i++)
+        {
+          iso_write_byte(dataStream[i]);
+        }
 
         // Wait for response for 300 ms
         initTime = currentTime + 300;
         do
         {
-           gotData = iso_read_data(dataResponse, dataResponseSize) > 0;
+           // If we find any data, keep catching it until it ends
+           while (iso_read_byte(&dataCaught))
+           {
+              gotData = true;
+              dataResponse[responseIndex] = dataCaught;
+              responseIndex++;
+           }           
         } while (millis() <= initTime && !gotData);
 
-        if (gotData)
+        if (gotData) // or better yet validate the data...
         {
            ECUconnection = true;
            // update for correct delta time in trip calculations.
@@ -1272,18 +1304,30 @@ void iso_init()
         boolean gotData = false;
         const byte dataResponseSize = 10;
         byte dataResponse[dataResponseSize];
+        byte responseIndex = 0;
+        byte dataCaught = '\0';
       
         // switch now to 10400 bauds
         Serial.begin(10400);
 
-        iso_write_data(dataStream, dataStreamSize);
+        // Send the message
+        for (byte i = 0; i < dataStreamSize; i++)
+        {
+          iso_write_byte(dataStream[i]);
+        }
 
         // Wait for response for 300 ms
         initTime = currentTime + 300;
 
         do
         {
-           gotData = iso_read_data(dataResponse, dataResponseSize) > 0;
+           // If we find any data, keep catching it until it ends
+           while (iso_read_byte(&dataCaught))
+           {
+              gotData = true;
+              dataResponse[responseIndex] = dataCaught;
+              responseIndex++;
+           }           
         } while (millis() <= initTime && !gotData);
  
         if (gotData)
@@ -2168,23 +2212,46 @@ void delay_reset_button(void)
 {
   // accumulate data for trip while in the menu config, do not pool too often.
   // but anyway you should not configure your OBDuino while driving!
-  buttonState=buttonsUp;
-  delay(BUTTON_DELAY);
-  accu_trip();
+  
+  // If there has been a key press, then don't accumulate trip data just yet,
+  // wait a little past the last key press before doing trip data.
+  // Rapid key presses take priority...
+  static unsigned long lastButtonTime = 0;
+ 
+  if (buttonState != buttonsUp)
+  {
+    lastButtonTime = millis();
+    
+    buttonState = buttonsUp;
+    delay(BUTTON_DELAY);
+  }
+  else
+  {
+    if (calcTimeDiff(lastButtonTime, millis()) > KEY_WAIT &&
+        calcTimeDiff(old_time, millis()) > ACCU_WAIT)
+    {
+      accu_trip();
+    }
+  }
 }
 
 // common code used in a couple of menu section
 byte menu_select_yes_no(byte p)
 {
+  boolean exitMenu = false;
+
   // set value with left/right and set with middle
-  buttonState=buttonsUp;  // make sure to clear button
+  delay_reset_button();  // make sure to clear button
+
   do
   {
-    if(!(buttonState&lbuttonBit))
+    if(LEFT_BUTTON_PRESSED)
       p=0;
-    else if(!(buttonState&rbuttonBit))
+    else if(RIGHT_BUTTON_PRESSED)
       p=1;
-    
+    else if(MIDDLE_BUTTON_PRESSED)
+      exitMenu = true;
+  
     lcd_gotoXY(4,1);
     if(p==0)
       lcd_print_P(select_no);
@@ -2193,7 +2260,7 @@ byte menu_select_yes_no(byte p)
 
     delay_reset_button();
   }
-  while(buttonState&mbuttonBit);
+  while(!exitMenu);
   
   return p;
 }
@@ -2213,25 +2280,30 @@ byte menu_selection(char ** menu, byte arraySize)
   byte selection = 1; // Menu title takes up the first string in the list so skip it
   byte screenChars = 0;  // Characters currently sent to screen
   byte menuItem = 0;     // Menu items past current selection
+  boolean exitMenu = false;
 
   // Note: values are changed with left/right and set with middle
   // Default selection is always the first selection, which should be 'Exit'
   
   lcd_cls();
   lcd_print((char *)pgm_read_word(&(menu[0])));
-  buttonState=buttonsUp;  // make sure to clear button
+  delay_reset_button();  // make sure to clear button
 
   do
   {
-    if(!(buttonState&lbuttonBit) && selection > 1)
+    if(LEFT_BUTTON_PRESSED && selection > 1)
     {
       selection--;
     }
-    else if(!(buttonState&rbuttonBit) && selection < arraySize - 1)
+    else if(RIGHT_BUTTON_PRESSED && selection < arraySize - 1)
     {
       selection++;
     }
-        
+    else if (MIDDLE_BUTTON_PRESSED)
+    {
+      exitMenu = true;
+    }   
+
     // Potential improvements:
     // Currently the selection is ALWAYS the first presented menu item.
     // Current selection could be in the middle if possible.
@@ -2264,9 +2336,10 @@ byte menu_selection(char ** menu, byte arraySize)
       screenChars++;
     }
 
+    // Clean up button presses 
     delay_reset_button();
   }
-  while(buttonState&mbuttonBit);
+  while(!exitMenu);
 
   return selection - 1;
 }
@@ -2325,15 +2398,15 @@ void config_menu(void)
           
           do
           {
-            if(!(buttonState&lbuttonBit) && params.contrast!=0)
+            if(LEFT_BUTTON_PRESSED && params.contrast!=0)
               params.contrast-=10;
-            else if(!(buttonState&rbuttonBit) && params.contrast!=100)
+            else if(RIGHT_BUTTON_PRESSED && params.contrast!=100)
               params.contrast+=10;
 
             analogWrite(ContrastPin, params.contrast);  // change dynamicaly
             sprintf_P(str, pctd, params.contrast);
             displaySecondLine(5, str);
-          } while(buttonState&mbuttonBit);
+          } while(!MIDDLE_BUTTON_PRESSED);
 
           if (oldByteValue != params.contrast)
           {
@@ -2372,14 +2445,14 @@ void config_menu(void)
           // set value with left/right and set with middle
           do
           {
-            if(!(buttonState&lbuttonBit) && params.per_hour_speed!=0)
+            if(LEFT_BUTTON_PRESSED && params.per_hour_speed!=0)
               params.per_hour_speed--;
-            else if(!(buttonState&rbuttonBit) && params.per_hour_speed!=255)
+            else if(RIGHT_BUTTON_PRESSED && params.per_hour_speed!=255)
               params.per_hour_speed++;
 
             sprintf_P(str, pctd, params.per_hour_speed);
             displaySecondLine(5, str);
-          } while(buttonState&mbuttonBit);
+          } while(!MIDDLE_BUTTON_PRESSED);
 
           if (oldByteValue != params.per_hour_speed)
           {
@@ -2423,12 +2496,12 @@ void config_menu(void)
           // set value with left/right and set with middle
           do
           {
-            if(!(buttonState&lbuttonBit))
+            if(LEFT_BUTTON_PRESSED)
             {
               changed = true;
               fuelUnits--;
             }
-            else if(!(buttonState&rbuttonBit))
+            else if(RIGHT_BUTTON_PRESSED)
             {
               changed = true;
               fuelUnits++;
@@ -2437,7 +2510,7 @@ void config_menu(void)
             long_to_dec_str(fuelUnits, decs, 1);
             sprintf_P(str, PSTR("- %s + "), decs);
             displaySecondLine(4, str);
-          } while(buttonState&mbuttonBit);
+          } while(!MIDDLE_BUTTON_PRESSED);
    
           if (changed)
           {
@@ -2480,7 +2553,7 @@ void config_menu(void)
           // set value with left/right and set with middle
           do
           {
-            if(!(buttonState&lbuttonBit)){
+            if(LEFT_BUTTON_PRESSED){
               changed = true;
               lastButton--;      
               if(lastButton >= 0) {
@@ -2493,7 +2566,7 @@ void config_menu(void)
               } else {
                 fuelUnits--;
               }
-            } else if(!(buttonState&rbuttonBit)){
+            } else if(RIGHT_BUTTON_PRESSED){
               changed = true;
               lastButton++;      
               if(lastButton <= 0) {
@@ -2511,7 +2584,7 @@ void config_menu(void)
             long_to_dec_str(fuelUnits, decs, fuelUnits > 999 ? 3 : 1);
             sprintf_P(str, gasPrice[fuelUnits > 999], decs);
             displaySecondLine(3, str);
-          } while(buttonState&mbuttonBit);
+          } while(!MIDDLE_BUTTON_PRESSED);
 
           if (changed)
           {
@@ -2538,14 +2611,14 @@ void config_menu(void)
 
           do
           {
-            if(!(buttonState&lbuttonBit))
+            if(LEFT_BUTTON_PRESSED)
               params.fuel_adjust--;
-            else if(!(buttonState&rbuttonBit))
+            else if(RIGHT_BUTTON_PRESSED)
               params.fuel_adjust++;
 
             sprintf_P(str, pctdpctpct, params.fuel_adjust);
             displaySecondLine(4, str);
-          } while(buttonState&mbuttonBit);
+          } while(!MIDDLE_BUTTON_PRESSED);
 
           if (oldByteValue != params.fuel_adjust)
           {
@@ -2559,14 +2632,14 @@ void config_menu(void)
 
           do
           { 
-            if(!(buttonState&lbuttonBit))
+            if(LEFT_BUTTON_PRESSED)
               params.speed_adjust--;
-            else if(!(buttonState&rbuttonBit))
+            else if(RIGHT_BUTTON_PRESSED)
               params.speed_adjust++;
 
             sprintf_P(str, pctdpctpct, params.speed_adjust);
             displaySecondLine(4, str);
-          } while(buttonState&mbuttonBit);
+          } while(!MIDDLE_BUTTON_PRESSED);
 
           if (oldByteValue != params.fuel_adjust)
           {
@@ -2580,14 +2653,14 @@ void config_menu(void)
 
           do
           {
-            if(!(buttonState&lbuttonBit) && params.OutingStopOver > 0)
+            if(LEFT_BUTTON_PRESSED && params.OutingStopOver > 0)
               params.OutingStopOver--;
-            else if(!(buttonState&rbuttonBit) && params.OutingStopOver < UCHAR_MAX)
+            else if(RIGHT_BUTTON_PRESSED && params.OutingStopOver < UCHAR_MAX)
               params.OutingStopOver++;
 
             sprintf_P(str, PSTR("- %2d Min + "), params.OutingStopOver * MINUTES_GRANULARITY);
             displaySecondLine(3, str);
-          } while(buttonState&mbuttonBit);
+          } while(!MIDDLE_BUTTON_PRESSED);
 
           if (oldByteValue != params.OutingStopOver)
           {
@@ -2604,14 +2677,14 @@ void config_menu(void)
           {
             unsigned long TripStopOver;   // Allowable stop over time (in milliseconds). Exceeding time starts a new outing.
   
-            if(!(buttonState&lbuttonBit) && params.TripStopOver > 1)
+            if(LEFT_BUTTON_PRESSED && params.TripStopOver > 1)
               params.TripStopOver--;
-            else if(!(buttonState&rbuttonBit) && params.TripStopOver < UCHAR_MAX)
+            else if(RIGHT_BUTTON_PRESSED && params.TripStopOver < UCHAR_MAX)
               params.TripStopOver++;
 
             sprintf_P(str, PSTR("- %2d Hrs + "), params.TripStopOver);
             displaySecondLine(3, str);
-          } while(buttonState&mbuttonBit);
+          } while(!MIDDLE_BUTTON_PRESSED);
 
           if (oldByteValue != params.TripStopOver)
           {
@@ -2628,16 +2701,16 @@ void config_menu(void)
 
           do
           {
-            if(!(buttonState&lbuttonBit) && params.eng_dis!=0)
+            if(LEFT_BUTTON_PRESSED && params.eng_dis!=0)
               params.eng_dis--;
-            else if(!(buttonState&rbuttonBit) && params.eng_dis!=100)
+            else if(RIGHT_BUTTON_PRESSED && params.eng_dis!=100)
               params.eng_dis++;
 
             long_to_dec_str(params.eng_dis, decs, 1);
             sprintf_P(str, PSTR("- %sL + "), decs);
             displaySecondLine(4, str);
           }
-          while(buttonState&mbuttonBit);
+          while(!MIDDLE_BUTTON_PRESSED);
 
           if (oldByteValue != params.eng_dis)
           {
@@ -2670,12 +2743,12 @@ void config_menu(void)
 
             do
             {
-              if(!(buttonState&lbuttonBit))
+              if(LEFT_BUTTON_PRESSED)
               {
                 // while we do not find a supported PID, decrease
                 while(!is_pid_supported(--pid, 1));
               }
-              else if(!(buttonState&rbuttonBit))
+              else if(RIGHT_BUTTON_PRESSED)
               {
                 // while we do not find a supported PID, increase
                 while(!is_pid_supported(++pid, 1));
@@ -2683,7 +2756,7 @@ void config_menu(void)
               
               sprintf_P(str, PSTR("- %8s +  "), (char*)pgm_read_word(&(PID_Desc[pid])));
               displaySecondLine(2, str);
-            } while(buttonState&mbuttonBit);
+            } while(!MIDDLE_BUTTON_PRESSED);
  
             // PID has changed so set it
             if (oldByteValue != pid)
@@ -2764,13 +2837,13 @@ unsigned int convertToLitres(unsigned int gallons)
 void test_buttons(void)
 {
   // middle + left = tank reset
-  if(!(buttonState&mbuttonBit) && !(buttonState&lbuttonBit))
+  if(MIDDLE_BUTTON_PRESSED && LEFT_BUTTON_PRESSED)
   {
     needBacklight(true);
     trip_reset(TANK, true);
   }
   // middle + right = trip reset
-  else if(!(buttonState&mbuttonBit) && !(buttonState&rbuttonBit))
+  else if(MIDDLE_BUTTON_PRESSED && RIGHT_BUTTON_PRESSED)
   {
     // Added choice to reset OUTING trip also. We could merge TANK here too, and then just use the menu selection
     // to select the trip type to reset (maybe ask confirmation or not, since the menu has an exit).
@@ -2779,18 +2852,18 @@ void test_buttons(void)
     trip_reset(OUTING, true);
   }
   // left + right = flash pid info
-  else if(!(buttonState&lbuttonBit) && !(buttonState&rbuttonBit))
+  else if(LEFT_BUTTON_PRESSED && RIGHT_BUTTON_PRESSED)
   {
     display_PID_names();
   }
   // left is cycle through active screen
-  else if(!(buttonState&lbuttonBit))
+  else if(LEFT_BUTTON_PRESSED)
   {
     active_screen = (active_screen+1) % NBSCREEN;
     display_PID_names();
   }
   // right is cycle through brightness settings
-  else if(!(buttonState&rbuttonBit))
+  else if(RIGHT_BUTTON_PRESSED)
   {
     char str[STRLEN] = {0};
 
@@ -2804,7 +2877,7 @@ void test_buttons(void)
     delay(500);
   }
   // middle is go into menu
-  else if(!(buttonState&mbuttonBit))
+  else if(MIDDLE_BUTTON_PRESSED)
   {
     needBacklight(true);    
     config_menu();
@@ -2817,8 +2890,7 @@ void test_buttons(void)
       refreshAlarmScreen = true;
     #endif
    
-    delay(BUTTON_DELAY);
-    buttonState=buttonsUp;
+    delay_reset_button();
     needBacklight(false);    
   }
 }
@@ -2903,7 +2975,7 @@ void setup()                    // run once, when the sketch starts
   engine_off = engine_on = millis();
 
   lcd_init();
-  lcd_print_P(PSTR("OBDuino32k  v157"));
+  lcd_print_P(PSTR("OBDuino32k  v158"));
 #ifndef ELM
   do // init loop
   {
@@ -2966,6 +3038,7 @@ void loop()                     // run over and over again
   #ifdef useECUState
     #ifdef DEBUG
       ECUconnection = true;
+      has_rpm = true;  
     #else
       ECUconnection = verifyECUAlive();
     #endif
