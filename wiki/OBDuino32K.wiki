@@ -11,7 +11,7 @@ Time and a little money.
 Here is a sample list of parts, cost, and possible places to obtain them
 
 ||Part||Cost||Buy||
-||Arduino||$17 - $30 || [http://www.solarbotics.com/products/28920/ Freeduino via SB], [http://store.fundamentallogic.com/ecom/index.php?main_page=product_info&cPath=2&products_id=10 iDuino via FL||
+||Arduino||$17 - $30 || [http://www.solarbotics.com/products/28920/ Freeduino via SB], [http://store.fundamentallogic.com/ecom/index.php?main_page=product_info&cPath=2&products_id=10 iDuino via FL]||
 ||HD44780 16X2 LCD Display||$8-$15||[http://store.fundamentallogic.com/ecom/index.php?main_page=index&cPath=4_23 FL], [http://shop.ebay.ca/i.html?_nkw=HD44780+16x2&_sacat=0&_trksid=p3286.m270.l1313&_odkw=HD44780&_osacat=0 ebay]||
 ||Transistors (2N3906 or NTE159)||nickles||[http://store.fundamentallogic.com/ecom/index.php?main_page=index&cPath=4_5 FL]||
 ||Three small push buttons||dimes||[http://store.fundamentallogic.com/ecom/index.php?main_page=product_info&cPath=4_18&products_id=35 FL] ||
