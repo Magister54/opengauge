@@ -1,16 +1,26 @@
-...This is to be finished shortly and will be the main page for the OBDuino project, with all resource hopefully being linked from here.
+#summary Homepage of the OBDuino32K Project
+<wiki:toc max_depth="1" />
 
+= *WHY?* What does it do? =
+To be filled out...
 
-#summary One-sentence summary of this page.
+= What does it cost? =
+To be filled out...
 
-= Introduction =
+= Are there currently bugs and limitations? = 
+To be filled out...
 
-Add your content here.
+= How do I get one? =
+To be filled out...
 
+== What tools and skills will I need? ==
+To be filled out...
 
-= Details =
+== What protocol does my car use? ==
+To be filled out...
 
-Add your content here.  Format your content with:
-  * Text in *bold* or _italic_
-  * Headings, paragraphs, and lists
-  * Automatic links to other wiki pages
+== Where can I the parts? ==
+To be filled out...
+
+= Oh no! it doesn't work for me! =
+Please check out the FAQ section.  If you are no further ahead, check if your answer is available on the forums at ecomodder.com.
