@@ -1,11 +1,27 @@
 #summary Homepage of the OBDuino32K Project
-<wiki:toc max_depth="1" />
+<wiki:toc max_depth="2" />
 
 = *WHY?* What does it do? =
-To be filled out...
+This instrument will provide real time data of your car's condition and its fuel efficiency.  This directly translates to saving money! How?
+The number one cause of low mileage, and the number one means of increasing your mileage are controled by just your right foot.  By providing real time feedback of your driving habits this device will provide hard data and motivation to learn to handle your vehicle in an eco-friendly manner.
+With this tool, and your improved driving techniques, some have said these type of devices can pay for themselves in a month or two.
 
 = What does it cost? =
-To be filled out...
+Time and a little money.
+Here is a sample list of parts, cost, and possible places to obtain them
+
+||Part||Cost||Buy||
+||Arduino||$17 - $30 || [http://www.solarbotics.com/products/28920/ Freeduino via SB], [http://store.fundamentallogic.com/ecom/index.php?main_page=product_info&cPath=2&products_id=10 iDuino via FL||
+||HD44780 16X2 LCD Display||$8-$15||[http://store.fundamentallogic.com/ecom/index.php?main_page=index&cPath=4_23 FL], [http://shop.ebay.ca/i.html?_nkw=HD44780+16x2&_sacat=0&_trksid=p3286.m270.l1313&_odkw=HD44780&_osacat=0 ebay]||
+||Transistors (2N3906 or NTE159)||nickles||[http://store.fundamentallogic.com/ecom/index.php?main_page=index&cPath=4_5 FL]||
+||Three small push buttons||dimes||[http://store.fundamentallogic.com/ecom/index.php?main_page=product_info&cPath=4_18&products_id=35 FL] ||
+||220ohm & 510ohm resistor||pennies||[http://shop.ebay.ca/i.html?_nkw=220+resistor+ohms&_sacat=0&_trksid=p3286.m270.l1313&_dmpt=Video_Games_Accessories&_odkw=220+resistor&_osacat=0 ebay]||
+||Interface Hardware||$5-$30||See Note Below||
+||DB9 (Serial) Male Connector||$1||ebay||
+||OBD2 Port Connector ||$5||[http://shop.ebay.ca/i.html?_nkw=OBD2+Plug&_sacat=0&_trksid=p3286.m270.l1313&_odkw=j1962&_osacat=0 ebay]||
+
+Interface hardware:
+ISO, CAN, ELM
 
 = Are there currently bugs and limitations? = 
 To be filled out...
