@@ -19,6 +19,7 @@ Here is a sample list of parts, cost, and possible places to obtain them
 ||Interface Hardware||$5-$30||See Note Below||
 ||DB9 (Serial) Male Connector||$1||ebay||
 ||OBD2 Port Connector ||$5||[http://shop.ebay.ca/i.html?_nkw=OBD2+Plug&_sacat=0&_trksid=p3286.m270.l1313&_odkw=j1962&_osacat=0 ebay]||
+||Total:||$37 - $82||Searching can Save!||
 
 Interface hardware:
 ISO, CAN, ELM
