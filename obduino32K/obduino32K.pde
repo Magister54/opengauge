@@ -21,6 +21,8 @@ July 23, 2009:
  New menuing system for parameters, and got rid of display flicker: Antony
 Sept 01, 2009:
  Better handling of 14230 protocol. Tweak in clear button routine: Antony
+Sept 27, 2009:
+ Correct four line LCD positioning: Nickdigger (via ecomodder.com)
 
 To-Do:
   Bugs:
@@ -2975,7 +2977,7 @@ void setup()                    // run once, when the sketch starts
   engine_off = engine_on = millis();
 
   lcd_init();
-  lcd_print_P(PSTR("OBDuino32k  v158"));
+  lcd_print_P(PSTR("OBDuino32k  v165"));
 #ifndef ELM
   do // init loop
   {
@@ -3356,13 +3358,20 @@ int memoryTest(void)
 /*
  * LCD functions
  */
-// x=0..16, y=0..1
-void lcd_gotoXY(byte x, byte y)
+void lcd_gotoXY(byte charPos, byte line)
 {
-  byte dr=0x80+x;
-  if(y!=0)    // save 2 bytes compared to "if(y==1)"
-    dr+=0x40;
-  lcd_commandWrite(dr);
+  // Positioning is zero based (first character or line is zero).
+  byte position=0x80+charPos;
+  
+  if (line&1)  // add offset value for line 1 (and 3 on a four line display)
+    position+=0x40;
+  
+#if LCD_ROWS == 4
+  if (line&2)  // add offset value for line 2 on a four line display
+    position+=0x14;
+#endif
+  
+  lcd_commandWrite(position);
 }
 
 void lcd_print(char *string)
