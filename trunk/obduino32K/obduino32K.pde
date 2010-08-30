@@ -1,14 +1,17 @@
-/* OBDuino32K  (Requres Atmega328 for your Arduino)
+/* OBDuino32K  (Requires Atmega328 for your Arduino)
 
  Copyright (C) 2008-2009
 
- Main coding/ISO/ELM: Frédéric (aka Magister on ecomodder.com)
- LCD part: Dave (aka dcb on ecomodder.com), optimized by Frédéric
+ Main coding/ISO/ELM: FrÃ©dÃ©ric (aka Magister on ecomodder.com)
+ LCD part: Dave (aka dcb on ecomodder.com), optimized by FrÃ©dÃ©ric
  ISO Communication Protocol: Russ, Antony, Mike
  Features: Mike, Antony
- Bugs & Fixes: Antony, Frédéric, Mike
+ Bugs & Fixes: Antony, FrÃ©dÃ©ric, Mike
 
-Latest Changes(June 9th, 2009):
+Latest Changes
+August 30th, 2010:
+ Some LCD optimizations, formula for MAP, fix check_mil (untested)
+June 9th, 2009:
  ISO 9141 re-init, ECU polling, Car alarm and other tweaks by Antony
 June 24, 1009:
  Added three parameters to the mix, removed unrequired RPM call,
@@ -303,10 +306,10 @@ prog_char *PID_Desc[] PROGMEM=
 "Fuel SS",  // 0x03   Fuel system status
 "Eng Load", // 0x04   Calculated engine load value
 "CoolantT", // 0x05   Engine coolant temperature
-"ST F%T 1", // 0x06   Short term fuel % trim—Bank 1
-"LT F%T 1", // 0x07   Long term fuel % trim—Bank 1
-"ST F%T 2", // 0x08   Short term fuel % trim—Bank 2
-"LT F%T 2", // 0x09   Long term fuel % trim—Bank 2
+"ST F%T 1", // 0x06   Short term fuel % trimâ€”Bank 1
+"LT F%T 1", // 0x07   Long term fuel % trimâ€”Bank 1
+"ST F%T 2", // 0x08   Short term fuel % trimâ€”Bank 2
+"LT F%T 2", // 0x09   Long term fuel % trimâ€”Bank 2
 "Fuel Prs", // 0x0A   Fuel pressure
 "  MAP  ",  // 0x0B   Intake manifold absolute pressure
 "  RPM  ",  // 0x0C   Engine RPM
@@ -614,8 +617,8 @@ prog_char * tripNames[NBTRIP] PROGMEM =
 typedef struct
 {
   unsigned long dist;   // in cm
-  unsigned long fuel;   // in µL
-  unsigned long waste;  // in µL
+  unsigned long fuel;   // in ÂµL
+  unsigned long waste;  // in ÂµL
 }
 trip_t;
 
@@ -966,12 +969,12 @@ byte iso_write_data(byte *data, byte len)
   // ISO header
   buf[0]=0x68;
   buf[1]=0x6A;		// 0x68 0x6A is an OBD-II request
-  buf[2]=0xF1;		// our requester’s address (off-board tool)
+  buf[2]=0xF1;		// our requesterâ€™s address (off-board tool)
   #else
   // 14230 protocol header
   buf[0]=0xc2; // Request of 2 bytes
   buf[1]=0x33; // Target address
-  buf[2]=0xF1; // our requester’s address (off-board tool)
+  buf[2]=0xF1; // our requesterâ€™s address (off-board tool)
   #endif
 
   // append message
@@ -1678,7 +1681,7 @@ void get_icons(char *retbuf)
   // divide MAF by 100 because our function return MAF*100
   // but multiply by 100 for double digits precision
   // divide MAF by 14.7 air/fuel ratio to have g of fuel/s
-  // divide by 730 (g/L at 15°C) according to Canadian Gov to have L/s
+  // divide by 730 (g/L at 15Â°C) according to Canadian Gov to have L/s
   // multiply by 3600 to get litre per hour
   // formula: (3600 * MAF) / (14.7 * 730 * VSS)
   // = maf*0.3355/vss L/km
@@ -1741,7 +1744,7 @@ void get_cons(char *retbuf, byte ctrip)
   }
   else  // the car has moved and fuel used
   {
-    // from µL/cm to L/100 so div by 1000000 for L and mul by 10000000 for 100km
+    // from ÂµL/cm to L/100 so div by 1000000 for L and mul by 10000000 for 100km
     // multiply by 100 to have 2 digits precision
     // we can not mul fuel by 1000 else it can go higher than ULONG_MAX
     // so divide distance by 1000 instead (resolution of 10 metres)
@@ -1786,7 +1789,7 @@ void get_fuel(char *retbuf, byte ctrip)
   unsigned long cfuel;
   char decs[16];
 
-  // convert from µL to cL
+  // convert from ÂµL to cL
   cfuel=params.trip[ctrip].fuel/10000;
 
   // convert in gallon if requested
@@ -1805,7 +1808,7 @@ void get_waste(char *retbuf, byte ctrip)
   unsigned long cfuel;
   char decs[16];
 
-  // convert from µL to cL
+  // convert from ÂµL to cL
   cfuel=params.trip[ctrip].waste/10000;
 
   // convert in gallon if requested
@@ -1846,7 +1849,7 @@ void get_remain_dist(char *retbuf)
   // tank size is in litres (converted at input time)
   tank_tmp=params.tank_size;
 
-  // convert from µL to dL
+  // convert from ÂµL to dL
   remain_fuel=tank_tmp - params.trip[TANK].fuel/100000;
 
   // calculate remaining distance using tank cons and remaining fuel
@@ -1983,19 +1986,19 @@ void accu_trip(void)
       maf=(imap*params.eng_dis)/5;
     }
     // add MAF result to trip
-    // we want fuel used in µL
+    // we want fuel used in ÂµL
     // maf gives grams of air/s
     // divide by 100 because our MAF return is not divided!
     // divide by 14.7 (a/f ratio) to have grams of fuel/s
     // divide by 730 to have L/s
-    // mul by 1000000 to have µL/s
+    // mul by 1000000 to have ÂµL/s
     // divide by 1000 because delta_time is in ms
 
     // at idle MAF output is about 2.25 g of air /s on my car
     // so about 0.15g of fuel or 0.210 mL
-    // or about 210 µL of fuel/s so µL is not too weak nor too large
+    // or about 210 ÂµL of fuel/s so ÂµL is not too weak nor too large
     // as we sample about 4 times per second at 9600 bauds
-    // ulong so max value is 4'294'967'295 µL or 4'294 L (about 1136 gallon)
+    // ulong so max value is 4'294'967'295 ÂµL or 4'294 L (about 1136 gallon)
     // also, adjust maf with fuel param, will be used to display instant cons
     delta_fuel=(maf*params.fuel_adjust*delta_time)/107310;
     for(byte i=0; i<NBTRIP; i++) {
@@ -2121,7 +2124,7 @@ void check_mil_code(void)
 #ifndef ELM
   byte cmd[2];
   byte buf[6];
-  byte i, j, k;
+  byte i, j, k, nbpkt;
 #endif
 
   if (!get_pid(MIL_CODE, str, &tempLong))
@@ -2168,7 +2171,13 @@ void check_mil_code(void)
     cmd[0]=0x03;
     iso_write_data(cmd, 1);
 
-    for(i=0;i<nb/3;i++)  // each received packet contain 3 codes
+    // each received packet contain 3 codes
+    // if there is 1 to 3 codes there is 1 packet
+   // if there is 4 to 6 codes there is 2 packets
+    // hence the formula
+    nbpkt=((nb-1)/3) + 1;
+      
+    for(i=0;i<nbpkt;i++)  // each received packet contain 3 codes
     {
       iso_read_data(buf, 6);
 
@@ -2974,7 +2983,7 @@ void setup()                    // run once, when the sketch starts
   engine_off = engine_on = millis();
 
   lcd_init();
-  lcd_print_P(PSTR("OBDuino32k  v165"));
+  lcd_print_P(PSTR("OBDuino32k  v169"));
 #ifndef ELM
   do // init loop
   {
@@ -3373,16 +3382,16 @@ void lcd_gotoXY(byte charPos, byte line)
 
 void lcd_print(char *string)
 {
-  while(*string != 0)
-    lcd_dataWrite(*string++);
+  char c;
+  while( (c = *string++) )
+    lcd_dataWrite(c);
 }
 
 void lcd_print_P(char *string)
 {
-  char str[STRLEN];
-
-  sprintf_P(str, string);
-  lcd_print(str);
+  char c;
+  while( (c = pgm_read_byte(string++)) )
+    lcd_dataWrite(c);
 }
 
 void lcd_cls_print_P(char *string)
@@ -3417,7 +3426,7 @@ void lcd_init()
   // char 0 is not used
   // 1&2 is the L/100 datagram in 2 chars only
   // 3&4 is the km/h datagram in 2 chars only
-  // 5 is the ° char (degree)
+  // 5 is the Â° char (degree)
   // 6&7 is the mi/g char
 #define NB_CHAR  7
   // set cg ram to address 0x08 (B001000) to skip the
@@ -3584,3 +3593,4 @@ void get_cost(char *retbuf, byte ctrip)
   long_to_dec_str(cents, decs, 2);
   sprintf_P(retbuf, PSTR("$%s"), decs);
 }
+
