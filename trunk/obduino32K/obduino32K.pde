@@ -115,7 +115,6 @@ void lcd_cls_print_P(char *string);  // clear screen and display string
 void lcd_cls();
 void lcd_init();
 void lcd_tickleEnable();
-void lcd_commandWriteSet();
 void lcd_commandWrite(byte value);
 void lcd_dataWrite(byte value);
 void lcd_pushNibble(byte value);
@@ -1974,14 +1973,14 @@ void accu_trip(void)
       
       imap=(rpm*manp)/(iat+273);
 
-      // does not divide by 100 because we use (MAF*100) in formula
+      // does not divide by 100 at the end because we use (MAF*100) in formula
       // but divide by 10 because engine displacement is in dL
-      // 28.9644*100/(80*120*8.314472*10)= about 0.0036 or 36/10000
+      // imap * VE * ED * MM / (120 * 100 * R * 10) = 0.0020321
       // ex: VSS=80km/h, MAP=64kPa, RPM=1800, IAT=21C
-      //     engine=2.2L, efficiency=80%
-      // maf = ( (1800*64)/(21+273) * 80 * 22 * 29 ) / 10000
-      // maf = 1995 or 19.95 g/s which is about right at 80km/h
-      maf=(imap * params.eng_dis * 36) / 100;  //only need to divide by 100 because no longer multiplying by V.E.
+      //     engine=2.2L, efficiency=70%
+      // maf = ( (1800*64)/(21+273) * 22 * 20 ) / 100
+      // maf = 17.24 g/s which is about right at 80km/h
+      maf=(imap*params.eng_dis)/5;
     }
     // add MAF result to trip
     // we want fuel used in µL
@@ -1998,8 +1997,7 @@ void accu_trip(void)
     // as we sample about 4 times per second at 9600 bauds
     // ulong so max value is 4'294'967'295 µL or 4'294 L (about 1136 gallon)
     // also, adjust maf with fuel param, will be used to display instant cons
-    maf=(maf*params.fuel_adjust)/100;
-    delta_fuel=(maf*delta_time)/1073;
+    delta_fuel=(maf*params.fuel_adjust*delta_time)/107310;
     for(byte i=0; i<NBTRIP; i++) {
       params.trip[i].fuel+=delta_fuel;
       //code to accumlate fuel wasted while idling
@@ -2827,14 +2825,13 @@ void trip_reset(byte ctrip, boolean ask)
 
 unsigned int convertToGallons(unsigned int litres)
 {
-  return (unsigned int) ((float) litres / 3.785411);
+  return (unsigned int) ( ((unsigned long)litres*100L) / 378L );
 }
 
 unsigned int convertToLitres(unsigned int gallons)
 {
-  return (unsigned int) ((float) gallons / 0.264172);
+  return (unsigned int) ( ((unsigned long)gallons*378L) / 100L );
 }
-
 
 void test_buttons(void)
 {
@@ -3403,12 +3400,12 @@ void lcd_init()
   for(byte i=0; i<3; i++)
   {
     lcd_pushNibble(B00110000);  // send (B0011) to DB7-4
-    lcd_commandWriteSet();
+    lcd_tickleEnable();
     delay(5);                     // wait for more than 4.1 msec or 100 usec
   }
 
   lcd_pushNibble(B00100000);  // send (B0010) to DB7-4 for 4bit
-  lcd_commandWriteSet();
+  lcd_tickleEnable();
   delay(1);                     // wait for more than 100 usec
   // ready to use normal CommandWrite() function now!
 
@@ -3442,30 +3439,21 @@ void lcd_init()
       lcd_dataWrite(pgm_read_byte(&chars[y*NB_CHAR+x])); //write the character data to the character generator ram
 
   lcd_cls();
-  lcd_commandWrite(B10000000);  // set dram to zero
 }
 
 void lcd_cls()
 {
-  lcd_commandWrite(B00000001);  // Clear Display
-  lcd_commandWrite(B00000010);  // Return Home
+  lcd_commandWrite(B00000001);  // Clear Display and return home
+  delay(2); // 1.52ms according to spec
 }
 
 void lcd_tickleEnable()
 {
   // send a pulse to enable
   digitalWrite(EnablePin,HIGH);
-  delayMicroseconds(1);  // pause 1 ms according to datasheet
+  delayMicroseconds(1);  // pause 1 micros according to datasheet
   digitalWrite(EnablePin,LOW);
-  delayMicroseconds(1);  // pause 1 ms according to datasheet
-}
-
-void lcd_commandWriteSet()
-{
-  digitalWrite(EnablePin,LOW);
-  delayMicroseconds(1);  // pause 1 ms according to datasheet
-  digitalWrite(DIPin,0);
-  lcd_tickleEnable();
+  delayMicroseconds(1);  // pause 1 micros according to datasheet
 }
 
 void lcd_pushNibble(byte value)
@@ -3476,25 +3464,26 @@ void lcd_pushNibble(byte value)
   digitalWrite(DB4Pin, value & 16);
 }
 
-void lcd_commandWrite(byte value)
+void lcd_write(byte value)
 {
   lcd_pushNibble(value);
-  lcd_commandWriteSet();
+  lcd_tickleEnable();
   value<<=4;
   lcd_pushNibble(value);
-  lcd_commandWriteSet();
-  delay(5);
+  lcd_tickleEnable();
+  delayMicroseconds(38);	// 38 according to spec for all commands except cls/home
+}
+
+void lcd_commandWrite(byte value)
+{
+  digitalWrite(DIPin, LOW);
+  lcd_write(value);
 }
 
 void lcd_dataWrite(byte value)
 {
   digitalWrite(DIPin, HIGH);
-  lcd_pushNibble(value);
-  lcd_tickleEnable();
-  value<<=4;
-  lcd_pushNibble(value);
-  lcd_tickleEnable();
-  delay(5);
+  lcd_write(value);
 }
 
 /*
