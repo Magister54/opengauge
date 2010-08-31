@@ -100,27 +100,18 @@ To-Do:
 #include <avr/eeprom.h>
 #include <avr/pgmspace.h>
 
+#include <LiquidCrystal.h>
+
 // LCD Pins same as mpguino
-#define DIPin 4 // register select RS
-#define DB4Pin 7
-#define DB5Pin 8
-#define DB6Pin 12
-#define DB7Pin 13
+// rs=4, enable=5, data=7,8,12,13
+LiquidCrystal lcd(4, 5, 7, 8, 12, 13);
 #define ContrastPin 6
-#define EnablePin 5
 #define BrightnessPin 9
 
 // LCD prototypes
-void lcd_gotoXY(byte x, byte y);
-void lcd_print(char *string);
 void lcd_print_P(char *string);  // to work with string in flash and PSTR()
 void lcd_cls_print_P(char *string);  // clear screen and display string
-void lcd_cls();
-void lcd_init();
-void lcd_tickleEnable();
-void lcd_commandWrite(byte value);
-void lcd_dataWrite(byte value);
-void lcd_pushNibble(byte value);
+void lcd_char_init();
 
 // Memory prototypes
 void params_load(void);
@@ -166,17 +157,17 @@ const byte brightness[brightnessLength]={
 byte brightnessIdx=2;
 
 /* LCD Display parameters */
-/* Adjust LCD_width or LCD_rows if LCD is different than 16 characters by 2 rows*/
+/* Adjust LCD_COLS or LCD_ROWS if LCD is different than 16 characters by 2 rows*/
 // Note: Not currently tested on display larger than 16x2
 
 // How many rows of characters for the LCD (must be at least two)
-#define LCD_ROWS 2 
+#define LCD_ROWS      2 
 // How many characters across for the LCD (must be at least sixteen)
-const byte LCD_width = 16;
+#define LCD_COLS      16
 // Calculate the middle point of the LCD display width
-const byte LCD_split = LCD_width / 2;
+#define LCD_SPLIT    (LCD_COLS / 2)
 //Calculate how many PIDs fit on a data screen (two per line)
-const byte LCD_PID_count = LCD_ROWS * 2;
+#define LCD_PID_COUNT  (LCD_ROWS * 2)
 
 /* PID stuff */
 
@@ -625,7 +616,7 @@ trip_t;
 // each screen contains n PIDs (two per line)
 typedef struct
 {
-  byte PID[LCD_PID_count];
+  byte PID[LCD_PID_COUNT];
 }
 screen_t;
 
@@ -857,11 +848,11 @@ void elm_init()
 #ifndef DEBUG
   // reset, wait for something and display it
   elm_command(str, PSTR("ATWS\r"));
-  lcd_gotoXY(0,1);
+  lcd.setCursor(0,1);
   if(str[0]=='A')  // we have read back the ATWS
-    lcd_print(str+4);
+    lcd.print(str+4);
   else
-    lcd_print(str);
+    lcd.print(str);
   lcd_print_P(PSTR(" Init"));
 
   // turn echo off
@@ -2079,22 +2070,22 @@ void display(byte location, byte pid)
   // right locations are right aligned
   
   // truncate any string that is too long to display correctly
-  str[LCD_split] = '\0';
+  str[LCD_SPLIT] = '\0';
   
   byte row = location / 2;  // Two PIDs per line
   boolean isLeft = location % 2 == 0; // First PID per line is always left
-  byte textPos    = isLeft ? 0 : LCD_width - strlen(str);  
-  byte clearStart = isLeft ? strlen(str) : LCD_split; 
-  byte clearEnd   = isLeft ? LCD_split : textPos;  
+  byte textPos    = isLeft ? 0 : LCD_COLS - strlen(str);
+  byte clearStart = isLeft ? strlen(str) : LCD_SPLIT;
+  byte clearEnd   = isLeft ? LCD_SPLIT : textPos;
     
-  lcd_gotoXY(textPos,row);
-  lcd_print(str);
+  lcd.setCursor(textPos,row);
+  lcd.print(str);
 
   // clean up any possible leading or trailing data
-  lcd_gotoXY(clearStart,row);
+  lcd.setCursor(clearStart,row);
   for (byte cleanup = clearStart; cleanup < clearEnd; cleanup++)
   {
-    lcd_dataWrite(' ');
+    lcd.write(' ');
   }  
 }
 
@@ -2146,11 +2137,11 @@ void check_mil_code(void)
     // we have MIL on
     nb=(n>>24) & 0x7F;
     lcd_cls_print_P(PSTR("CHECK ENGINE ON"));
-    lcd_gotoXY(0,1);
+    lcd.setCursor(0,1);
     sprintf_P(str, PSTR("%d CODE(S) IN ECU"), nb);
-    lcd_print(str);
+    lcd.print(str);
     delay(2000);
-    lcd_cls();
+    lcd.clear();
 
 #ifdef ELM
     // retrieve code
@@ -2160,7 +2151,7 @@ void check_mil_code(void)
       return;  // something wrong
 
     // must convert to P/C/B/U etc
-    lcd_print(str+3);
+    lcd.print(str+3);
     delay(5000);
 #else
     // we display only the first 6 codes
@@ -2206,8 +2197,8 @@ void check_mil_code(void)
         str[k++]='0' + (buf[j*2 +1] & 0x0F);
       }
       str[k]='\0';  // make asciiz
-      lcd_print(str);
-      lcd_gotoXY(0, 1);  // go to next line to display the 3 next
+      lcd.print(str);
+      lcd.setCursor(0, 1);  // go to next line to display the 3 next
     }
 #endif
   }
@@ -2261,7 +2252,7 @@ byte menu_select_yes_no(byte p)
     else if(MIDDLE_BUTTON_PRESSED)
       exitMenu = true;
   
-    lcd_gotoXY(4,1);
+    lcd.setCursor(4,1);
     if(p==0)
       lcd_print_P(select_no);
     else
@@ -2294,8 +2285,8 @@ byte menu_selection(char ** menu, byte arraySize)
   // Note: values are changed with left/right and set with middle
   // Default selection is always the first selection, which should be 'Exit'
   
-  lcd_cls();
-  lcd_print((char *)pgm_read_word(&(menu[0])));
+  lcd.clear();
+  lcd.print((char *)pgm_read_word(&(menu[0])));
   delay_reset_button();  // make sure to clear button
 
   do
@@ -2318,30 +2309,30 @@ byte menu_selection(char ** menu, byte arraySize)
     // Current selection could be in the middle if possible.
     // If few selections and screen size permits, selections could be centered?
     
-    lcd_gotoXY(0,1);
+    lcd.setCursor(0,1);
     screenChars = 1;
-    lcd_dataWrite('('); // Wrap the current selection with brackets
+    lcd.write('('); // Wrap the current selection with brackets
     menuItem = 0;
     do
     {
-      lcd_print((char*)pgm_read_word(&(menu[selection+menuItem])));
+      lcd.print((char*)pgm_read_word(&(menu[selection+menuItem])));
 
       if (menuItem == 0) 
       {
         // include closing bracket
-        lcd_dataWrite(')');
+        lcd.write(')');
         screenChars++;
       }  
-      lcd_dataWrite(' ');
+      lcd.write(' ');
       screenChars += (strlen((char*)pgm_read_word(&(menu[selection+menuItem]))) + 1);
       menuItem++;
     }
-    while (screenChars < LCD_width && selection + menuItem < arraySize);
+    while (screenChars < LCD_COLS && selection + menuItem < arraySize);
 
     // Do any cover up of old data
-    while (screenChars < LCD_width)
+    while (screenChars < LCD_COLS)
     {
-      lcd_dataWrite(' ');
+      lcd.write(' ');
       screenChars++;
     }
 
@@ -2364,20 +2355,20 @@ void config_menu(void)
 #ifdef ELM
 #ifndef DEBUG  // it takes 98 bytes
   // display protocol, just for fun
-  lcd_cls();
+  lcd.clear();
   memset(str, 0, STRLEN);
   elm_command(str, PSTR("ATDP\r"));
   if(str[0]=='A')  // string start with "AUTO, ", skip it
   {
-    lcd_print(str+6);
-    lcd_gotoXY(0,1);
-    lcd_print(str+6+16);
+    lcd.print(str+6);
+    lcd.setCursor(0,1);
+    lcd.print(str+6+16);
   }
   else
   {
-    lcd_print(str);
-    lcd_gotoXY(0,1);
-    lcd_print(str+16);
+    lcd.print(str);
+    lcd.setCursor(0,1);
+    lcd.print(str+16);
   }
   delay(2000);
 #endif
@@ -2743,11 +2734,11 @@ void config_menu(void)
         if (PIDSelection != 0 && PIDSelection <= NBSCREEN)
         {
           cur_screen = PIDSelection - 1;
-          for(byte current_PID=0; current_PID<LCD_PID_count; current_PID++)
+          for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
           {
-            lcd_cls();
+            lcd.clear();
             sprintf_P(str, PSTR("Scr %d      PID %d"), cur_screen+1, current_PID+1);
-            lcd_print(str);
+            lcd.print(str);
             oldByteValue = pid = params.screen[cur_screen].PID[current_PID];
 
             do
@@ -2783,7 +2774,7 @@ void config_menu(void)
   {
     // save params in EEPROM
     lcd_cls_print_P(PSTR("Saving config"));
-    lcd_gotoXY(0,1);
+    lcd.setCursor(0,1);
     lcd_print_P(PSTR("Please wait..."));
     params_save();
   }
@@ -2792,8 +2783,8 @@ void config_menu(void)
 // This helps reduce code size by containing repeated functionality.
 void displaySecondLine(byte position, char * str)
 {
-  lcd_gotoXY(position,1);
-  lcd_print(str);
+  lcd.setCursor(position,1);
+  lcd.print(str);
   delay_reset_button(); 
 }
 
@@ -2804,9 +2795,9 @@ void trip_reset(byte ctrip, boolean ask)
   char str[STRLEN];
  
   // Display the intent
-  lcd_cls();
+  lcd.clear();
   sprintf_P(str, PSTR("Zero %s data"), (char*)pgm_read_word(&(tripNames[ctrip])));
-  lcd_print(str);
+  lcd.print(str);
   
   if(ask)
   {
@@ -2879,9 +2870,9 @@ void test_buttons(void)
     analogWrite(BrightnessPin, brightness[brightnessIdx]);
 
     lcd_cls_print_P(PSTR(" LCD backlight"));
-    lcd_gotoXY(6,1);
+    lcd.setCursor(6,1);
     sprintf_P(str,PSTR("%d / %d"),brightnessIdx + 1,brightnessLength);
-    lcd_print(str);
+    lcd.print(str);
     delay(500);
   }
   // middle is go into menu
@@ -2906,15 +2897,15 @@ void test_buttons(void)
 void display_PID_names(void)
 {
   needBacklight(true);    
-  lcd_cls();
+  lcd.clear();
   // Lets flash up the description of the PID's we use when screen changes
   byte count = 0;
   for (byte row = 0; row < LCD_ROWS; row++)
   {
-    for (byte col = 0; col == 0 || col == LCD_split; col+=LCD_split)
+    for (byte col = 0; col == 0 || col == LCD_SPLIT; col+=LCD_SPLIT)
     {
-      lcd_gotoXY(col,row);  
-      lcd_print((char*)pgm_read_word(&(PID_Desc[params.screen[active_screen].PID[count++]])));
+      lcd.setCursor(col,row);  
+      lcd.print((char*)pgm_read_word(&(PID_Desc[params.screen[active_screen].PID[count++]])));
     }  
   }
   
@@ -2972,22 +2963,16 @@ void setup()                    // run once, when the sketch starts
   // LCD pin init
   analogWrite(BrightnessPin,brightness[brightnessIdx]);
   analogWrite(ContrastPin, params.contrast);
-  pinMode(EnablePin,OUTPUT);
-  pinMode(DIPin,OUTPUT);
-  pinMode(DB4Pin,OUTPUT);
-  pinMode(DB5Pin,OUTPUT);
-  pinMode(DB6Pin,OUTPUT);
-  pinMode(DB7Pin,OUTPUT);
-  delay(100);
+  lcd.begin(LCD_COLS, LCD_ROWS);
+  lcd_char_init();
 
   engine_off = engine_on = millis();
 
-  lcd_init();
   lcd_print_P(PSTR("OBDuino32k  v169"));
 #ifndef ELM
   do // init loop
   {
-    lcd_gotoXY(2,1);
+    lcd.setCursor(2,1);
     #ifdef ISO_9141
       lcd_print_P(PSTR("ISO9141 Init"));
     #elif defined ISO_14230_fast
@@ -3012,7 +2997,7 @@ void setup()                    // run once, when the sketch starts
       #endif
    #endif
     
-    lcd_gotoXY(2,1);
+    lcd.setCursor(2,1);
     lcd_print_P(success ? PSTR("Successful!  ") : PSTR("Failed!         "));
 
     delay(1000);
@@ -3032,7 +3017,7 @@ void setup()                    // run once, when the sketch starts
   // check if we have MIL code
   check_mil_code();
 
-  lcd_cls();
+  lcd.clear();
   old_time=millis();  // epoch
   getpid_time=old_time;
 }
@@ -3087,11 +3072,11 @@ void loop()                     // run over and over again
       lcd_cls_print_P(PSTR("TRIPS SAVED!"));
       //Lets Display how much fuel for the tank we wasted.
       char str[STRLEN] = {0};
-      lcd_gotoXY(0,1);
+      lcd.setCursor(0,1);
       lcd_print_P(PSTR("Wasted:"));
-      lcd_gotoXY(LCD_split,1);
+      lcd.setCursor(LCD_SPLIT,1);
       get_waste(str,TANK);
-      lcd_print(str);
+      lcd.print(str);
 
       delay(2000);
       //Turn the Backlight off
@@ -3110,7 +3095,7 @@ void loop()                     // run over and over again
     accu_trip();
   
     // display on LCD
-    for(byte current_PID=0; current_PID<LCD_PID_count; current_PID++)
+    for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
       display(current_PID, params.screen[active_screen].PID[current_PID]);
   }
   else
@@ -3120,7 +3105,7 @@ void loop()                     // run over and over again
       displayAlarmScreen();
     #else
     // for some reason the display on LCD
-    for(byte current_PID=0; current_PID<LCD_PID_count; current_PID++)
+    for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
       display(current_PID, params.screen[active_screen].PID[current_PID]);
     #endif
 
@@ -3174,11 +3159,11 @@ void loop()                     // run over and over again
     lcd_cls_print_P(PSTR("TRIPS SAVED!"));
     //Lets Display how much fuel for the tank we wasted.
     char str[STRLEN] = {0};
-    lcd_gotoXY(0,1);
+    lcd.setCursor(0,1);
     lcd_print_P(PSTR("Wasted:"));
-    lcd_gotoXY(LCD_split,1);
+    lcd.setCursor(LCD_SPLIT,1);
     get_waste(str,TANK);
-    lcd_print(str);
+    lcd.print(str);
     delay(2000);
     //Turn the Backlight off
     analogWrite(BrightnessPin,brightness[0]);
@@ -3196,7 +3181,7 @@ void loop()                     // run over and over again
   accu_trip();
 
   // display on LCD
-  for(byte current_PID=0; current_PID<LCD_PID_count; current_PID++)
+  for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
     display(current_PID, params.screen[active_screen].PID[current_PID]);
 
   #endif
@@ -3266,7 +3251,7 @@ void displayAlarmScreen(void)
     pingDirection = 0;
 
     lcd_cls_print_P(PSTR("OBDuino Security" ));
-    lcd_gotoXY(pingPosition,1);
+    lcd.setCursor(pingPosition,1);
     lcd_dataWrite('*');
     
     refreshAlarmScreen = false;
@@ -3274,7 +3259,7 @@ void displayAlarmScreen(void)
   }
   else if (millis() > nextMoveTime)
   {
-    lcd_gotoXY(pingPosition,1);
+    lcd.setCursor(pingPosition,1);
     lcd_dataWrite(' ');
 
     if(pingPosition == 0 || pingPosition == lastLCDChar)
@@ -3293,7 +3278,7 @@ void displayAlarmScreen(void)
       pingPosition-=3;
     }
     
-    lcd_gotoXY(pingPosition,1);
+    lcd.setCursor(pingPosition,1);
     lcd_dataWrite('*');
     
     nextMoveTime = millis() + pingTimeOut;
@@ -3364,64 +3349,21 @@ int memoryTest(void)
 /*
  * LCD functions
  */
-void lcd_gotoXY(byte charPos, byte line)
-{
-  // Positioning is zero based (first character or line is zero).
-  byte position=0x80+charPos;
-  
-  if (line&1)  // add offset value for line 1 (and 3 on a four line display)
-    position+=0x40;
-  
-#if LCD_ROWS == 4
-  if (line&2)  // add offset value for line 2 on a four line display
-    position+=0x14;
-#endif
-  
-  lcd_commandWrite(position);
-}
-
-void lcd_print(char *string)
-{
-  char c;
-  while( (c = *string++) )
-    lcd_dataWrite(c);
-}
-
 void lcd_print_P(char *string)
 {
   char c;
   while( (c = pgm_read_byte(string++)) )
-    lcd_dataWrite(c);
+    lcd.write(c);
 }
 
 void lcd_cls_print_P(char *string)
 {
-  lcd_cls();
+  lcd.clear();
   lcd_print_P(string);
 }
 
-// do the lcd initialization voodoo
-// thanks to Yoshi "SuperMID" for tips :)
-void lcd_init()
+void lcd_char_init()
 {
-  delay(16);                    // wait for more than 15 msec
-
-  for(byte i=0; i<3; i++)
-  {
-    lcd_pushNibble(B00110000);  // send (B0011) to DB7-4
-    lcd_tickleEnable();
-    delay(5);                     // wait for more than 4.1 msec or 100 usec
-  }
-
-  lcd_pushNibble(B00100000);  // send (B0010) to DB7-4 for 4bit
-  lcd_tickleEnable();
-  delay(1);                     // wait for more than 100 usec
-  // ready to use normal CommandWrite() function now!
-
-  lcd_commandWrite(B00101000);   // 4-bit interface, 2 display lines, 5x8 font
-  lcd_commandWrite(B00001100);   // display control on, no cursor, no blink
-  lcd_commandWrite(B00000110);   // entry mode set: increment automatically, no display shift
-
   //creating the custom fonts (8 char max)
   // char 0 is not used
   // 1&2 is the L/100 datagram in 2 chars only
@@ -3431,7 +3373,7 @@ void lcd_init()
 #define NB_CHAR  7
   // set cg ram to address 0x08 (B001000) to skip the
   // first 8 rows as we do not use char 0
-  lcd_commandWrite(B01001000);
+  lcd.command(B01001000);
   static prog_uchar chars[] PROGMEM ={
     B10000,B00000,B10000,B00010,B00111,B11111,B00010,
     B10000,B00000,B10100,B00100,B00101,B10101,B00100,
@@ -3445,54 +3387,7 @@ void lcd_init()
 
   for(byte x=0;x<NB_CHAR;x++)
     for(byte y=0;y<8;y++)  // 8 rows
-      lcd_dataWrite(pgm_read_byte(&chars[y*NB_CHAR+x])); //write the character data to the character generator ram
-
-  lcd_cls();
-}
-
-void lcd_cls()
-{
-  lcd_commandWrite(B00000001);  // Clear Display and return home
-  delay(2); // 1.52ms according to spec
-}
-
-void lcd_tickleEnable()
-{
-  // send a pulse to enable
-  digitalWrite(EnablePin,HIGH);
-  delayMicroseconds(1);  // pause 1 micros according to datasheet
-  digitalWrite(EnablePin,LOW);
-  delayMicroseconds(1);  // pause 1 micros according to datasheet
-}
-
-void lcd_pushNibble(byte value)
-{
-  digitalWrite(DB7Pin, value & 128);
-  digitalWrite(DB6Pin, value & 64);
-  digitalWrite(DB5Pin, value & 32);
-  digitalWrite(DB4Pin, value & 16);
-}
-
-void lcd_write(byte value)
-{
-  lcd_pushNibble(value);
-  lcd_tickleEnable();
-  value<<=4;
-  lcd_pushNibble(value);
-  lcd_tickleEnable();
-  delayMicroseconds(38);	// 38 according to spec for all commands except cls/home
-}
-
-void lcd_commandWrite(byte value)
-{
-  digitalWrite(DIPin, LOW);
-  lcd_write(value);
-}
-
-void lcd_dataWrite(byte value)
-{
-  digitalWrite(DIPin, HIGH);
-  lcd_write(value);
+      lcd.write(pgm_read_byte(&chars[y*NB_CHAR+x])); //write the character data to the character generator ram
 }
 
 /*
