@@ -1,13 +1,23 @@
 /* OBDuino32K  (Requires Atmega328 for your Arduino)
 
- Copyright (C) 2008-2010
+ Copyright (C) 2008-2009
 
  Main coding/ISO/ELM: Frédéric (aka Magister on ecomodder.com)
+ LCD part: Dave (aka dcb on ecomodder.com), optimized by Frédéric
  ISO Communication Protocol: Russ, Antony, Mike
  Features: Mike, Antony
  Bugs & Fixes: Antony, Frédéric, Mike
 
 Latest Changes
+August 31st, 2010:
+ ISO 9141 VW MK4 compatible
+ Gasoline/LPG/Diesel support - constant in define section
+ DTC read & clear improvement
+ DTC read enable/disable on start
+ DTC read & clear rebuild tested and working
+ External temperature sensor like KTY81-210 support
+ Saving TRIP data in ISO reinit mode after engine is turned off
+ Turning off backlight in ISO reinit mode if RPM = 0
 August 30th, 2010:
  Some LCD optimizations, formula for MAP, fix check_mil (untested)
 June 9th, 2009:
@@ -28,8 +38,10 @@ Sept 27, 2009:
 
 To-Do:
   Bugs:
-    Fix code to retrieve stored trouble codes.
-
+    1. Fix code to retrieve stored trouble codes.
+       (2010.08.22 fixed in ISO, ELM not tested):
+    2.
+  
   Features Requested:
     Aero-Drag calculations?
     SD Card logging
@@ -56,6 +68,37 @@ To-Do:
  59 Temple Place, Suite 330, Boston, MA 02111-1307, USA
  */
 
+// Some source about fuel/air ratio mixtures: http://www.apvgn.pt/documentacao/iangv_rep_part2.pdf
+
+/**************************/
+/* GASOLINE ENGINE CONFIG */
+/**************************/
+// [CONFIRMED] For gas car use 3355 (1/14.7/730*3600)*10000
+//#define GasConst 3355 
+//#define GasMafConst 107310 // 14.7*730*10
+
+/************************/
+/* LPG ENGINE CONFIG    */
+/************************/
+//LPG mass/volume is 520-580gr/ltr depending on propane/butane mix
+
+// LPG/air ratio: 
+// 15.8:1 if 50/50 propane/butate is used
+// 15:1 if 100 propane is used
+// 15.4 if 60/40 propane/butane is used
+// experiments shows that something in middle should be used eg. 15.4:1 :)
+
+// [TEST PROGRESS] For lpg(summer >20C) car use 4412 (1/15.4/540*3600)*10000
+#define GasConst 4329
+#define GasMafConst 83160  // 15.4*540*10 = 83160
+
+/************************/
+/* DIESEL ENGINE CONFIG */
+/************************/
+// [NOT TESTED] For diesel car use ??? (1/??/830*3600)*10000
+//#define GasConst ????
+//#define GasMafConst ???   // ??*830*10
+
 
 // Compilation modifiers:
 // The following will cause the compiler to add or remove features from the OBDuino build this keeps the
@@ -64,6 +107,10 @@ To-Do:
 // Comment for normal build
 // Uncomment for a debug build
 //#define DEBUG
+
+// Comment for normal output build
+// Uncomment for a debug output build
+//#define DEBUGOutput
 
 // Comment to use MC33290 ISO K line chip
 // Uncomment to use ELM327
@@ -87,11 +134,25 @@ To-Do:
 // Comment out if ISO 9141 does not need to reinit
 // Uncomment define below to force reinitialization of ISO 9141 after no ECU communication
 // this requires ECU polling
-//#define do_ISO_Reinit
+//#define do_ISO_Reinit 
 
 // Comment out to use the PID screen when the car is off (This will interfere with ISO reinit process)
 // Uncomment to use the Car Alarm Screen when the car is off
 //#define carAlarmScreen
+
+// Comment out to disable trip data saving after engine is off and RPM = 0
+// Uncomment to save trip data after engine is off and RPM = 0
+//#define SaveTripDataAfterEngineTurnOff
+
+// Comment out to read DTC on OBDuino start.
+// Uncomment to disable DTC read.
+//#define DisableDTCReadOnStart
+
+// Comment out to do not use temperature sensor
+// Uncomment to use temperature sensor
+//#define UseInsideTemperatureSensor
+//#define UseOutsideTemperatureSensor
+//#define TemperatureSensorTypeKTY81_210
 
 #undef int
 #include <stdio.h>
@@ -124,9 +185,18 @@ int memoryTest(void);
 void test_buttons(void);
 void get_cost(char *retbuf, byte ctrip);
 
-#define KEY_WAIT 1000 // Wait for potential other key press
+#define KEY_WAIT 300 // Wait for potential other key press //Was 1000, but 300 works better
 #define ACCU_WAIT 500 // Only accumulate data so often.
-#define BUTTON_DELAY  125
+#define BUTTON_DELAY  50                                   //Was 125, but 50 works better
+
+#ifdef UseOutsideTemperatureSensor
+  #define OutsideTemperaturePin 15 // Inside temperature sensor, on analog 1
+#endif
+
+#ifdef UseInsideTemperatureSensor
+  #define InsideTemperaturePin 16 // Inside temperature sensor, on analog 2
+#endif
+
 // use analog pins as digital pins for buttons
 #define lbuttonPin 17 // Left Button, on analog 3
 #define mbuttonPin 18 // Middle Button, on analog 4
@@ -147,9 +217,9 @@ byte buttonState = buttonsUp;
 #define brightnessLength 7 //array size
 const byte brightness[brightnessLength]={
    0xFF,
+   0xFF/(brightnessLength+10)*(brightnessLength+10-1), // in night needs more darker
    0xFF/brightnessLength*(brightnessLength-1),
    0xFF/brightnessLength*(brightnessLength-2),
-   0xFF/brightnessLength*(brightnessLength-3),
    0xFF/brightnessLength*(brightnessLength-4),
    0xFF/brightnessLength*(brightnessLength-5),
    0x00}; // right button cycles through these brightness settings (off to on full)
@@ -257,7 +327,10 @@ unsigned long  pid41to60_support=0;
 
 /* our internal fake PIDs */
 
-#define FIRST_FAKE_PID 0xE9 // same as the first one defined below
+#define FIRST_FAKE_PID 0xE7 // same as the first one defined below
+
+#define OUTSIDE_TEMP  0xE7    // temperature outside the car
+#define INSIDE_TEMP   0xE8    // temperature inside the car
 
 #define OUTING_WASTE  0xE9    // fuel wasted since car started
 #define TRIP_WASTE    0xEA    // fuel wasted during trip
@@ -285,6 +358,31 @@ unsigned long  pid41to60_support=0;
 #define FREE_MEM      0xFF
 #else
 #define ECO_VISUAL    0xFF   // Visually dispay relative economy with text (at end of program)
+#endif
+
+#ifdef TemperatureSensorTypeKTY81_210
+  #define TemperatureSensorReferenceResistance 2000L // 2kOhm
+  #define TemperatureListSize 17
+  short TemperatureList[TemperatureListSize][2] = 
+  {
+    {1135, -400},
+    {1247, -300},
+    {1367, -200},
+    {1495, -100},
+    {1630, 0},
+    {1772, 100},
+    {1922, 200},
+    {2080, 300},
+    {2245, 400},
+    {2417, 500},
+    {2597, 600},
+    {2785, 700},
+    {2980, 800},
+    {3182, 900},
+    {3392, 1000},
+    {3607, 1100},
+    {3817, 1200}
+  };
 #endif
 
 //The Textual Description of each PID
@@ -521,8 +619,8 @@ prog_char *PID_Desc[] PROGMEM=
 "", // 0xE4
 "", // 0xE5
 "", // 0xE6
-"", // 0xE7
-"", // 0xE8
+"OutsideT", // 0xE7   temperature outside car
+"Inside T", // 0xE8   temperature inside car
 "OutWaste", // 0xE9   outing waste
 "TrpWaste", // 0xEA   trip waste
 "TnkWaste", // 0xEB   tank waste
@@ -546,15 +644,6 @@ prog_char *PID_Desc[] PROGMEM=
 "Can Stat", // 0xFD   Can Status
 "PID_SEC",  // 0xFE
 "Eco Vis",  // 0xFF   Visually dispay relative economy with text
-};
-
-const prog_char obd_std_strings[17][9] PROGMEM =
-{
-/*00*/	/*{ "" },*/ 	{ "OBD2CARB" }, { "OBDEPA" }, { "OBDEPA&2" },
-/*04*/  { "OBD1" }, 	{ "NO OBD"   },	{ "EOBD" },   { "EOBD&2" },
-/*08*/  { "EOBD&EPA" }, { "E&EPA&2"  }, { "JOBD" },   { "JOBD&2" },
-/*0C*/  { "J&EOBD"   }, { "J&EOBD&2" }, { "EURO4B1" }, { "EURO5B2" },
-/*10*/  { "EURO C"   }, { "EMD" }
 };
 
 // returned length of the PID response.
@@ -586,7 +675,7 @@ prog_char select_yes[] PROGMEM=" NO (YES)"; // for config menu
 prog_char gasPrice[][10] PROGMEM={"-  %s\354 + ", "- $%s +  "}; // dual string for fuel price
 
 // menu items used by menu_selection.
-prog_char *topMenu[] PROGMEM = {"Configure menu", "Exit", "Display", "Adjust", "PIDs"};
+prog_char *topMenu[] PROGMEM = {"Configure menu", "Exit", "Display", "Adjust", "PIDs", "Clear DTC"};
 prog_char *displayMenu[] PROGMEM = {"Display menu", "Exit", "Contrast", "Metric", "Fuel/Hour"};
 prog_char *adjustMenu[] PROGMEM = {"Adjust menu", "Exit", "Tank Size", "Fuel Cost", "Fuel %", "Speed %", "Out Wait", "Trip Wait", "Eng Disp"};
 prog_char *PIDMenu[] PROGMEM = {"PID Screen menu", "Exit", "Scr 1", "Scr 2", "Scr 3"};
@@ -651,15 +740,15 @@ params_t;
 // parameters default values
 params_t params=
 {
-  40,
+  0, // Was 40, it does not work with some LCD, or some misterious problem
   1,
   true,
   20,
-  100,
-  100,
-  16,
-  905,
-  450,
+  100,  // 100 Eimis: most calibration should be done using GAS/LPG/DIESEL settings in #_define section
+  102,  // 100 Eimis: speed is distance should be 1.6% longer according to speedometer
+  18,   // 16  Eimis: Jetta 1.8T
+  1940, // 905 Eimis: LPG price in LTU
+  416,  // 450 Eimis: LPG tank 41.6 liters
   6, // 60 minutes (6 X 10) stop or less will not cause outing reset
   12, // 12 hour stop or less will not cause trip reset
   {
@@ -744,6 +833,12 @@ byte param_saved=0;
 #endif
 #endif
 
+#ifdef do_ISO_Reinit
+#ifndef carAlarmScreen  
+#error ISO reinit will not function when not displaying the car alarm screen (#define carAlarmScreen)
+#endif
+#endif
+
 #ifdef useECUState
 boolean oldECUconnection;  // Used to test for change in ECU connection state
 #endif
@@ -755,8 +850,24 @@ boolean refreshAlarmScreen; // Used to cause non-repeating screen data to displa
 #ifndef ELM
 // ISO 9141 communication variables
 byte ISO_InitStep = 0;  // Init is multistage, this is the counter
-boolean ECUconnection;  // Have we connected to the ECU or not
+
+#ifdef DEBUGOutput // debug information for ISO9141 init debuging
+  byte LastISO_InitStep = 0;  // Init is multistage, this is last stage memory
+
+  byte LastReceived1 = 0;
+  byte LastReceived2 = 0;
+  byte LastReceived3 = 0;
+
+  byte LastReceived1OK = 0;
+  byte LastReceived2OK = 0;
+  byte LastReceived3OK = 0;
+
+  byte LastSend1 = 0;
 #endif
+
+boolean ECUconnection;  // Have we connected to the ECU or not
+
+#endif  
 
 // the buttons interrupt
 // this is the interrupt handler for button presses
@@ -841,7 +952,7 @@ byte elm_compact_response(byte *buf, char *str)
 // cmd is a PSTR !!
 byte elm_command(char *str, char *cmd)
 {
-  strcpy_P(str, cmd);
+  sprintf_P(str, cmd);
   elm_write(str);
   return elm_read(str, STRLEN);
 }
@@ -892,17 +1003,19 @@ void elm_init()
 }
 #else
 
-void serial_rx_on() {
+void serial_rx_on()
+{
 //  UCSR0B |= _BV(RXEN0);  //enable UART RX
   Serial.begin(10400);		//setting enable bit didn't work, so do beginSerial
 }
 
-void serial_rx_off() {
+void serial_rx_off()
+{
   UCSR0B &= ~(_BV(RXEN0));  //disable UART RX
 }
 
-void serial_tx_off() {
-
+void serial_tx_off() 
+{
    UCSR0B &= ~(_BV(TXEN0));  //disable UART TX
    delay(20);                 //allow time for buffers to flush
 }
@@ -921,13 +1034,17 @@ boolean iso_read_byte(byte * b)
   boolean success = true;
   byte t=0;
 
-  while(t != READ_ATTEMPTS  && (readData=Serial.read())==-1) {
+  while(t != READ_ATTEMPTS  && (readData=Serial.read())==-1) 
+  {
     delay(1);
     t++;
   }
-  if (t>=READ_ATTEMPTS) {
+  
+  if (t >= READ_ATTEMPTS) 
+  {
     success = false;
   }
+  
   if (success)
   {
     *b = (byte) readData;
@@ -1024,7 +1141,7 @@ byte iso_read_data(byte *data, byte len)
 
   delay(55);    //guarantee 55 ms pause between requests
 
-  return dataSize;
+  return dataSize - 6; // return payload length
 }
 
 /* ISO 9141 init */
@@ -1133,15 +1250,46 @@ void iso_init()
       if (currentTime >= initTime)
       {
         byte b;
-        iso_read_byte(&b);  // read kw1
-        iso_read_byte(&b);  // read kw2
+        bool bread;
+        
+        bread = iso_read_byte(&b);  // read kw1
+      #ifdef DEBUGOutput
+        LastReceived1 = b;
+        LastReceived1OK = bread ? 1 : 0;
+      #endif
+      
+        bread = iso_read_byte(&b);  // read kw2
+      #ifdef DEBUGOutput
+        LastReceived2 = b;
+        LastReceived2OK = bread ? 1 : 0;
+      #endif
 
+        // 25ms delay needed before reply (url with spec is on forum page 56)
+        // it does not work without it on VW MK4
+        delay(25);
+        
         // send ~kw2 (invert of last keyword)
         iso_write_byte(~b);
-
+      #ifdef DEBUGOutput
+        LastSend1 = ~b;
+      #endif
+      
         // ECU answer by 0xCC (~0x33)
-        iso_read_byte(&b);
-        if(b == 0xCC)
+        // read several times, ECU not always responds in time
+        byte i=0;
+        bread = iso_read_byte(&b);
+        while (i<3 && !bread)
+        {
+          i++;
+          bread = iso_read_byte(&b);
+        }
+        
+      #ifdef DEBUGOutput
+        LastReceived3 = b;
+        LastReceived3OK = bread ? 1 : 0;
+      #endif
+        
+        if (b == 0xCC)
         {
            ECUconnection = true;
            // update for correct delta time in trip calculations.
@@ -1357,32 +1505,11 @@ void iso_init()
 // mode is 0 for get_pid() and 1 for menu config to allow pid > 0xF0
 boolean is_pid_supported(byte pid, byte mode)
 {
-  if(pid==0)
-    return true;
-  else
-  if(pid<=0x20)
-  {
-    if(1L<<(uint8_t)(0x20-pid) & pid01to20_support)
-      return true;
-  }
-  else
-  if(pid<=0x40)
-  {
-    if(1L<<(uint8_t)(0x40-pid) & pid21to40_support)
-      return true;
-  }
-  else
-  if(pid<=0x60)
-  {
-    if(1L<<(uint8_t)(0x60-pid) & pid41to60_support)
-      return true;
-  }
-  else
-  if( mode && pid>=FIRST_FAKE_PID)
-    return true;
-
-return false;
-}
+   return !((pid>0x00 && pid<=0x20 && ( 1L<<(0x20-pid) & pid01to20_support ) == 0 ) ||
+            (pid>0x20 && pid<=0x40 && ( 1L<<(0x40-pid) & pid21to40_support ) == 0 ) ||
+            (pid>0x40 && pid<=0x60 && ( 1L<<(0x60-pid) & pid41to60_support ) == 0 ) ||
+            (pid>LAST_PID && (pid<FIRST_FAKE_PID || mode==0)));
+ }
 
 // Get value of a PID, and place in long pointer
 // and also formatted for string output in the return buffer
@@ -1432,7 +1559,7 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
   elm_read(str, STRLEN);
   if(elm_check_response(cmd_str, str)!=0)
   {
-    strcpy_P(retbuf, PSTR("ERROR"));
+    sprintf_P(retbuf, PSTR("ERROR"));
     return false;
   }
   // first 2 bytes are 0x41 and command, skip them,
@@ -1445,10 +1572,10 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
   // send command, length 2
   iso_write_data(cmd, 2);
   // read requested length, n bytes received in buf
-  if (!iso_read_data(buf, reslen))
+  if (iso_read_data(buf, reslen) != reslen)
   {
     #ifndef DEBUG
-      strcpy_P(retbuf, PSTR("ERROR"));
+      sprintf_P(retbuf, PSTR("ERROR"));
       return false;
     #endif
   }
@@ -1498,15 +1625,15 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
     *ret=0x0200;
 #endif
     if(buf[0]==0x01)
-      strcpy_P(retbuf, PSTR("OPENLOWT"));  // open due to insufficient engine temperature
+      sprintf_P(retbuf, PSTR("OPENLOWT"));  // open due to insufficient engine temperature
     else if(buf[0]==0x02)
-      strcpy_P(retbuf, PSTR("CLSEOXYS"));  // Closed loop, using oxygen sensor feedback to determine fuel mix. should be almost always this
+      sprintf_P(retbuf, PSTR("CLSEOXYS"));  // Closed loop, using oxygen sensor feedback to determine fuel mix. should be almost always this
     else if(buf[0]==0x04)
-      strcpy_P(retbuf, PSTR("OPENLOAD"));  // Open loop due to engine load, can trigger DFCO
+      sprintf_P(retbuf, PSTR("OPENLOAD"));  // Open loop due to engine load, can trigger DFCO
     else if(buf[0]==0x08)
-      strcpy_P(retbuf, PSTR("OPENFAIL"));  // Open loop due to system failure
+      sprintf_P(retbuf, PSTR("OPENFAIL"));  // Open loop due to system failure
     else if(buf[0]==0x10)
-      strcpy_P(retbuf, PSTR("CLSEBADF"));  // Closed loop, using at least one oxygen sensor but there is a fault in the feedback system
+      sprintf_P(retbuf, PSTR("CLSEBADF"));  // Closed loop, using at least one oxygen sensor but there is a fault in the feedback system
     else
       sprintf_P(retbuf, PSTR("%04lX"), *ret);
     break;
@@ -1527,10 +1654,6 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
 #else
     *ret=(buf[0]*100U)/255U;
 #endif
-    sprintf_P(retbuf, PSTR("%ld %%"), *ret);
-    break;
-  case ABS_LOAD_VAL:
-    *ret=(*ret*100)/255;
     sprintf_P(retbuf, PSTR("%ld %%"), *ret);
     break;
   case B1S1_O2_V:
@@ -1617,10 +1740,6 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
       *ret*=3U;
     sprintf_P(retbuf, PSTR("%ld kPa"), *ret);
     break;
-  case EVAP_PRESSURE:
-    *ret=((int)buf[0]*256+buf[1])/4;
-    sprintf_P(retbuf, PSTR("%d kPa"), (int)*ret);
-    break;
   case TIMING_ADV:
     *ret=(buf[0]/2)-64;
     sprintf_P(retbuf, PSTR("%ld\005"), *ret);
@@ -1629,16 +1748,39 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
     long_to_dec_str(*ret/10, decs, 2);
     sprintf_P(retbuf, PSTR("%s V"), decs);
     break;
-  case RUNTIME_START:
-    sprintf_P(retbuf, PSTR("%u:%02u:%02u"), (unsigned int)*ret/3600, (unsigned int)(*ret/60)%60, (unsigned int)*ret%60);
-    break;
+#ifndef DEBUG  // takes 254 bytes, may be removed if necessary
   case OBD_STD:
     *ret=buf[0];
-    if(buf[0]<=0x11)
-      strcpy_P(retbuf, obd_std_strings[buf[0]-1]);
+    if(buf[0]==0x01)
+      sprintf_P(retbuf, PSTR("OBD2CARB"));
+    else if(buf[0]==0x02)
+      sprintf_P(retbuf, PSTR("OBD2EPA"));
+    else if(buf[0]==0x03)
+      sprintf_P(retbuf, PSTR("OBD1&2"));
+    else if(buf[0]==0x04)
+      sprintf_P(retbuf, PSTR("OBD1"));
+    else if(buf[0]==0x05)
+      sprintf_P(retbuf, PSTR("NOT OBD"));
+    else if(buf[0]==0x06)
+      sprintf_P(retbuf, PSTR("EOBD"));
+    else if(buf[0]==0x07)
+      sprintf_P(retbuf, PSTR("EOBD&2"));
+    else if(buf[0]==0x08)
+      sprintf_P(retbuf, PSTR("EOBD&1"));
+    else if(buf[0]==0x09)
+      sprintf_P(retbuf, PSTR("EOBD&1&2"));
+    else if(buf[0]==0x0a)
+      sprintf_P(retbuf, PSTR("JOBD"));
+    else if(buf[0]==0x0b)
+      sprintf_P(retbuf, PSTR("JOBD&2"));
+    else if(buf[0]==0x0c)
+      sprintf_P(retbuf, PSTR("JOBD&1"));
+    else if(buf[0]==0x0d)
+      sprintf_P(retbuf, PSTR("JOBD&1&2"));
     else
       sprintf_P(retbuf, PSTR("OBD:%02X"), buf[0]);
     break;
+#endif
     // for the moment, everything else, display the raw answer
   default:
     // transform buffer to an hex value
@@ -1676,6 +1818,48 @@ void long_to_dec_str(long value, char *decs, byte prec)
   decs[pos] = (params.use_metric && params.use_comma) ? ',' : '.';
 }
 
+#if defined UseInsideTemperatureSensor || defined UseOutsideTemperatureSensor
+void get_temperature(char *retbuf, byte TemperatureSensorPin)
+{
+  short Voltage = analogRead(TemperatureSensorPin - 14);
+  char decs[16];
+
+#ifdef DEBUGOutput
+  Voltage = 535;
+#endif
+
+  // convert from V to R(ohm)
+  long Resistance = (Voltage * TemperatureSensorReferenceResistance) / (1024 - Voltage);
+  
+  // convert from R to °C
+  short Temperature = -450;
+  
+  if (Resistance > TemperatureList[0][0])
+  {
+    byte TemperatureIndex = 0;
+    while (TemperatureIndex < TemperatureListSize - 1 && Resistance > TemperatureList[TemperatureIndex + 1][0])
+      TemperatureIndex++;
+      
+    if (TemperatureIndex < TemperatureListSize - 1)
+    {
+      Temperature = TemperatureList[TemperatureIndex][1] + 
+                    (Resistance - TemperatureList[TemperatureIndex][0]) * 100 / (TemperatureList[TemperatureIndex + 1][0] - TemperatureList[TemperatureIndex][0]);
+    }
+    else
+      Temperature = 1250;
+  }
+
+  Temperature = Temperature - 15; // Sensor is showing 1.5°C more then realy it is
+  
+   // convert °C in F if requested
+  if(!params.use_metric)
+    Temperature = convertToFarenheit(Temperature);
+
+  long_to_dec_str(Temperature, decs, 1);
+  sprintf_P(retbuf, PSTR("%s\005%c"), decs, params.use_metric?'C':'F');
+}
+#endif
+
 // instant fuel consumption
 void get_icons(char *retbuf)
 {
@@ -1694,9 +1878,9 @@ void get_icons(char *retbuf)
 
   // if maf is 0 it will just output 0
   if(vss<toggle_speed)
-    cons=(maf*3355)/10000;  // L/h, do not use float so mul first then divide
+    cons=(maf * GasConst) / 10000;  // L/h, do not use float so mul first then divide
   else
-    cons=(maf*3355)/(vss*100); // L/100kmh, 100 comes from the /10000*100
+    cons=(maf * GasConst) / (vss*100); // L/100kmh, 100 comes from the /10000*100
 
   if(params.use_metric)
   {
@@ -1910,7 +2094,7 @@ void accu_trip(void)
   }
 
   // if engine is stopped, we can get out now
-  if(!has_rpm)
+  if (!has_rpm)
   {
     return;
   }
@@ -2005,7 +2189,7 @@ void accu_trip(void)
     // as we sample about 4 times per second at 9600 bauds
     // ulong so max value is 4'294'967'295 µL or 4'294 L (about 1136 gallon)
     // also, adjust maf with fuel param, will be used to display instant cons
-    delta_fuel=(maf*params.fuel_adjust*delta_time)/107310;
+    delta_fuel=(maf*params.fuel_adjust*delta_time) / GasMafConst;
     for(byte i=0; i<NBTRIP; i++) {
       params.trip[i].fuel+=delta_fuel;
       //code to accumlate fuel wasted while idling
@@ -2065,7 +2249,15 @@ void display(byte location, byte pid)
     get_waste(str,OUTING);
   else if (pid==OUTING_DIST)
     get_dist(str,OUTING);
-
+#ifdef UseInsideTemperatureSensor    
+  else if (pid==INSIDE_TEMP)
+    get_temperature(str, InsideTemperaturePin);
+#endif    
+#ifdef UseOutsideTemperatureSensor    
+  else if (pid==OUTSIDE_TEMP)
+    get_temperature(str, OutsideTemperaturePin);
+#endif    
+    
   else if(pid==PID_SEC)
   {
     sprintf_P(str, PSTR("%d pid/s"), nbpid_per_second);
@@ -2121,20 +2313,23 @@ void check_supported_pids(void)
 }
 
 // might be incomplete
-void check_mil_code(void)
+void check_mil_code(bool Silent)
 {
   unsigned long n;
   char str[STRLEN];
   byte nb;
 #ifndef ELM
   byte cmd[2];
-  byte buf[6];
-  byte i, j, k, nbpkt;
+  byte i, j, k;
 #endif
 
-  if (!get_pid(MIL_CODE, str, &tempLong))
-    return;  // Invalid return so abort
+#ifndef ELM
+  Serial.flush();
+#endif;
 
+  if (!get_pid(MIL_CODE, str, &tempLong))
+    return;  // Invalid return so abort 
+  
   n = (unsigned long) tempLong;
 
   /* A request for this PID returns 4 bytes of data. The first byte contains
@@ -2176,45 +2371,161 @@ void check_mil_code(void)
     cmd[0]=0x03;
     iso_write_data(cmd, 1);
 
-    // each received packet contain 3 codes
-    // if there is 1 to 3 codes there is 1 packet
-   // if there is 4 to 6 codes there is 2 packets
-    // hence the formula
-    nbpkt=((nb-1)/3) + 1;
-
-    for(i=0;i<nbpkt;i++)  // each received packet contain 3 codes
+    // Reading ECU in raw method (normal method is wrong because of different size header 5 vs 4)
+    byte DTCBuf[32];
+    int DTCBufSize = 0;
+    
+    // Wait until first byte available
+    byte i = 0;
+    byte b;
+    while(i < 3 && !iso_read_byte(&b))
     {
-      iso_read_data(buf, 6);
+      i++;
+    }
+    
+    if (i == 3) 
+    {
+      lcd_cls_print_P(PSTR("Error reading DTC"));
+      delay(2000);
+      lcd.clear();
+      return;
+    }
+     
+    DTCBuf[0] = b;
+    DTCBufSize++;
+    
+    // Read until last byte, or until buffer is full
+    while (DTCBufSize < 31 && iso_read_byte(&b))
+    {
+      DTCBuf[DTCBufSize] = b;
+      DTCBufSize++;
+    }
+    Serial.flush();
+    
+    // VW Jetta 2001 example read: 48 6B 10 43 04 20 00 00 00 00 2A (11 bytes, 1 DTC)
+    // 48 6B 10 - header
+    // 43 - responce to 03
+    // 04 20 - first code
+    // 00 00 - second code
+    // 00 00 - third code
+    // 2A - checsum
+    // Next 3 DTC would be same order, all 11 bytes.
 
-      k=0;  // to build the string
-      for(j=0;j<3;j++)  // the 3 codes
+    lcd.clear();
+
+    for (j = 0; j < (nb-1)/3 + 1; j++)
+    {
+      k = 0;
+      byte DataShift = (j==0 ? 4 : 15);
+              
+      for (i = 0; i < 3; i++)
       {
-        switch(buf[j*2] & 0xC0)
+        if (DTCBuf[DataShift + i*2] > 0 || DTCBuf[DataShift + i*2 + 1] > 0)
         {
-        case 0x00:
-          str[k]='P';  // powertrain
-          break;
-        case 0x40:
-          str[k]='C';  // chassis
-          break;
-        case 0x80:
-          str[k]='B';  // body
-          break;
-        case 0xC0:
-          str[k]='U';  // network
-          break;
+          switch (DTCBuf[DataShift + i*2] & 0xC0)
+          {
+            case 0x00:
+              str[k]='P';  // powertrain
+              break;
+            case 0x40:
+              str[k]='C';  // chassis
+              break;
+            case 0x80:
+              str[k]='B';  // body
+              break;
+            case 0xC0:
+              str[k]='U';  // network
+              break;
+          }
+          k++;
+          str[k++] = '0' + ((DTCBuf[DataShift + i*2] & 0x30) >> 4);   // first digit is 0-3 only
+          str[k++] = '0' + (DTCBuf[DataShift + i*2] & 0x0F);
+          str[k++] = '0' + ((DTCBuf[DataShift + i*2 + 1] & 0xF0) >> 4);
+          str[k++] = '0' + (DTCBuf[DataShift + i*2 + 1] & 0x0F);
         }
-        k++;
-        str[k++]='0' + (buf[j*2] & 0x30)>>4;   // first digit is 0-3 only
-        str[k++]='0' + (buf[j*2] & 0x0F);
-        str[k++]='0' + (buf[j*2 +1] & 0xF0)>>4;
-        str[k++]='0' + (buf[j*2 +1] & 0x0F);
       }
       str[k]='\0';  // make asciiz
+    
       lcd.print(str);
       lcd.setCursor(0, 1);  // go to next line to display the 3 next
+      delay(1000);
     }
+    delay(2000);
+  
+
 #endif
+  }
+  else 
+    if (!Silent)
+    {
+      lcd_cls_print_P(PSTR("No DTC codes"));
+      delay(1500);
+      lcd.clear();
+    }  
+}
+
+// might be incomplete
+void clear_mil_code(void)
+{
+  unsigned long n;
+  char str[STRLEN];
+  byte nb;
+#ifndef ELM
+  byte cmd[2];
+  byte buf[6];
+  byte i, j, k;
+#endif
+
+#ifndef ELM
+  Serial.flush();
+#endif;
+
+  if (!get_pid(MIL_CODE, str, &tempLong))
+    return;  // Invalid return so abort 
+  
+  n = (unsigned long) tempLong;
+
+  /* A request for this PID returns 4 bytes of data. The first byte contains
+   two pieces of information. Bit A7 (the seventh bit of byte A, the first byte)
+   indicates whether or not the MIL (check engine light) is illuminated. Bits A0
+   through A6 represent the number of diagnostic trouble codes currently flagged
+   in the ECU. The second, third, and fourth bytes give information about the
+   availability and completeness of certain on-board tests. Note that test
+   availability signified by set (1) bit; completeness signified by reset (0)
+   bit. (from Wikipedia)
+   */
+  if(1L<<31 & n)  // test bit A7
+  {
+    // we have MIL on
+    nb=(n>>24) & 0x7F;
+    lcd_cls_print_P(PSTR("CHECK ENGINE ON"));
+    lcd.setCursor(0,1);
+    sprintf_P(str, PSTR("%d CODE(S) IN ECU"), nb);
+    lcd.print(str);
+    delay(2000);
+    lcd_cls_print_P(PSTR("Clearing codes..."));
+
+#ifdef ELM
+    delay(2000);
+    lcd.clear();
+#else
+    // clear code
+    cmd[0]=0x04;
+    iso_write_data(cmd, 1);
+
+    lcd_cls_print_P(PSTR("Codes cleared"));
+
+    Serial.flush();
+
+    delay(2000);
+    lcd.clear();
+#endif
+  }
+  else
+  {
+    lcd_cls_print_P(PSTR("No DTC codes"));
+    delay(1000);
+    lcd.clear();
   }
 }
 
@@ -2316,7 +2627,9 @@ byte menu_selection(char ** menu, byte arraySize)
     else if (MIDDLE_BUTTON_PRESSED)
     {
       exitMenu = true;
-    }
+      //return from function, menu does not need repaiting
+      return selection - 1; 
+    }   
 
     // Potential improvements:
     // Currently the selection is ALWAYS the first presented menu item.
@@ -2781,6 +3094,15 @@ void config_menu(void)
           }
         }
       } while (PIDSelection != 0);
+    }  
+    else if (selection == 4)
+    {
+       lcd_cls_print_P(PSTR("Clear DTC?"));
+       int ClearDTC = menu_select_yes_no(0);
+       if (ClearDTC == 1)
+       {
+          clear_mil_code();
+       }
     }
   } while (selection != 0);
 
@@ -2847,10 +3169,21 @@ unsigned int convertToLitres(unsigned int gallons)
   return (unsigned int) ( ((unsigned long)gallons*378L) / 100L );
 }
 
+int convertToFarenheit(int celsius)
+{
+  return (int) ((float) celsius * 9 / 5 + 320);
+}
+
 void test_buttons(void)
 {
+  // middle + left + right = mil check
+  if (MIDDLE_BUTTON_PRESSED && LEFT_BUTTON_PRESSED && RIGHT_BUTTON_PRESSED)
+  {
+     needBacklight(true);
+     check_mil_code(false);
+  }
   // middle + left = tank reset
-  if(MIDDLE_BUTTON_PRESSED && LEFT_BUTTON_PRESSED)
+  else if (MIDDLE_BUTTON_PRESSED && LEFT_BUTTON_PRESSED)
   {
     needBacklight(true);
     trip_reset(TANK, true);
@@ -2897,7 +3230,7 @@ void test_buttons(void)
   }
 
   // reset buttons state
-  if(buttonState!=buttonsUp)
+  if (buttonState!=buttonsUp)
   {
     #ifdef carAlarmScreen
       refreshAlarmScreen = true;
@@ -2980,6 +3313,14 @@ void setup()                    // run once, when the sketch starts
   lcd.begin(LCD_COLS, LCD_ROWS);
   lcd_char_init();
 
+  // Temperature sensors init
+#ifdef UseInsideTemperatureSensor
+  pinMode(InsideTemperaturePin, INPUT);
+#endif
+#ifdef UseOutsideTemperatureSensor
+  pinMode(OutsideTemperaturePin, INPUT);
+#endif
+
   engine_off = engine_on = millis();
 
   lcd_cls_print_P(PSTR("OBDuino32k  v172"));
@@ -3002,6 +3343,9 @@ void setup()                    // run once, when the sketch starts
       ISO_InitStep = 0;
       do
       {
+        #ifdef DEBUGOutput
+        LastISO_InitStep = ISO_InitStep;
+        #endif
         iso_init();
       } while (ISO_InitStep != 0);
 
@@ -3012,9 +3356,29 @@ void setup()                    // run once, when the sketch starts
    #endif
 
     lcd.setCursor(2,1);
-    lcd_print_P(success ? PSTR("Successful!  ") : PSTR("Failed!         "));
-
+    char str[STRLEN] = {0};
+    if (success)
+      sprintf_P(str, PSTR("Successful!  "));
+    else
+    {
+    #ifdef DEBUGOutput
+      if (LastISO_InitStep != 9)
+        sprintf_P(str, PSTR("Failed!   %d   "), LastISO_InitStep);
+      if (LastISO_InitStep == 9)  
+      {
+        sprintf_P(str, PSTR("F!%X%d %X%d %X %X%d  "), LastReceived1, LastReceived1OK, LastReceived2, LastReceived2OK, LastSend1, LastReceived3, LastReceived3OK);
+        lcd_gotoXY(0,1);
+      }  
+    #else
+      sprintf_P(str, PSTR("Failed!       "));
+    #endif
+    }  
+    lcd.print(str);
     delay(1000);
+
+    lcd.setCursor(0, 1);
+    sprintf_P(str, PSTR("                "));
+    lcd.print(str);
   }
   while(!success); // end init loop
 #else
@@ -3028,8 +3392,10 @@ void setup()                    // run once, when the sketch starts
   // check supported PIDs
   check_supported_pids();
 
+#ifndef DisableDTCReadOnStart
   // check if we have MIL code
-  check_mil_code();
+  check_mil_code(true);
+#endif
 
   lcd.clear();
   old_time=millis();  // epoch
@@ -3056,9 +3422,10 @@ void loop()                     // run over and over again
     {
       unsigned long nowOn = millis();
       unsigned long engineOffPeriod = calcTimeDiff(engine_off, nowOn);
-
-      analogWrite(BrightnessPin,brightness[brightnessIdx]);
-
+      
+      if (has_rpm > 0)
+        analogWrite(BrightnessPin, brightness[brightnessIdx]);
+ 
       if (engineOffPeriod > (params.OutingStopOver * MINUTES_GRANULARITY * MILLIS_PER_MINUTE))
       {
         trip_reset(OUTING, false);
@@ -3081,21 +3448,10 @@ void loop()                     // run over and over again
         ISO_InitStep = 0;
       #endif
 
-      engine_off = millis();  //record the time the engine was shut off
-      params_save();
-      lcd_cls_print_P(PSTR("TRIPS SAVED!"));
-      //Lets Display how much fuel for the tank we wasted.
-      char str[STRLEN] = {0};
-      lcd.setCursor(0,1);
-      lcd_print_P(PSTR("Wasted:"));
-      lcd.setCursor(LCD_SPLIT,1);
-      get_waste(str,TANK);
-      lcd.print(str);
-
-      delay(2000);
-      //Turn the Backlight off
-      analogWrite(BrightnessPin, brightness[0]);
-
+      save_params_and_display();
+      //clear screen after turn off
+      lcd.clear();
+      
       #ifdef carAlarmScreen
       refreshAlarmScreen = true;
       #endif
@@ -3103,8 +3459,28 @@ void loop()                     // run over and over again
     oldECUconnection = ECUconnection;
   }
 
+  // If engine was on, and RPM is 0 - save trip data and turn engine off
+  if (engine_started == 1 && has_rpm == 0)
+  {
+    engine_started = 0;
+    
+  #ifdef SaveTripDataAfterEngineTurnOff
+    save_params_and_display();
+
+    //Turn the Backlight off
+    analogWrite(BrightnessPin, brightness[0]);
+  #endif
+  }
+  
   if (ECUconnection)
   {
+    // If car was off, backlight was turned off, we need to turn it back on
+    if (engine_started == 0 && has_rpm != 0)
+    {
+      engine_started = 1;
+      analogWrite(BrightnessPin, brightness[brightnessIdx]);
+    }
+    
     // this read and assign vss and maf and accumulate trip data
     accu_trip();
 
@@ -3124,9 +3500,6 @@ void loop()                     // run over and over again
     #endif
 
     #ifdef do_ISO_Reinit
-      #ifndef carAlarmScreen
-      #error ISO reinit will not function when not displaying the car alarm screen (#define carAlarmScreen)
-      #endif
       iso_init();
     #endif
   }
@@ -3136,13 +3509,14 @@ void loop()                     // run over and over again
   // test if engine is started
   has_rpm = (get_pid(ENGINE_RPM, str, &tempLong) && tempLong > 0) ? 1 : 0;
 
-  if(engine_started==0 && has_rpm!=0)
+  if (engine_started==0 && has_rpm!=0)
   {
     unsigned long nowOn = millis();
     unsigned long engineOffPeriod = calcTimeDiff(engine_off, nowOn);
     engine_started=1;
     param_saved=0;
-    analogWrite(BrightnessPin,brightness[brightnessIdx]);
+    
+    analogWrite(BrightnessPin, brightness[brightnessIdx]);
 
     if (engineOffPeriod > (params.OutingStopOver * MINUTES_GRANULARITY * MILLIS_PER_MINUTE))
     {
@@ -3164,23 +3538,9 @@ void loop()                     // run over and over again
 
   // if engine was started but RPM is now 0
   // save param only once, by flopping param_saved
-  if(has_rpm==0 && param_saved==0 && engine_started!=0)
+  if (has_rpm==0 && param_saved==0 && engine_started!=0)
   {
-    engine_off = millis();  //record the time the engine was shut off
-    params_save();
-    param_saved=1;
-    engine_started=0;
-    lcd_cls_print_P(PSTR("TRIPS SAVED!"));
-    //Lets Display how much fuel for the tank we wasted.
-    char str[STRLEN] = {0};
-    lcd.setCursor(0,1);
-    lcd_print_P(PSTR("Wasted:"));
-    lcd.setCursor(LCD_SPLIT,1);
-    get_waste(str,TANK);
-    lcd.print(str);
-    delay(2000);
-    //Turn the Backlight off
-    analogWrite(BrightnessPin,brightness[0]);
+    save_params_and_display();
 
     #ifdef carAlarmScreen
       refreshAlarmScreen = true;
@@ -3503,3 +3863,26 @@ void get_cost(char *retbuf, byte ctrip)
   sprintf_P(retbuf, PSTR("$%s"), decs);
 }
 
+void save_params_and_display(void)
+{
+  engine_off = millis();  //record the time the engine was shut off
+
+  params_save();
+  param_saved = 1;
+  engine_started = 0;
+  
+  lcd_cls_print_P(PSTR("TRIPS SAVED!"));
+ 
+  //Lets Display how much fuel for the tank we wasted.
+  char str[STRLEN] = {0};
+  lcd.setCursor(0,1);
+  lcd_print_P(PSTR("Wasted:"));
+  lcd.setCursor(LCD_SPLIT,1);
+  get_waste(str,TANK);
+  lcd.print(str);
+
+  delay(2000);
+  
+  //Turn the Backlight off
+  needBacklight(false);
+}
