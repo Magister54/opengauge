@@ -1,9 +1,8 @@
 /* OBDuino32K  (Requires Atmega328 for your Arduino)
 
- Copyright (C) 2008-2009
+ Copyright (C) 2008-2010
 
  Main coding/ISO/ELM: Frédéric (aka Magister on ecomodder.com)
- LCD part: Dave (aka dcb on ecomodder.com), optimized by Frédéric
  ISO Communication Protocol: Russ, Antony, Mike
  Features: Mike, Antony
  Bugs & Fixes: Antony, Frédéric, Mike
@@ -549,6 +548,15 @@ prog_char *PID_Desc[] PROGMEM=
 "Eco Vis",  // 0xFF   Visually dispay relative economy with text
 };
 
+const prog_char obd_std_strings[17][9] PROGMEM =
+{
+/*00*/	/*{ "" },*/ 	{ "OBD2CARB" }, { "OBDEPA" }, { "OBDEPA&2" },
+/*04*/  { "OBD1" }, 	{ "NO OBD"   },	{ "EOBD" },   { "EOBD&2" },
+/*08*/  { "EOBD&EPA" }, { "E&EPA&2"  }, { "JOBD" },   { "JOBD&2" },
+/*0C*/  { "J&EOBD"   }, { "J&EOBD&2" }, { "EURO4B1" }, { "EURO5B2" },
+/*10*/  { "EURO C"   }, { "EMD" }
+};
+
 // returned length of the PID response.
 // constants so put in flash
 prog_uchar pid_reslen[] PROGMEM=
@@ -833,7 +841,7 @@ byte elm_compact_response(byte *buf, char *str)
 // cmd is a PSTR !!
 byte elm_command(char *str, char *cmd)
 {
-  sprintf_P(str, cmd);
+  strcpy_P(str, cmd);
   elm_write(str);
   return elm_read(str, STRLEN);
 }
@@ -1349,11 +1357,32 @@ void iso_init()
 // mode is 0 for get_pid() and 1 for menu config to allow pid > 0xF0
 boolean is_pid_supported(byte pid, byte mode)
 {
-   return !((pid>0x00 && pid<=0x20 && ( 1L<<(0x20-pid) & pid01to20_support ) == 0 ) ||
-            (pid>0x20 && pid<=0x40 && ( 1L<<(0x40-pid) & pid21to40_support ) == 0 ) ||
-            (pid>0x40 && pid<=0x60 && ( 1L<<(0x60-pid) & pid41to60_support ) == 0 ) ||
-            (pid>LAST_PID && (pid<FIRST_FAKE_PID || mode==0)));
- }
+  if(pid==0)
+    return true;
+  else
+  if(pid<=0x20)
+  {
+    if(1L<<(uint8_t)(0x20-pid) & pid01to20_support)
+      return true;
+  }
+  else
+  if(pid<=0x40)
+  {
+    if(1L<<(uint8_t)(0x40-pid) & pid21to40_support)
+      return true;
+  }
+  else
+  if(pid<=0x60)
+  {
+    if(1L<<(uint8_t)(0x60-pid) & pid41to60_support)
+      return true;
+  }
+  else
+  if( mode && pid>=FIRST_FAKE_PID)
+    return true;
+
+return false;
+}
 
 // Get value of a PID, and place in long pointer
 // and also formatted for string output in the return buffer
@@ -1403,7 +1432,7 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
   elm_read(str, STRLEN);
   if(elm_check_response(cmd_str, str)!=0)
   {
-    sprintf_P(retbuf, PSTR("ERROR"));
+    strcpy_P(retbuf, PSTR("ERROR"));
     return false;
   }
   // first 2 bytes are 0x41 and command, skip them,
@@ -1419,7 +1448,7 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
   if (!iso_read_data(buf, reslen))
   {
     #ifndef DEBUG
-      sprintf_P(retbuf, PSTR("ERROR"));
+      strcpy_P(retbuf, PSTR("ERROR"));
       return false;
     #endif
   }
@@ -1469,15 +1498,15 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
     *ret=0x0200;
 #endif
     if(buf[0]==0x01)
-      sprintf_P(retbuf, PSTR("OPENLOWT"));  // open due to insufficient engine temperature
+      strcpy_P(retbuf, PSTR("OPENLOWT"));  // open due to insufficient engine temperature
     else if(buf[0]==0x02)
-      sprintf_P(retbuf, PSTR("CLSEOXYS"));  // Closed loop, using oxygen sensor feedback to determine fuel mix. should be almost always this
+      strcpy_P(retbuf, PSTR("CLSEOXYS"));  // Closed loop, using oxygen sensor feedback to determine fuel mix. should be almost always this
     else if(buf[0]==0x04)
-      sprintf_P(retbuf, PSTR("OPENLOAD"));  // Open loop due to engine load, can trigger DFCO
+      strcpy_P(retbuf, PSTR("OPENLOAD"));  // Open loop due to engine load, can trigger DFCO
     else if(buf[0]==0x08)
-      sprintf_P(retbuf, PSTR("OPENFAIL"));  // Open loop due to system failure
+      strcpy_P(retbuf, PSTR("OPENFAIL"));  // Open loop due to system failure
     else if(buf[0]==0x10)
-      sprintf_P(retbuf, PSTR("CLSEBADF"));  // Closed loop, using at least one oxygen sensor but there is a fault in the feedback system
+      strcpy_P(retbuf, PSTR("CLSEBADF"));  // Closed loop, using at least one oxygen sensor but there is a fault in the feedback system
     else
       sprintf_P(retbuf, PSTR("%04lX"), *ret);
     break;
@@ -1498,6 +1527,10 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
 #else
     *ret=(buf[0]*100U)/255U;
 #endif
+    sprintf_P(retbuf, PSTR("%ld %%"), *ret);
+    break;
+  case ABS_LOAD_VAL:
+    *ret=(*ret*100)/255;
     sprintf_P(retbuf, PSTR("%ld %%"), *ret);
     break;
   case B1S1_O2_V:
@@ -1584,6 +1617,10 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
       *ret*=3U;
     sprintf_P(retbuf, PSTR("%ld kPa"), *ret);
     break;
+  case EVAP_PRESSURE:
+    *ret=((int)buf[0]*256+buf[1])/4;
+    sprintf_P(retbuf, PSTR("%d kPa"), (int)*ret);
+    break;
   case TIMING_ADV:
     *ret=(buf[0]/2)-64;
     sprintf_P(retbuf, PSTR("%ld\005"), *ret);
@@ -1592,39 +1629,16 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
     long_to_dec_str(*ret/10, decs, 2);
     sprintf_P(retbuf, PSTR("%s V"), decs);
     break;
-#ifndef DEBUG  // takes 254 bytes, may be removed if necessary
+  case RUNTIME_START:
+    sprintf_P(retbuf, PSTR("%u:%02u:%02u"), (unsigned int)*ret/3600, (unsigned int)(*ret/60)%60, (unsigned int)*ret%60);
+    break;
   case OBD_STD:
     *ret=buf[0];
-    if(buf[0]==0x01)
-      sprintf_P(retbuf, PSTR("OBD2CARB"));
-    else if(buf[0]==0x02)
-      sprintf_P(retbuf, PSTR("OBD2EPA"));
-    else if(buf[0]==0x03)
-      sprintf_P(retbuf, PSTR("OBD1&2"));
-    else if(buf[0]==0x04)
-      sprintf_P(retbuf, PSTR("OBD1"));
-    else if(buf[0]==0x05)
-      sprintf_P(retbuf, PSTR("NOT OBD"));
-    else if(buf[0]==0x06)
-      sprintf_P(retbuf, PSTR("EOBD"));
-    else if(buf[0]==0x07)
-      sprintf_P(retbuf, PSTR("EOBD&2"));
-    else if(buf[0]==0x08)
-      sprintf_P(retbuf, PSTR("EOBD&1"));
-    else if(buf[0]==0x09)
-      sprintf_P(retbuf, PSTR("EOBD&1&2"));
-    else if(buf[0]==0x0a)
-      sprintf_P(retbuf, PSTR("JOBD"));
-    else if(buf[0]==0x0b)
-      sprintf_P(retbuf, PSTR("JOBD&2"));
-    else if(buf[0]==0x0c)
-      sprintf_P(retbuf, PSTR("JOBD&1"));
-    else if(buf[0]==0x0d)
-      sprintf_P(retbuf, PSTR("JOBD&1&2"));
+    if(buf[0]<=0x11)
+      strcpy_P(retbuf, obd_std_strings[buf[0]-1]);
     else
       sprintf_P(retbuf, PSTR("OBD:%02X"), buf[0]);
     break;
-#endif
     // for the moment, everything else, display the raw answer
   default:
     // transform buffer to an hex value
@@ -2968,7 +2982,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v171"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v172"));
 #ifndef ELM
   do // init loop
   {
