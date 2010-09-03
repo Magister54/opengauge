@@ -126,6 +126,11 @@ To-Do:
 //#define ISO_14230_fast
 //#define ISO_14230_slow
 
+// Define delay between ISO request bytes (min 5ms, max 20ms) slower is faster refresh rate. By default 10ms.
+// 5ms gives 8.2pids/s, 10ms gives 6.6pids/s
+// On VW MK4 5ms works fine
+#define ISORequestByteDelay 5
+
 // Comment out to just try the PIDs without need to find ECU
 // Uncomment to use ECU polling to see if car is On or Off
 //#define useECUState
@@ -748,7 +753,7 @@ params_t;
 // parameters default values
 params_t params=
 {
-  0, // Was 40, it does not work with some LCD, or some misterious problem
+  40, // Was 40, it does not work with some LCD, or some misterious problem
   1,
   true,
   20,
@@ -1064,7 +1069,7 @@ void iso_write_byte(byte b)
 {
   serial_rx_off();
   Serial.print(b);
-  delay(10);		// ISO requires 5-20 ms delay between bytes.
+  delay(ISORequestByteDelay);  // ISO requires 5-20 ms delay between bytes.
   serial_rx_on();
 }
 
@@ -3336,7 +3341,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v174"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v175"));
 #ifndef ELM
   do // init loop
   {
