@@ -6,6 +6,7 @@
  ISO Communication Protocol: Russ, Antony, Mike
  Features: Mike, Antony
  Bugs & Fixes: Antony, Frédéric, Mike
+ LCD bignum: Frédéric based on mpguino code by Dave
 
 Latest Changes
 August 31st, 2010:
@@ -131,18 +132,25 @@ To-Do:
 // On VW MK4 5ms works fine
 #define ISORequestByteDelay 5
 
+// Define delay between ISO requests (min 55ms, max 5000ms) slower is faster refresh rate. By default 55ms.
+// Some cars works with <55ms (faster refresh rate)
+// ON VW MK4 1ms works fine (but is same as 10ms)
+// Fasted PID read rate is 19-20pids/s
+// Discusion about lower values then allowed in ISO9141 specification is in forum page 59-60
+#define ISORequestDelay 55
+
 // Comment out to just try the PIDs without need to find ECU
 // Uncomment to use ECU polling to see if car is On or Off
-//#define useECUState
+#define useECUState
 
 // Comment out if ISO 9141 does not need to reinit
 // Uncomment define below to force reinitialization of ISO 9141 after no ECU communication
 // this requires ECU polling
-//#define do_ISO_Reinit 
+#define do_ISO_Reinit 
 
 // Comment out to use the PID screen when the car is off (This will interfere with ISO reinit process)
 // Uncomment to use the Car Alarm Screen when the car is off
-//#define carAlarmScreen
+#define carAlarmScreen
 
 // Comment out to disable trip data saving after engine is off and RPM = 0
 // Uncomment to save trip data after engine is off and RPM = 0
@@ -176,6 +184,8 @@ LiquidCrystal lcd(4, 5, 7, 8, 12, 13);
 void lcd_print_P(char *string);  // to work with string in flash and PSTR()
 void lcd_cls_print_P(char *string);  // clear screen and display string
 void lcd_char_init();
+void lcd_char_bignum();
+void bigNum(unsigned long t, char *txt1, char *txt2);
 
 // Memory prototypes
 void params_load(void);
@@ -1151,7 +1161,7 @@ byte iso_read_data(byte *data, byte len)
   // we send only one command, so result start at buf[4] Actually, result starts at buf[5], buf[4] is pid requested...
   memcpy(data, buf+5, len);
 
-  delay(55);    //guarantee 55 ms pause between requests
+  delay(ISORequestDelay);    //guarantee 55 ms pause between requests
 
   return dataSize - 6; // return payload length
 }
@@ -1879,7 +1889,7 @@ void get_temperature(char *retbuf, byte TemperatureSensorPin)
 #endif
 
 // instant fuel consumption
-void get_icons(char *retbuf)
+unsigned int get_icons(char *retbuf)
 {
   long cons;
   char decs[16];
@@ -1928,12 +1938,14 @@ void get_icons(char *retbuf)
     long_to_dec_str(cons, decs, 1);
     sprintf_P(retbuf, pctspcts, decs, (vss<toggle_speed)?"G\004":"\006\007" );
   }
+
+  return (unsigned int) cons;
 }
 
 // trip 0 is tank
 // trip 1 is trip
 // trip 2 is outing
-void get_cons(char *retbuf, byte ctrip)
+unsigned int get_cons(char *retbuf, byte ctrip)
 {
   unsigned long cfuel;
   unsigned long cdist;
@@ -1986,6 +1998,8 @@ void get_cons(char *retbuf, byte ctrip)
 #endif
 
   sprintf_P(retbuf, pctspcts, decs, params.use_metric?"\001\002":"\006\007" );
+
+  return (unsigned int)trip_cons;
 }
 
 // trip 0 is tank
@@ -3223,8 +3237,19 @@ void test_buttons(void)
   // left is cycle through active screen
   else if(LEFT_BUTTON_PRESSED)
   {
-    active_screen = (active_screen+1) % NBSCREEN;
-    display_PID_names();
+#if 0  // set to 1 to test bignum
+    // + 2 because we can display two thing in bignum
+    active_screen = (active_screen+1) % (NBSCREEN+2);
+#else
+    active_screen = (active_screen+1) % (NBSCREEN);
+#endif
+    if(active_screen<NBSCREEN)
+    {
+      lcd_char_init();
+      display_PID_names();
+    }
+    else
+      lcd_char_bignum();
   }
   // right is cycle through brightness settings
   else if(RIGHT_BUTTON_PRESSED)
@@ -3341,7 +3366,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v175"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v176"));
 #ifndef ELM
   do // init loop
   {
@@ -3427,6 +3452,7 @@ void setup()                    // run once, when the sketch starts
 void loop()                     // run over and over again
 {
   #ifdef useECUState
+  char str[STRLEN];
     #ifdef DEBUG
       ECUconnection = true;
       has_rpm = true;
@@ -3503,8 +3529,14 @@ void loop()                     // run over and over again
     accu_trip();
 
     // display on LCD
-    for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
-      display(current_PID, params.screen[active_screen].PID[current_PID]);
+    if(active_screen<NBSCREEN)
+      for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
+        display(current_PID, params.screen[active_screen].PID[current_PID]);
+    else
+    if(active_screen==NBSCREEN)
+      bigNum(get_icons(str), "INST", "MPG");
+    else
+      bigNum(get_cons(str, OUTING), "AVG", "MPG");
   }
   else
   {
@@ -3780,6 +3812,111 @@ void lcd_char_init()
   for(byte x=0;x<NB_CHAR;x++)
     for(byte y=0;y<8;y++)  // 8 rows
       lcd.write(pgm_read_byte(&chars[y*NB_CHAR+x])); //write the character data to the character generator ram
+}
+
+void lcd_char_bignum()
+{
+  //creating the custom fonts:
+  lcd.command(0b01001000); // set cgram
+  static byte chars[] PROGMEM = { 0b11111, 0b00000, 0b11111, 0b11111,
+       0b00000, 0b11111, 0b00000, 0b11111, 0b11111, 0b00000, 0b00000,
+       0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000, 0b00000,
+       0b11111, 0b00000, 0b00000, 0b00000, 0b00000, 0b11111, 0b00000,
+       0b00000, 0b00000, 0b00000, 0b11111, 0b01110, 0b00000, 0b11111,
+       0b11111, 0b11111, 0b01110, 0b00000, 0b11111, 0b11111, 0b11111,
+       0b01110 };
+
+  for (byte x = 0; x < 5; x++)
+    for (byte y = 0; y < 8; y++)
+      lcd.write(pgm_read_byte(&chars[y*5+x])); //write the character data to the 
+}
+
+char fBuff[7];//used by format
+char *format(unsigned long num)
+{
+  byte dp = 3;
+
+  while (num > 999999)
+  {
+    num /= 10;
+    dp++;
+    if (dp == 5)
+      break; // We'll lose the top numbers like an odometer
+  }
+
+  if (dp == 5)
+    dp = 99; // We don't need a decimal point here.
+
+  // Round off the non-printed value.
+  if ((num % 10) > 4)
+    num += 10;
+  num /= 10;
+
+  byte x = 6;
+  while (x > 0)
+  {
+    x--;
+    if (x == dp)
+    { //time to poke in the decimal point?{
+      fBuff[x] = '.';
+    }
+    else
+    {
+      fBuff[x] = '0' + (num % 10);//poke the ascii character for the digit.
+      num /= 10;
+    }
+  }
+  fBuff[6] = 0;
+  return fBuff;
+}
+
+char bignumchars1[] = { 4, 1, 4, 0, 1, 4, 32, 0, 3, 3, 4, 0, 1, 3, 4, 0, 4, 2,
+		4, 0, 4, 3, 3, 0, 4, 3, 3, 0, 1, 1, 4, 0, 4, 3, 4, 0, 4, 3, 4, 0 };
+char bignumchars2[] = { 4, 2, 4, 0, 2, 4, 2, 0, 4, 2, 2, 0, 2, 2, 4, 0, 32, 32,
+		4, 0, 2, 2, 4, 0, 4, 2, 4, 0, 32, 4, 32, 0, 4, 2, 4, 0, 2, 2, 4, 0 };
+
+void bigNum(unsigned long t, char *txt1, char *txt2)
+{
+  //  char * txt1="INST";  char * txt2="MPG ";
+  // decimal point, start as a "space", can be change by after
+  char dp1 = 32;
+  char dp2 = 32;
+
+  char * r = "009.99"; //default to 999
+  if (t <= 9950)
+  {
+    r = format(t ); //009.86
+    dp1 = 5;
+  }
+  else
+  if (t <= 99500)
+  {
+    r = format(t / 10); //009.86
+    dp2 = 5;
+  }
+  else 
+  if (t <= 999500)
+  {
+    r = format(t / 100); //009.86
+  }
+
+  lcd.setCursor(0, 0);
+  lcd.print(bignumchars1 + (r[2] - '0') * 4);
+  lcd.write(' ');
+  lcd.print(bignumchars1 + (r[4] - '0') * 4);
+  lcd.write(' ');
+  lcd.print(bignumchars1 + (r[5] - '0') * 4);
+  lcd.write(' ');
+  lcd.print(txt1);
+
+  lcd.setCursor(0, 1);
+  lcd.print(bignumchars2 + (r[2] - '0') * 4);
+  lcd.write(dp1);
+  lcd.print(bignumchars2 + (r[4] - '0') * 4);
+  lcd.write(dp2);
+  lcd.print(bignumchars2 + (r[5] - '0') * 4);
+  lcd.write(' ');
+  lcd.print(txt2);
 }
 
 /*
