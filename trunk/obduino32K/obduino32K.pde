@@ -4,11 +4,17 @@
 
  Main coding/ISO/ELM: Frédéric (aka Magister on ecomodder.com)
  ISO Communication Protocol: Russ, Antony, Mike
- Features: Mike, Antony
- Bugs & Fixes: Antony, Frédéric, Mike
+ Features: Mike, Antony, Eimantas
+ Bugs & Fixes: Antony, Frédéric, Mike, Eimantas
  LCD bignum: Frédéric based on mpguino code by Dave
 
 Latest Changes
+September 6th, 2010:
+ If ISO_Reinit is used added modification to skip startup init. 
+   ISO_Reinit is used for first and all other initalizations
+ ISO delay constants (10ms and 55ms) moved to define section.
+   Lower values then allowed in specification works on some cars.
+ LCD bignum
 August 31st, 2010:
  ISO 9141 VW MK4 compatible
  Gasoline/LPG/Diesel support - constant in define section
@@ -47,6 +53,8 @@ To-Do:
     SD Card logging
     Add another Fake PID to track max values ( Speed, RPM, Tank KM's, etc...)
   Other:
+    Add variable caching for commonly used PIDs during same loop.
+        This would increase refresh rate if ISO speed is not enougth.
     Add a variable for the age of the last reading of a PID, for the chance it
         could be reused. (Great for RPM, SPEED, since they are used multiple
         times in one loop of the program)
@@ -129,7 +137,7 @@ To-Do:
 
 // Define delay between ISO request bytes (min 5ms, max 20ms) slower is faster refresh rate. By default 10ms.
 // 5ms gives 8.2pids/s, 10ms gives 6.6pids/s
-// On VW MK4 5ms works fine
+// On VW MK4 1ms works fine
 #define ISORequestByteDelay 5
 
 // Define delay between ISO requests (min 55ms, max 5000ms) slower is faster refresh rate. By default 55ms.
@@ -141,16 +149,20 @@ To-Do:
 
 // Comment out to just try the PIDs without need to find ECU
 // Uncomment to use ECU polling to see if car is On or Off
-#define useECUState
+//#define useECUState
 
 // Comment out if ISO 9141 does not need to reinit
 // Uncomment define below to force reinitialization of ISO 9141 after no ECU communication
 // this requires ECU polling
-#define do_ISO_Reinit 
+//#define do_ISO_Reinit 
+
+// Comment out if ISO 9141 initialization should be done on first startup
+// Uncomment define below to skip initialization of ISO 9141 after first startup, initialization will be done in ISO_Reinit mode
+//#define skip_ISO_Init 
 
 // Comment out to use the PID screen when the car is off (This will interfere with ISO reinit process)
 // Uncomment to use the Car Alarm Screen when the car is off
-#define carAlarmScreen
+//#define carAlarmScreen
 
 // Comment out to disable trip data saving after engine is off and RPM = 0
 // Uncomment to save trip data after engine is off and RPM = 0
@@ -400,7 +412,7 @@ unsigned long  pid41to60_support=0;
 #endif
 
 //The Textual Description of each PID
-prog_char *PID_Desc[] PROGMEM=
+prog_char PID_Desc[256][9] PROGMEM=
 {
 "PID00-21", // 0x00   PIDs supported
 "Stat DTC", // 0x01   Monitor status since DTCs cleared.
@@ -771,7 +783,7 @@ params_t params=
   100,
   16,
   905,
-  450,
+  450, 
   6, // 60 minutes (6 X 10) stop or less will not cause outing reset
   12, // 12 hour stop or less will not cause trip reset
   {
@@ -848,11 +860,20 @@ byte param_saved=0;
 #if defined do_ISO_Reinit
 #error do_ISO_Reinit is ONLY ISO 9141 It is not to be used with ELM!
 #endif
+#if defined skip_ISO_Init
+#error skip_ISO_Init is ONLY ISO 9141 It is not to be used with ELM!
+#endif
 #endif
 
 #ifndef useECUState
 #if defined do_ISO_Reinit
 #error do_ISO_Reinit must have useECUState also defined
+#endif
+#endif
+
+#ifndef do_ISO_Reinit
+#if defined skip_ISO_Init
+#error skip_ISO_Init must have do_ISO_Reinit also defined
 #endif
 #endif
 
@@ -1520,8 +1541,18 @@ void iso_init()
 #else
 #error No ISO protocol defined
 #endif // protocol
-}
+
+#ifdef skip_ISO_Init // Need initial parammeters reading after successfull initialization
+  if (ECUconnection)
+  {
+    // check supported PIDs
+    check_supported_pids();
+    old_time=millis();  // epoch
+    getpid_time=old_time;
+  }
 #endif
+}
+#endif // ELM or ISO init
 
 // return false if pid is not supported, true if it is.
 // mode is 0 for get_pid() and 1 for menu config to allow pid > 0xF0
@@ -3113,7 +3144,9 @@ void config_menu(void)
                 while(!is_pid_supported(++pid, 1));
               }
 
-              sprintf_P(str, PSTR("- %8s +  "), (char*)pgm_read_word(&(PID_Desc[pid])));
+              char strpid[10];
+              strcpy_P(strpid, PID_Desc[pid]);
+              sprintf_P(str, PSTR("- %8s +  "), strpid);
               displaySecondLine(2, str);
             } while(!MIDDLE_BUTTON_PRESSED);
 
@@ -3237,7 +3270,7 @@ void test_buttons(void)
   // left is cycle through active screen
   else if(LEFT_BUTTON_PRESSED)
   {
-#if 0  // set to 1 to test bignum
+#if 1  // set to 1 to test bignum
     // + 2 because we can display two thing in bignum
     active_screen = (active_screen+1) % (NBSCREEN+2);
 #else
@@ -3245,11 +3278,15 @@ void test_buttons(void)
 #endif
     if(active_screen<NBSCREEN)
     {
+      lcd.clear();
       lcd_char_init();
       display_PID_names();
     }
     else
+    {
+      lcd.clear();
       lcd_char_bignum();
+    }  
   }
   // right is cycle through brightness settings
   else if(RIGHT_BUTTON_PRESSED)
@@ -3295,7 +3332,7 @@ void display_PID_names(void)
     for (byte col = 0; col == 0 || col == LCD_SPLIT; col+=LCD_SPLIT)
     {
       lcd.setCursor(col,row);
-      lcd.print((char*)pgm_read_word(&(PID_Desc[params.screen[active_screen].PID[count++]])));
+      lcd_print_P(PID_Desc[params.screen[active_screen].PID[count++]]);
     }
   }
 
@@ -3351,7 +3388,9 @@ void setup()                    // run once, when the sketch starts
   params_load();  // if something is wrong, default parms are used
 
   // LCD pin init
+#ifndef skip_ISO_Init
   analogWrite(BrightnessPin,brightness[brightnessIdx]);
+#endif
   analogWrite(ContrastPin, params.contrast);
   lcd.begin(LCD_COLS, LCD_ROWS);
   lcd_char_init();
@@ -3366,8 +3405,8 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v176"));
-#ifndef ELM
+  lcd_cls_print_P(PSTR("OBDuino32k  v177"));
+#if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
     lcd.setCursor(2,1);
@@ -3396,7 +3435,7 @@ void setup()                    // run once, when the sketch starts
       #ifdef useECUState
         oldECUconnection != ECUconnection; // force 'turn on' stuff in main loop
       #endif
-   #endif
+    #endif
 
     lcd.setCursor(2,1);
     char str[STRLEN] = {0};
@@ -3404,17 +3443,17 @@ void setup()                    // run once, when the sketch starts
       sprintf_P(str, PSTR("Successful!  "));
     else
     {
-    #ifdef DEBUGOutput
-      if (LastISO_InitStep != 9)
-        sprintf_P(str, PSTR("Failed!   %d   "), LastISO_InitStep);
-      if (LastISO_InitStep == 9)  
-      {
-        sprintf_P(str, PSTR("F!%X%d %X%d %X %X%d  "), LastReceived1, LastReceived1OK, LastReceived2, LastReceived2OK, LastSend1, LastReceived3, LastReceived3OK);
-        lcd_gotoXY(0,1);
-      }  
-    #else
-      sprintf_P(str, PSTR("Failed!       "));
-    #endif
+     #ifdef DEBUGOutput
+       if (LastISO_InitStep != 9)
+         sprintf_P(str, PSTR("Failed!   %d   "), LastISO_InitStep);
+       else
+       {
+         sprintf_P(str, PSTR("F!%X%d %X%d %X %X%d  "), LastReceived1, LastReceived1OK, LastReceived2, LastReceived2OK, LastSend1, LastReceived3, LastReceived3OK);
+         lcd_gotoXY(0,1);
+       }  
+     #else
+       sprintf_P(str, PSTR("Failed!       "));
+     #endif
     }  
     lcd.print(str);
     delay(1000);
@@ -3425,24 +3464,32 @@ void setup()                    // run once, when the sketch starts
   }
   while(!success); // end init loop
 #else
-  elm_init();
+  #ifdef ELM
+    elm_init();
+  #endif  
 #endif
 
 #ifdef carAlarmScreen
-   refreshAlarmScreen = true;
+  refreshAlarmScreen = true;
 #endif
 
+#ifndef skip_ISO_Init
   // check supported PIDs
   check_supported_pids();
 
-#ifndef DisableDTCReadOnStart
-  // check if we have MIL code
-  check_mil_code(true);
-#endif
+  #ifndef DisableDTCReadOnStart
+   // check if we have MIL code
+   check_mil_code(true);
+  #endif
 
   lcd.clear();
   old_time=millis();  // epoch
   getpid_time=old_time;
+#else
+  //ISO_InitStep = 0; //Variable already initialized in define section, no need of additional init
+  ECUconnection = oldECUconnection = false;
+  engine_started = has_rpm = 0;
+#endif 
 }
 
 /*
@@ -3508,12 +3555,12 @@ void loop()                     // run over and over again
   {
     engine_started = 0;
     
-  #ifdef SaveTripDataAfterEngineTurnOff
-    save_params_and_display();
+   #ifdef SaveTripDataAfterEngineTurnOff
+     save_params_and_display();
 
-    //Turn the Backlight off
-    analogWrite(BrightnessPin, brightness[0]);
-  #endif
+     //Turn the Backlight off
+     analogWrite(BrightnessPin, brightness[0]);
+   #endif
   }
   
   if (ECUconnection)
@@ -3529,24 +3576,25 @@ void loop()                     // run over and over again
     accu_trip();
 
     // display on LCD
-    if(active_screen<NBSCREEN)
+    if (active_screen<NBSCREEN)
       for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
         display(current_PID, params.screen[active_screen].PID[current_PID]);
     else
-    if(active_screen==NBSCREEN)
-      bigNum(get_icons(str), "INST", "MPG");
+    if (active_screen==NBSCREEN)
+      bigNum(get_icons(str), "INST");
     else
-      bigNum(get_cons(str, OUTING), "AVG", "MPG");
+      bigNum(get_cons(str, OUTING), "AVG");
   }
   else
   {
     #ifdef carAlarmScreen
-      // ECU is off so print ready screen instead of PIDS while we wait for ECU action
-      displayAlarmScreen();
+     // ECU is off so print ready screen instead of PIDS while we wait for ECU action
+     if (ISO_InitStep < 2) // Print to LCD if idle only
+       displayAlarmScreen();
     #else
-    // for some reason the display on LCD
-    for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
-      display(current_PID, params.screen[active_screen].PID[current_PID]);
+     // for some reason the display on LCD
+     for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
+       display(current_PID, params.screen[active_screen].PID[current_PID]);
     #endif
 
     #ifdef do_ISO_Reinit
@@ -3605,8 +3653,14 @@ void loop()                     // run over and over again
   accu_trip();
 
   // display on LCD
-  for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
-    display(current_PID, params.screen[active_screen].PID[current_PID]);
+  if (active_screen<NBSCREEN)
+    for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
+      display(current_PID, params.screen[active_screen].PID[current_PID]);
+  else
+  if (active_screen==NBSCREEN)
+    bigNum(get_icons(str), "INST");
+  else
+    bigNum(get_cons(str, OUTING), "AVG");
 
   #endif
 
@@ -3828,7 +3882,7 @@ void lcd_char_bignum()
 
   for (byte x = 0; x < 5; x++)
     for (byte y = 0; y < 8; y++)
-      lcd.write(pgm_read_byte(&chars[y*5+x])); //write the character data to the 
+      lcd.write(pgm_read_byte(&chars[y*5+x])); //write the character data to the character generator ram
 }
 
 char fBuff[7];//used by format
@@ -3875,9 +3929,18 @@ char bignumchars1[] = { 4, 1, 4, 0, 1, 4, 32, 0, 3, 3, 4, 0, 1, 3, 4, 0, 4, 2,
 char bignumchars2[] = { 4, 2, 4, 0, 2, 4, 2, 0, 4, 2, 2, 0, 2, 2, 4, 0, 32, 32,
 		4, 0, 2, 2, 4, 0, 4, 2, 4, 0, 32, 4, 32, 0, 4, 2, 4, 0, 2, 2, 4, 0 };
 
-void bigNum(unsigned long t, char *txt1, char *txt2)
+void bigNum(unsigned long t, char *txt1)
 {
-  //  char * txt1="INST";  char * txt2="MPG ";
+  //  char * txt1="INST";  
+  char * txt2 = "L/KM";
+  
+  t *= 10;
+  if (!params.use_metric)
+  {
+    t *= 10;
+    strcpy_P(txt2, PSTR("MPG "));
+  } 
+  
   // decimal point, start as a "space", can be change by after
   char dp1 = 32;
   char dp2 = 32;
@@ -3888,16 +3951,14 @@ void bigNum(unsigned long t, char *txt1, char *txt2)
     r = format(t ); //009.86
     dp1 = 5;
   }
-  else
-  if (t <= 99500)
+  else if (t <= 99500)
   {
-    r = format(t / 10); //009.86
+    r = format(t / 10); //0098.6
     dp2 = 5;
   }
-  else 
-  if (t <= 999500)
+  else if (t <= 999500)
   {
-    r = format(t / 100); //009.86
+    r = format(t / 100); //00986
   }
 
   lcd.setCursor(0, 0);
