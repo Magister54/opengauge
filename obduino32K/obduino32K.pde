@@ -6,7 +6,7 @@
  ISO Communication Protocol: Russ, Antony, Mike
  Features: Mike, Antony, Eimantas
  Bugs & Fixes: Antony, Frédéric, Mike, Eimantas
- LCD bignum: Frédéric based on mpguino code by Dave
+ LCD bignum: Frédéric based on mpguino code by Dave, Eimantas
 
 Latest Changes
 September 6th, 2010:
@@ -111,6 +111,14 @@ To-Do:
 // Compilation modifiers:
 // The following will cause the compiler to add or remove features from the OBDuino build this keeps the
 // build size down, will not allow 'on the fly' changes. Some features are dependant on other features.
+
+// Comment out to disable big numebers (4th and 5th sceeens)
+#define use_BIG_font
+
+// Uncomment only one, that will be used.
+//#define BIG_font_type_3x2
+//#define BIG_font_type_2x2_alpha
+#define BIG_font_type_2x2_beta
 
 // Comment for normal build
 // Uncomment for a debug build
@@ -384,31 +392,6 @@ unsigned long  pid41to60_support=0;
 #define FREE_MEM      0xFF
 #else
 #define ECO_VISUAL    0xFF   // Visually dispay relative economy with text (at end of program)
-#endif
-
-#ifdef TemperatureSensorTypeKTY81_210
-  #define TemperatureSensorReferenceResistance 2000L // 2kOhm
-  #define TemperatureListSize 17
-  short TemperatureList[TemperatureListSize][2] = 
-  {
-    {1135, -400},
-    {1247, -300},
-    {1367, -200},
-    {1495, -100},
-    {1630, 0},
-    {1772, 100},
-    {1922, 200},
-    {2080, 300},
-    {2245, 400},
-    {2417, 500},
-    {2597, 600},
-    {2785, 700},
-    {2980, 800},
-    {3182, 900},
-    {3392, 1000},
-    {3607, 1100},
-    {3817, 1200}
-  };
 #endif
 
 //The Textual Description of each PID
@@ -775,7 +758,7 @@ params_t;
 // parameters default values
 params_t params=
 {
-  40, // Was 40, it does not work with some LCD, or some misterious problem
+  40, // 40 does not work with some LCD, or some misterious problem so try 0 if it does not work
   1,
   true,
   20,
@@ -783,7 +766,7 @@ params_t params=
   100,
   16,
   905,
-  450, 
+  450,   
   6, // 60 minutes (6 X 10) stop or less will not cause outing reset
   12, // 12 hour stop or less will not cause trip reset
   {
@@ -1880,7 +1863,33 @@ void long_to_dec_str(long value, char *decs, byte prec)
 #if defined UseInsideTemperatureSensor || defined UseOutsideTemperatureSensor
 void get_temperature(char *retbuf, byte TemperatureSensorPin)
 {
-  short Voltage = analogRead(TemperatureSensorPin - 14);
+#ifdef TemperatureSensorTypeKTY81_210
+  #define TemperatureSensorReferenceResistance 2000L // 2kOhm
+  #define TemperatureListSize 17
+  static prog_int16_t TemperatureList[TemperatureListSize][2] PROGMEM =
+  {
+    {1135, -400},
+    {1247, -300},
+    {1367, -200},
+    {1495, -100},
+    {1630, 0},
+    {1772, 100},
+    {1922, 200},
+    {2080, 300},
+    {2245, 400},
+    {2417, 500},
+    {2597, 600},
+    {2785, 700},
+    {2980, 800},
+    {3182, 900},
+    {3392, 1000},
+    {3607, 1100},
+    {3817, 1200}
+  };
+#endif
+
+  
+  int Voltage = analogRead(TemperatureSensorPin - 14);
   char decs[16];
 
 #ifdef DEBUGOutput
@@ -1891,18 +1900,21 @@ void get_temperature(char *retbuf, byte TemperatureSensorPin)
   long Resistance = (Voltage * TemperatureSensorReferenceResistance) / (1024 - Voltage);
   
   // convert from R to °C
-  short Temperature = -450;
+  int Temperature = -450;
+  int LowestResistance = pgm_read_word(&(TemperatureList[0][0]));
   
-  if (Resistance > TemperatureList[0][0])
+  if (Resistance > LowestResistance)
   {
     byte TemperatureIndex = 0;
-    while (TemperatureIndex < TemperatureListSize - 1 && Resistance > TemperatureList[TemperatureIndex + 1][0])
+    while (TemperatureIndex < TemperatureListSize - 1 && Resistance > pgm_read_word(&(TemperatureList[TemperatureIndex + 1][0])))
       TemperatureIndex++;
       
     if (TemperatureIndex < TemperatureListSize - 1)
     {
-      Temperature = TemperatureList[TemperatureIndex][1] + 
-                    (Resistance - TemperatureList[TemperatureIndex][0]) * 100 / (TemperatureList[TemperatureIndex + 1][0] - TemperatureList[TemperatureIndex][0]);
+      int UpperResistance = pgm_read_word(&(TemperatureList[TemperatureIndex + 1][0])); 
+      int LowerResistance = pgm_read_word(&(TemperatureList[TemperatureIndex][0]));
+      int ResistanceTemperature = pgm_read_word(&(TemperatureList[TemperatureIndex][1]));
+      Temperature = ResistanceTemperature + (Resistance - LowerResistance) * 100 / (UpperResistance - LowerResistance);
     }
     else
       Temperature = 1250;
@@ -3405,7 +3417,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v177"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v178"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
@@ -3871,18 +3883,53 @@ void lcd_char_init()
 void lcd_char_bignum()
 {
   //creating the custom fonts:
-  lcd.command(0b01001000); // set cgram
-  static byte chars[] PROGMEM = { 0b11111, 0b00000, 0b11111, 0b11111,
-       0b00000, 0b11111, 0b00000, 0b11111, 0b11111, 0b00000, 0b00000,
-       0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000, 0b00000,
-       0b11111, 0b00000, 0b00000, 0b00000, 0b00000, 0b11111, 0b00000,
-       0b00000, 0b00000, 0b00000, 0b11111, 0b01110, 0b00000, 0b11111,
-       0b11111, 0b11111, 0b01110, 0b00000, 0b11111, 0b11111, 0b11111,
-       0b01110 };
+  lcd.command(B01001000); // set cgram
 
-  for (byte x = 0; x < 5; x++)
+#ifdef BIG_font_type_3x2
+  #define BIGFontSymbolCount 5
+  static prog_uchar chars[BIGFontSymbolCount*8] PROGMEM = { 
+    B11111, B00000, B11111, B11111, B00000, 
+    B11111, B00000, B11111, B11111, B00000, 
+    B00000, B00000, B00000, B11111, B00000, 
+    B00000, B00000, B00000, B11111, B00000, 
+    B00000, B00000, B00000, B11111, B00000, 
+    B00000, B00000, B00000, B11111, B01110, 
+    B00000, B11111, B11111, B11111, B01110, 
+    B00000, B11111, B11111, B11111, B01110 
+  };
+#endif
+
+#ifdef BIG_font_type_2x2_alpha
+  #define BIGFontSymbolCount 8
+  static prog_uchar chars[BIGFontSymbolCount*8] PROGMEM = { 
+    B00000, B11111, B11000, B00011, B11111, B11111, B11111, B11111,
+    B00000, B11111, B11000, B00011, B11111, B11111, B11111, B11111,
+    B00000, B00011, B11000, B00011, B11000, B00011, B00000, B00000,
+    B00000, B00011, B11000, B00011, B11000, B00011, B00000, B00000,
+    B00000, B00011, B11000, B00011, B11000, B00011, B00000, B00000,
+    B00000, B00011, B11000, B00011, B11000, B00011, B00000, B00000,
+    B11111, B00011, B11111, B11111, B11111, B11111, B00000, B11111,
+    B11111, B00011, B11111, B11111, B11111, B11111, B00000, B11111
+  };
+#endif
+
+#ifdef BIG_font_type_2x2_beta
+  #define BIGFontSymbolCount 8
+  static prog_uchar chars[BIGFontSymbolCount*8] PROGMEM = { 
+    B11111, B11111, B11000, B00011, B11111, B11111, B11111, B00000,
+    B11111, B11111, B11000, B00011, B11111, B11111, B11111, B00000,
+    B11000, B00011, B11000, B00011, B11000, B00011, B00000, B00000,
+    B11000, B00011, B11000, B00011, B11000, B00011, B00000, B00000,
+    B11000, B00011, B11000, B00011, B11000, B00011, B00000, B00000,
+    B11000, B00011, B11000, B00011, B11000, B00011, B00000, B00000,
+    B11000, B00011, B11111, B11111, B11111, B11111, B00000, B11111,
+    B11000, B00011, B11111, B11111, B11111, B11111, B00000, B11111
+  };
+#endif
+
+  for (byte x = 0; x < BIGFontSymbolCount; x++)
     for (byte y = 0; y < 8; y++)
-      lcd.write(pgm_read_byte(&chars[y*5+x])); //write the character data to the character generator ram
+      lcd.write(pgm_read_byte(&chars[y*BIGFontSymbolCount+x])); //write the character data to the character generator ram
 }
 
 char fBuff[7];//used by format
@@ -3924,13 +3971,96 @@ char *format(unsigned long num)
   return fBuff;
 }
 
-char bignumchars1[] = { 4, 1, 4, 0, 1, 4, 32, 0, 3, 3, 4, 0, 1, 3, 4, 0, 4, 2,
-		4, 0, 4, 3, 3, 0, 4, 3, 3, 0, 1, 1, 4, 0, 4, 3, 4, 0, 4, 3, 4, 0 };
-char bignumchars2[] = { 4, 2, 4, 0, 2, 4, 2, 0, 4, 2, 2, 0, 2, 2, 4, 0, 32, 32,
-		4, 0, 2, 2, 4, 0, 4, 2, 4, 0, 32, 4, 32, 0, 4, 2, 4, 0, 2, 2, 4, 0 };
-
 void bigNum(unsigned long t, char *txt1)
 {
+#ifdef BIG_font_type_3x2
+  static prog_char bignumchars1[40] PROGMEM = { 
+                          4, 1, 4, 0, 
+                          1, 4, 32, 0, 
+                          3, 3, 4, 0, 
+                          1, 3, 4, 0, 
+                          4, 2, 4, 0, 
+                          4, 3, 3, 0, 
+                          4, 3, 3, 0, 
+                          1, 1, 4, 0, 
+                          4, 3, 4, 0, 
+                          4, 3, 4, 0 
+                        };
+  static prog_char bignumchars2[40] PROGMEM = { 
+                          4, 2, 4, 0, 
+                          2, 4, 2, 0, 
+                          4, 2, 2, 0, 
+                          2, 2, 4, 0, 
+                          32, 32, 4, 0, 
+                          2, 2, 4, 0, 
+                          4, 2, 4, 0, 
+                          32, 4, 32, 0, 
+                          4, 2, 4, 0, 
+                          2, 2, 4, 0 
+                        };
+  #define FontWidth 4
+  #define DecimalPointSymbol 5
+#endif
+
+#ifdef BIG_font_type_2x2_alpha
+  static prog_char bignumchars1[30] PROGMEM = { 
+                          5,  2, 0, 
+                          2, 32, 0,
+                          8,  6, 0,
+                          7,  6, 0,
+                          3,  4, 0,
+                          5,  8, 0,
+                          5,  8, 0,
+                          7,  2, 0,
+                          5,  6, 0,
+                          5,  6, 0
+                        };
+  static prog_char bignumchars2[30] PROGMEM = { 
+                          3,  4,  0,
+                          4,  1,  0,
+                          3,  1,  0,
+                          1,  4,  0,
+                          32, 2,  0,
+                          1,  4,  0,
+                          3,  4,  0,
+                          32, 2,  0,
+                          3,  4,  0,
+                          1,  4,  0
+                        };
+  #define FontWidth 3                      
+  #define DecimalPointSymbol '.'
+#endif
+
+#ifdef BIG_font_type_2x2_beta
+  static prog_char bignumchars1[30] PROGMEM = { 
+                          1,  2, 0, 
+                          2, 32, 0,
+                          7,  6, 0,
+                          7,  6, 0,
+                          3,  4, 0,
+                          5,  7, 0,
+                          1,  7, 0,
+                          7,  2, 0,
+                          5,  6, 0,
+                          5,  6, 0
+                        };
+  static prog_char bignumchars2[30] PROGMEM = { 
+                          3,  4,  0,
+                          4,  8,  0,
+                          5,  8,  0,
+                          8,  4,  0,
+                          32, 2,  0,
+                          8,  6,  0,
+                          5,  6,  0,
+                          32, 2,  0,
+                          3,  4,  0,
+                          8,  4,  0
+                        };
+  #define FontWidth 3                      
+  #define DecimalPointSymbol '.'
+#endif
+
+
   //  char * txt1="INST";  
   char * txt2 = "L/KM";
   
@@ -3949,12 +4079,12 @@ void bigNum(unsigned long t, char *txt1)
   if (t <= 9950)
   {
     r = format(t ); //009.86
-    dp1 = 5;
+    dp1 = DecimalPointSymbol;
   }
   else if (t <= 99500)
   {
     r = format(t / 10); //0098.6
-    dp2 = 5;
+    dp2 = DecimalPointSymbol;
   }
   else if (t <= 999500)
   {
@@ -3962,20 +4092,20 @@ void bigNum(unsigned long t, char *txt1)
   }
 
   lcd.setCursor(0, 0);
-  lcd.print(bignumchars1 + (r[2] - '0') * 4);
+  lcd_print_P(&bignumchars1[(r[2] - '0') * FontWidth]);
   lcd.write(' ');
-  lcd.print(bignumchars1 + (r[4] - '0') * 4);
+  lcd_print_P(&bignumchars1[(r[4] - '0') * FontWidth]);
   lcd.write(' ');
-  lcd.print(bignumchars1 + (r[5] - '0') * 4);
+  lcd_print_P(&bignumchars1[(r[5] - '0') * FontWidth]);
   lcd.write(' ');
   lcd.print(txt1);
 
   lcd.setCursor(0, 1);
-  lcd.print(bignumchars2 + (r[2] - '0') * 4);
+  lcd_print_P(&bignumchars2[(r[2] - '0') * FontWidth]);
   lcd.write(dp1);
-  lcd.print(bignumchars2 + (r[4] - '0') * 4);
+  lcd_print_P(&bignumchars2[(r[4] - '0') * FontWidth]);
   lcd.write(dp2);
-  lcd.print(bignumchars2 + (r[5] - '0') * 4);
+  lcd_print_P(&bignumchars2[(r[5] - '0') * FontWidth]);
   lcd.write(' ');
   lcd.print(txt2);
 }
