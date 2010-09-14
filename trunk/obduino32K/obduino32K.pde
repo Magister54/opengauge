@@ -9,6 +9,10 @@
  LCD bignum: Frédéric based on mpguino code by Dave, Eimantas
 
 Latest Changes
+September 14th, 2010:
+ Different currency strings for different currencies.
+ PIDs caching during same calculation cycle.
+ Adjusting tank used fuel and distance.
 September 6th, 2010:
  If ISO_Reinit is used added modification to skip startup init. 
    ISO_Reinit is used for first and all other initalizations
@@ -53,8 +57,8 @@ To-Do:
     SD Card logging
     Add another Fake PID to track max values ( Speed, RPM, Tank KM's, etc...)
   Other:
-    Add variable caching for commonly used PIDs during same loop.
-        This would increase refresh rate if ISO speed is not enougth.
+    Move variable caching strings to PROGMEM
+
     Add a variable for the age of the last reading of a PID, for the chance it
         could be reused. (Great for RPM, SPEED, since they are used multiple
         times in one loop of the program)
@@ -185,6 +189,17 @@ To-Do:
 //#define UseInsideTemperatureSensor
 //#define UseOutsideTemperatureSensor
 //#define TemperatureSensorTypeKTY81_210
+
+// Define currency symbols 
+#define CurrencyPrintString "$%s"
+//#define CurrencyPrintString "%s Lt"
+
+#define CurrencyAdjustString "- $%s +  "
+//#define CurrencyAdjustString "- %s Lt +"
+
+// Uncomment to use PIDs cache, 
+// it makes faster refresh rate in ISO mode, but uses ~200bytes of memory
+#define UsePIDCache
 
 #undef int
 #include <stdio.h>
@@ -690,12 +705,12 @@ prog_char pctspcts[] PROGMEM="%s %s"; // used in a couple of place
 prog_char pctldpcts[] PROGMEM="%ld %s"; // used in a couple of place
 prog_char select_no[]  PROGMEM="(NO) YES "; // for config menu
 prog_char select_yes[] PROGMEM=" NO (YES)"; // for config menu
-prog_char gasPrice[][10] PROGMEM={"-  %s\354 + ", "- $%s +  "}; // dual string for fuel price
+prog_char gasPrice[][10] PROGMEM={"-  %s\354 + ", CurrencyAdjustString}; // dual string for fuel price
 
 // menu items used by menu_selection.
 prog_char *topMenu[] PROGMEM = {"Configure menu", "Exit", "Display", "Adjust", "PIDs", "Clear DTC"};
 prog_char *displayMenu[] PROGMEM = {"Display menu", "Exit", "Contrast", "Metric", "Fuel/Hour"};
-prog_char *adjustMenu[] PROGMEM = {"Adjust menu", "Exit", "Tank Size", "Fuel Cost", "Fuel %", "Speed %", "Out Wait", "Trip Wait", "Eng Disp"};
+prog_char *adjustMenu[] PROGMEM = {"Adjust menu", "Exit", "Tank Size", "Fuel Cost", "Fuel %", "Speed %", "Out Wait", "Trip Wait", "Tank Used", "Tank Dist", "Eng Disp", };
 prog_char *PIDMenu[] PROGMEM = {"PID Screen menu", "Exit", "Scr 1", "Scr 2", "Scr 3"};
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(*(x)))
@@ -831,6 +846,23 @@ byte has_rpm=0;
 long vss=0;  // speed
 long maf=0;  // MAF
 unsigned long engine_on, engine_off; //used to track time of trip.
+
+#ifdef UsePIDCache
+// Cache PID's value
+#define MaxPIDCacheCount 5
+typedef struct
+{
+  byte PID;
+  long Value;
+  unsigned long Time;
+  char String[STRLEN];
+} TPIDCache;
+
+TPIDCache PIDCache[MaxPIDCacheCount];
+//prog_char PIDCacheString[MaxPIDCacheCount][STRLEN] PROGMEM={"","","","",""}; // Must be initialized
+
+byte PIDCacheCount=0;
+#endif
 
 unsigned long getpid_time;
 byte nbpid_per_second=0;
@@ -1605,6 +1637,20 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
     sprintf_P(retbuf, PSTR("%02X N/A"), pid);
     return false;
   }
+  
+ #ifdef UsePIDCache
+  // Check if PID is available in PID cache
+  byte j=0;
+  while (j < PIDCacheCount && PIDCache[j].PID != pid)
+    j++;
+  if (j < PIDCacheCount)  
+  {
+    *ret=PIDCache[j].Value;
+    strcpy(retbuf, PIDCache[j].String);
+//    strcpy_P(retbuf, PIDCacheString[j]);
+    return true;
+  }
+ #endif
 
   // receive length depends on pid
   reslen=pgm_read_byte_near(pid_reslen+pid);
@@ -1836,6 +1882,20 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
     break;
   }
 
+ #ifdef UsePIDCache
+  // Write result to PID cache
+  if (PIDCacheCount < MaxPIDCacheCount)
+  {
+    PIDCache[PIDCacheCount].PID = pid;
+    PIDCache[PIDCacheCount].Value = *ret;
+    PIDCache[PIDCacheCount].Time = millis();    
+//    strcpy_P(PIDCacheString[PIDCacheCount], retbuf);
+    strcpy(PIDCache[PIDCacheCount].String, retbuf);
+    
+    PIDCacheCount++;
+  }
+ #endif
+ 
   return true;
 }
 
@@ -2143,6 +2203,11 @@ void accu_trip(void)
   unsigned long delta_dist, delta_fuel;
   unsigned long time_now, delta_time;
 
+ #ifdef UsePIDCache
+  // read values from ECU, not from cache
+  PIDCacheCount=0;
+ #endif
+ 
   // if we return early set MAF to 0
   maf=0;
 
@@ -2752,6 +2817,7 @@ void config_menu(void)
   char decs[16];
   int lastButton = 0;  //we'll use this to speed up button pushes
   unsigned int fuelUnits = 0;
+  unsigned long tankUnits = 0;
   boolean changed = false;
 
 #ifdef ELM
@@ -2780,6 +2846,7 @@ void config_menu(void)
   byte selection = 0;
   byte oldByteValue;             // used to determine if new value is different and we need to save the change
   unsigned int oldUIntValue;     // ditto
+  unsigned long oldULongValue;   // tank used and tank distance adjust
 
   do
   {
@@ -3093,7 +3160,117 @@ void config_menu(void)
             saveParams = true;
           }
         }
-        else if (adjustSelection == 7)
+        else if (adjustSelection == 7) // tank used params.trip[0].fuel
+        {
+          lcd_cls_print_P(PSTR("Tank used ("));
+
+          oldULongValue = params.trip[0].fuel;
+
+          // convert in gallon if requested
+          if(!params.use_metric)
+          {
+            lcd_print_P(PSTR("G)"));
+            tankUnits = convertToGallons(params.trip[0].fuel / 1000 / 100); // converted from uL to dL
+          }
+          else
+          {
+            lcd_print_P(PSTR("L)"));
+            tankUnits = params.trip[0].fuel / 1000 / 100; // converted from uL to dL
+          }
+
+          // set value with left/right and set with middle
+          do
+          {
+            if(LEFT_BUTTON_PRESSED)
+            {
+              changed = true;
+              tankUnits-=1; // decrement by 0.1L or G
+            }
+            else if(RIGHT_BUTTON_PRESSED)
+            {
+              changed = true;
+              tankUnits+=1; // increment by 0.1L or G
+            }
+
+            long_to_dec_str(tankUnits, decs, 1);
+            sprintf_P(str, PSTR("- %s + "), decs);
+            displaySecondLine(4, str);
+          } while(!MIDDLE_BUTTON_PRESSED);
+
+          if (changed)
+          {
+            if(!params.use_metric)
+            {
+              params.trip[0].fuel = convertToLitres(tankUnits) * 1000 * 100;
+            }
+            else
+            {
+              params.trip[0].fuel = tankUnits * 1000 * 100;
+            }
+            changed = false;
+          }
+
+          if (oldULongValue != params.trip[0].fuel)
+          {
+            saveParams = true;
+          }
+        }  
+        else if (adjustSelection == 8) // tank distance params.trip[0].dist
+        {
+          lcd_cls_print_P(PSTR("Tank dist ("));
+
+          oldULongValue = params.trip[0].dist;
+
+          // convert in miles if requested
+          if(!params.use_metric)
+          {
+            lcd_print_P(PSTR("M)"));
+            tankUnits = (params.trip[0].dist / 100 / 1000) * 1000 / 1609; // converted from cm to km
+          }
+          else
+          {
+            lcd_print_P(PSTR("KM)"));
+            tankUnits = params.trip[0].dist / 100 / 1000; // converted from cm to km
+          }
+
+          // set value with left/right and set with middle
+          do
+          {
+            if(LEFT_BUTTON_PRESSED)
+            {
+              changed = true;
+              tankUnits-=1; // decrement by 0.1km or mile
+            }
+            else if(RIGHT_BUTTON_PRESSED)
+            {
+              changed = true;
+              tankUnits+=1; // increment by 0.1km or mile
+            }
+
+            long_to_dec_str(tankUnits, decs, 0);
+            sprintf_P(str, PSTR("- %s + "), decs);
+            displaySecondLine(4, str);
+          } while(!MIDDLE_BUTTON_PRESSED);
+
+          if (changed)
+          {
+            if(!params.use_metric)
+            {
+              params.trip[0].dist = (tankUnits * 1609 / 1000) * 100 * 1000;
+            }
+            else
+            {
+              params.trip[0].dist = tankUnits * 100 * 1000;
+            }
+            changed = false;
+          }
+
+          if (oldULongValue != params.trip[0].dist)
+          {
+            saveParams = true;
+          }
+        }  
+        else if (adjustSelection == 9)
         {
           lcd_cls_print_P(PSTR("Eng dplcmt (MAP)"));
           oldByteValue = params.eng_dis;
@@ -3417,7 +3594,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v178"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v179"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
@@ -4206,7 +4383,7 @@ void get_cost(char *retbuf, byte ctrip)
   fuel = params.trip[ctrip].fuel / 10000; //cL
   cents =  fuel * params.gas_price / 1000; //now have $$$$cc
   long_to_dec_str(cents, decs, 2);
-  sprintf_P(retbuf, PSTR("$%s"), decs);
+  sprintf_P(retbuf, PSTR(CurrencyPrintString), decs);
 }
 
 void save_params_and_display(void)
