@@ -1,14 +1,18 @@
+
+
 /* OBDuino32K  (Requires Atmega328 for your Arduino)
 
  Copyright (C) 2008-2010
 
- Main coding/ISO/ELM: Frédéric (aka Magister on ecomodder.com)
+ Main coding/ISO/ELM: Fredric (aka Magister on ecomodder.com)
  ISO Communication Protocol: Russ, Antony, Mike
  Features: Mike, Antony, Eimantas
- Bugs & Fixes: Antony, Frédéric, Mike, Eimantas
- LCD bignum: Frédéric based on mpguino code by Dave, Eimantas
+ Bugs & Fixes: Antony, Fredric, Mike, Eimantas
+ LCD bignum: Fredric based on mpguino code by Dave, Eimantas
 
 Latest Changes
+Oct 28th, 2010
+ Changes to make BigNum fuctions work more fluently
 September 14th, 2010:
  Different currency strings for different currencies.
  PIDs caching during same calculation cycle.
@@ -50,19 +54,18 @@ To-Do:
   Bugs:
     1. Fix code to retrieve stored trouble codes.
        (2010.08.22 fixed in ISO, ELM not tested):
-    2.
+    2. Make the Menu response less clunky
   
   Features Requested:
-    Aero-Drag calculations?
-    SD Card logging
-    Add another Fake PID to track max values ( Speed, RPM, Tank KM's, etc...)
+    1. Aero-Drag calculations?
+    2. SD Card logging
+    3. Add another Fake PID to track max values ( Speed, RPM, Tank KM's, etc...)
+    4. Add a "Score" PID, to rate you for a trip (Quickness, IdleTime, Fuel Used etc as factors)
+  
   Other:
-    Move variable caching strings to PROGMEM
-
-    Add a variable for the age of the last reading of a PID, for the chance it
-        could be reused. (Great for RPM, SPEED, since they are used multiple
-        times in one loop of the program)
-    Add a "dirty" flag to tank data when the obduino detects that it has been
+    1. Trim the Code as we are aproaching the 30.7K limit.
+    2. Move variable caching strings to PROGMEM
+    3. Add a "dirty" flag to tank data when the obduino detects that it has been
         disconnected from the car to indicate that the data may no longer be complete
 
 
@@ -149,7 +152,7 @@ To-Do:
 
 // Define delay between ISO request bytes (min 5ms, max 20ms) slower is faster refresh rate. By default 10ms.
 // 5ms gives 8.2pids/s, 10ms gives 6.6pids/s
-// On VW MK4 1ms works fine
+// On some cars 1ms works fine, it will just poll the ECU until it is ready.
 #define ISORequestByteDelay 5
 
 // Define delay between ISO requests (min 55ms, max 5000ms) slower is faster refresh rate. By default 55ms.
@@ -161,24 +164,24 @@ To-Do:
 
 // Comment out to just try the PIDs without need to find ECU
 // Uncomment to use ECU polling to see if car is On or Off
-//#define useECUState
+#define useECUState
 
 // Comment out if ISO 9141 does not need to reinit
 // Uncomment define below to force reinitialization of ISO 9141 after no ECU communication
 // this requires ECU polling
-//#define do_ISO_Reinit 
+#define do_ISO_Reinit 
 
 // Comment out if ISO 9141 initialization should be done on first startup
 // Uncomment define below to skip initialization of ISO 9141 after first startup, initialization will be done in ISO_Reinit mode
-//#define skip_ISO_Init 
+#define skip_ISO_Init 
 
 // Comment out to use the PID screen when the car is off (This will interfere with ISO reinit process)
 // Uncomment to use the Car Alarm Screen when the car is off
-//#define carAlarmScreen
+#define carAlarmScreen
 
 // Comment out to disable trip data saving after engine is off and RPM = 0
 // Uncomment to save trip data after engine is off and RPM = 0
-//#define SaveTripDataAfterEngineTurnOff
+#define SaveTripDataAfterEngineTurnOff
 
 // Comment out to read DTC on OBDuino start.
 // Uncomment to disable DTC read.
@@ -236,7 +239,7 @@ void get_cost(char *retbuf, byte ctrip);
 
 #define KEY_WAIT 300 // Wait for potential other key press //Was 1000, but 300 works better
 #define ACCU_WAIT 500 // Only accumulate data so often.
-#define BUTTON_DELAY  50                                   //Was 125, but 50 works better
+#define BUTTON_DELAY  100 //Was 125, but 100 works better
 
 #ifdef UseOutsideTemperatureSensor
   #define OutsideTemperaturePin 15 // Inside temperature sensor, on analog 1
@@ -418,10 +421,10 @@ prog_char PID_Desc[256][9] PROGMEM=
 "Fuel SS",  // 0x03   Fuel system status
 "Eng Load", // 0x04   Calculated engine load value
 "CoolantT", // 0x05   Engine coolant temperature
-"ST F%T 1", // 0x06   Short term fuel % trim—Bank 1
-"LT F%T 1", // 0x07   Long term fuel % trim—Bank 1
-"ST F%T 2", // 0x08   Short term fuel % trim—Bank 2
-"LT F%T 2", // 0x09   Long term fuel % trim—Bank 2
+"ST F%T 1", // 0x06   Short term fuel % trim Bank 1
+"LT F%T 1", // 0x07   Long term fuel % trim Bank 1
+"ST F%T 2", // 0x08   Short term fuel % trim Bank 2
+"LT F%T 2", // 0x09   Long term fuel % trim Bank 2
 "Fuel Prs", // 0x0A   Fuel pressure
 "  MAP  ",  // 0x0B   Intake manifold absolute pressure
 "  RPM  ",  // 0x0C   Engine RPM
@@ -738,8 +741,8 @@ prog_char * tripNames[NBTRIP] PROGMEM =
 typedef struct
 {
   unsigned long dist;   // in cm
-  unsigned long fuel;   // in µL
-  unsigned long waste;  // in µL
+  unsigned long fuel;   // in uL
+  unsigned long waste;  // in uL
 }
 trip_t;
 
@@ -779,8 +782,8 @@ params_t params=
   20,
   100,
   100,
-  16,
-  905,
+  15,
+  1090,
   450,   
   6, // 60 minutes (6 X 10) stop or less will not cause outing reset
   12, // 12 hour stop or less will not cause trip reset
@@ -1143,12 +1146,12 @@ byte iso_write_data(byte *data, byte len)
   // ISO header
   buf[0]=0x68;
   buf[1]=0x6A;		// 0x68 0x6A is an OBD-II request
-  buf[2]=0xF1;		// our requester’s address (off-board tool)
+  buf[2]=0xF1;		// our requesters address (off-board tool)
   #else
   // 14230 protocol header
   buf[0]=0xc2; // Request of 2 bytes
   buf[1]=0x33; // Target address
-  buf[2]=0xF1; // our requester’s address (off-board tool)
+  buf[2]=0xF1; // our requesters address (off-board tool)
   #endif
 
   // append message
@@ -2066,7 +2069,7 @@ unsigned int get_cons(char *retbuf, byte ctrip)
   }
   else  // the car has moved and fuel used
   {
-    // from µL/cm to L/100 so div by 1000000 for L and mul by 10000000 for 100km
+    // from uL/cm to L/100 so div by 1000000 for L and mul by 10000000 for 100km
     // multiply by 100 to have 2 digits precision
     // we can not mul fuel by 1000 else it can go higher than ULONG_MAX
     // so divide distance by 1000 instead (resolution of 10 metres)
@@ -2092,7 +2095,7 @@ unsigned int get_cons(char *retbuf, byte ctrip)
   }
 
 #if 1
-  long_to_dec_str(trip_cons, decs, 1+params.use_metric);  // hack
+  long_to_dec_str(trip_cons, decs, (1+params.use_metric));  // hack
 #else
   if(params.use_metric)
     long_to_dec_str(trip_cons, decs, 2);
@@ -2100,7 +2103,7 @@ unsigned int get_cons(char *retbuf, byte ctrip)
     long_to_dec_str(trip_cons, decs, 1);
 #endif
 
-  sprintf_P(retbuf, pctspcts, decs, params.use_metric?"\001\002":"\006\007" );
+  sprintf_P(retbuf, pctspcts, decs, (params.use_metric?"\001\002":"\006\007" ));
 
   return (unsigned int)trip_cons;
 }
@@ -3368,6 +3371,7 @@ void config_menu(void)
     lcd_print_P(PSTR("Please wait..."));
     params_save();
   }
+  lcd.clear(); //Clean up display (important if displaying with "BigNum"
 }
 
 // This helps reduce code size by containing repeated functionality.
@@ -3594,7 +3598,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v179"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v184"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
@@ -3759,6 +3763,10 @@ void loop()                     // run over and over again
     {
       engine_started = 1;
       analogWrite(BrightnessPin, brightness[brightnessIdx]);
+      
+      #ifdef carAlarmScreen
+      lcd.clear();  // Clear away any debris from Car Alarm Screen
+      #endif
     }
     
     // this read and assign vss and maf and accumulate trip data
@@ -3769,10 +3777,26 @@ void loop()                     // run over and over again
       for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
         display(current_PID, params.screen[active_screen].PID[current_PID]);
     else
-    if (active_screen==NBSCREEN)
-      bigNum(get_icons(str), "INST");
-    else
-      bigNum(get_cons(str, OUTING), "AVG");
+    if (active_screen==NBSCREEN){
+      if (params.use_metric) {
+        if (vss > params.per_hour_speed) {
+          bigNum(get_icons(str), "INST", "L/KM");
+        } else {
+          bigNum(get_icons(str), "INST", "L/Hr");
+        }
+      } else {
+        if (vss > params.per_hour_speed) {
+          bigNum(get_icons(str), "INST", "MPG ");
+        } else {
+          bigNum(get_icons(str), "INST", "G/Hr");
+        }
+      }
+    } else {
+      if (params.use_metric)
+        bigNum(get_cons(str, OUTING), "AVG", "L/KM");
+      else
+        bigNum(get_cons(str, OUTING), "AVG", "MPG ");
+    }
   }
   else
   {
@@ -3846,10 +3870,26 @@ void loop()                     // run over and over again
     for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
       display(current_PID, params.screen[active_screen].PID[current_PID]);
   else
-  if (active_screen==NBSCREEN)
-    bigNum(get_icons(str), "INST");
-  else
-    bigNum(get_cons(str, OUTING), "AVG");
+    if (active_screen==NBSCREEN){
+      if (params.use_metric) {
+        if (vss > params.per_hour_speed) {
+          bigNum(get_icons(str), "INST", "L/KM");
+        } else {
+          bigNum(get_icons(str), "INST", "L/Hr");
+        }
+      } else {
+        if (vss > params.per_hour_speed) {
+          bigNum(get_icons(str), "INST", "MPG ");
+        } else {
+          bigNum(get_icons(str), "INST", "G/Hr");
+        }
+      }
+    } else {
+      if (params.use_metric)
+        bigNum(get_cons(str, OUTING), "AVG", "L/KM");
+      else
+        bigNum(get_cons(str, OUTING), "AVG", "MPG ");
+    }
 
   #endif
 
@@ -4148,7 +4188,7 @@ char *format(unsigned long num)
   return fBuff;
 }
 
-void bigNum(unsigned long t, char *txt1)
+void bigNum(unsigned long t, char *txt1, char *txt2)
 {
 #ifdef BIG_font_type_3x2
   static prog_char bignumchars1[40] PROGMEM = { 
@@ -4239,15 +4279,17 @@ void bigNum(unsigned long t, char *txt1)
 
 
   //  char * txt1="INST";  
+ /* Want to pass secondary text to allow for both L/KM and L/H when going slow
   char * txt2 = "L/KM";
   
-  t *= 10;
+  
   if (!params.use_metric)
   {
     t *= 10;
     strcpy_P(txt2, PSTR("MPG "));
   } 
-  
+  */
+  t *= 10; 
   // decimal point, start as a "space", can be change by after
   char dp1 = 32;
   char dp2 = 32;
@@ -4409,3 +4451,5 @@ void save_params_and_display(void)
   //Turn the Backlight off
   needBacklight(false);
 }
+
+
