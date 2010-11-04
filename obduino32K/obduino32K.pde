@@ -977,7 +977,7 @@ byte elm_read(char *str, byte size)
 void elm_write(char *str)
 {
   while(*str!=NUL)
-    Serial.print(*str++);
+    Serial.write(*str++);
 }
 
 // check header byte
@@ -3598,7 +3598,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v184"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v185"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
