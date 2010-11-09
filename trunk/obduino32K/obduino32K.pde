@@ -11,6 +11,8 @@
  LCD bignum: Fredric based on mpguino code by Dave, Eimantas
 
 Latest Changes
+Nov 7th, 2010
+ Added Hybrid Big Num Screen for display AVG in Bigfont, and instant in small font in the corner
 Oct 28th, 2010
  Changes to make BigNum fuctions work more fluently
 September 14th, 2010:
@@ -123,9 +125,13 @@ To-Do:
 #define use_BIG_font
 
 // Uncomment only one, that will be used.
-//#define BIG_font_type_3x2
+//#define BIG_font_type_3x2 // CAN'T BE USED WITH BIG_font_hybrid
 //#define BIG_font_type_2x2_alpha
 #define BIG_font_type_2x2_beta
+
+//Uncomment to enable hybrid display on Average fuel Big num screen
+//This will display Big Num Average, and in the corner, The instant
+#define BIG_font_hybrid
 
 // Comment for normal build
 // Uncomment for a debug build
@@ -3598,7 +3604,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v185"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v186"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
@@ -3693,6 +3699,9 @@ void loop()                     // run over and over again
 {
   #ifdef useECUState
   char str[STRLEN];
+  #ifdef BIG_font_hybrid
+  char str2[STRLEN];
+  #endif
     #ifdef DEBUG
       ECUconnection = true;
       has_rpm = true;
@@ -3792,10 +3801,19 @@ void loop()                     // run over and over again
         }
       }
     } else {
+    #ifdef BIG_font_hybrid
+    get_icons(str2);
+    str2[5] ='\0';
+      if (params.use_metric)
+        bigNum(get_cons(str, OUTING), str2, "AVG L/K");
+      else
+        bigNum(get_cons(str, OUTING), str2, "AVG MPG ");
+    #else
       if (params.use_metric)
         bigNum(get_cons(str, OUTING), "AVG", "L/KM");
       else
-        bigNum(get_cons(str, OUTING), "AVG", "MPG ");
+        bigNum(get_cons(str, OUTING), "AVG", "MPG ");    
+    #endif
     }
   }
   else
@@ -3885,10 +3903,20 @@ void loop()                     // run over and over again
         }
       }
     } else {
+    #ifdef BIG_font_hybrid
+    get_icons(str2);
+    str2[5] ='\0';
+
+      if (params.use_metric)
+        bigNum(get_cons(str, OUTING), str2, "AVG L/K");
+      else
+        bigNum(get_cons(str, OUTING), str2, "AVG MPG ");
+    #else
       if (params.use_metric)
         bigNum(get_cons(str, OUTING), "AVG", "L/KM");
       else
-        bigNum(get_cons(str, OUTING), "AVG", "MPG ");
+        bigNum(get_cons(str, OUTING), "AVG", "MPG ");    
+    #endif+
     }
 
   #endif
