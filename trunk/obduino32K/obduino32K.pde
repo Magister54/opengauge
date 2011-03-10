@@ -4,13 +4,15 @@
 
  Copyright (C) 2008-2010
 
- Main coding/ISO/ELM: Fredric (aka Magister on ecomodder.com)
+ Main coding/ISO/ELM: Frederic (aka Magister on ecomodder.com)
  ISO Communication Protocol: Russ, Antony, Mike
  Features: Mike, Antony, Eimantas
  Bugs & Fixes: Antony, Fredric, Mike, Eimantas
- LCD bignum: Fredric based on mpguino code by Dave, Eimantas
+ LCD bignum: Frederic based on mpguino code by Dave, Eimantas
 
 Latest Changes
+Mar 10th, 2011
+ Add smoothing of instant cons
 Nov 7th, 2010
  Added Hybrid Big Num Screen for display AVG in Bigfont, and instant in small font in the corner
 Oct 28th, 2010
@@ -1587,19 +1589,19 @@ boolean is_pid_supported(byte pid, byte mode)
   else
   if(pid<=0x20)
   {
-    if(1L<<(uint8_t)(0x20-pid) & pid01to20_support)
+    if(1L<<(byte)(0x20-pid) & pid01to20_support)
       return true;
   }
   else
   if(pid<=0x40)
   {
-    if(1L<<(uint8_t)(0x40-pid) & pid21to40_support)
+    if(1L<<(byte)(0x40-pid) & pid21to40_support)
       return true;
   }
   else
   if(pid<=0x60)
   {
-    if(1L<<(uint8_t)(0x60-pid) & pid41to60_support)
+    if(1L<<(byte)(0x60-pid) & pid41to60_support)
       return true;
   }
   else
@@ -1844,7 +1846,8 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
   case LTFT_BANK1:
   case STFT_BANK2:
   case LTFT_BANK2:
-    *ret=(buf[0]-128)*7812;  // not divided by 10000 for return value
+    *ret=buf[0]; // Added to avoid 65536 limitation in next operation
+    *ret=(*ret-128)*7812;  // not divided by 10000 for return value
     long_to_dec_str(*ret/100, decs, 2);
     sprintf_P(retbuf, PSTR("%s %%"), decs);
     break;
@@ -2000,12 +2003,43 @@ void get_temperature(char *retbuf, byte TemperatureSensorPin)
 }
 #endif
 
+#define NBSMOOTH	16
+byte tvss[NBSMOOTH];  // last n speed
+unsigned int tmaf[NBSMOOTH];  // last n MAF
+static void clear_icons_tvss(void)
+{
+  for(byte i=0; i<NBSMOOTH; i++)
+    tvss[i]=0;
+}
+static void clear_icons_tmaf(void)
+{
+  for(byte i=0; i<NBSMOOTH; i++)
+    tmaf[i]=0;
+}
 // instant fuel consumption
 unsigned int get_icons(char *retbuf)
 {
+  unsigned int vss=0;
+  unsigned long maf=0;
+  byte nb_entry=0;
   long cons;
   char decs[16];
   long toggle_speed = params.use_metric ? params.per_hour_speed : (params.per_hour_speed*1609)/1000;
+
+  for(byte i=0; i<NBSMOOTH; i++)
+  {
+     vss+=tvss[i];
+     maf+=tmaf[i];
+     if(tmaf[i]!=0)
+       nb_entry++;
+  }
+
+  if(nb_entry!=0)
+  {
+		maf=(maf*params.fuel_adjust)/((unsigned int)nb_entry*100);
+  }
+
+  vss/=NBSMOOTH;		// average the N latest speed
 
   // divide MAF by 100 because our function return MAF*100
   // but multiply by 100 for double digits precision
@@ -2016,11 +2050,13 @@ unsigned int get_icons(char *retbuf)
   // = maf*0.3355/vss L/km
   // mul by 100 to have L/100km
 
-  // if maf is 0 it will just output 0
   if(vss<toggle_speed)
-    cons=(maf * GasConst) / 10000;  // L/h, do not use float so mul first then divide
+    vss=10000;
   else
-    cons=(maf * GasConst) / (vss*100); // L/100kmh, 100 comes from the /10000*100
+    vss*=params.speed_adjust;
+
+  // if maf is 0 it will just output 0
+	cons=(maf * GasConst)/vss;
 
   if(params.use_metric)
   {
@@ -2205,6 +2241,7 @@ void get_remain_dist(char *retbuf)
  */
 void accu_trip(void)
 {
+  static byte tindex=0;	// index in the smoothing table
   static byte min_throttle_pos=255;   // idle throttle position, start high
   byte throttle_pos;   // current throttle position
   byte open_load;      // to detect open loop
@@ -2276,6 +2313,7 @@ void accu_trip(void)
 
   if(throttle_pos<(min_throttle_pos+4) && open_load)
   {
+    clear_icons_tmaf();
     maf=0;  // decellerate fuel cut-off, fake the MAF as 0 :)
   }
   else
@@ -2347,6 +2385,10 @@ void accu_trip(void)
       }
     }
   }
+  tvss[tindex]=vss;
+  tmaf[tindex]=maf;
+  // increment index and roll over
+  tindex = (tindex+1) % NBSMOOTH;
 }
 
 void display(byte location, byte pid)
@@ -3604,7 +3646,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v186"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v187"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
@@ -3722,6 +3764,9 @@ void loop()                     // run over and over again
       if (engineOffPeriod > (params.OutingStopOver * MINUTES_GRANULARITY * MILLIS_PER_MINUTE))
       {
         trip_reset(OUTING, false);
+        // zero instant cons
+        clear_icons_tvss();
+        clear_icons_tmaf();
         engine_on = nowOn;
       }
       else
@@ -3851,6 +3896,9 @@ void loop()                     // run over and over again
     {
       //Reset the current outing trip from last trip
       trip_reset(OUTING, false);
+      // zero instant cons
+      clear_icons_tvss();
+      clear_icons_tmaf();
       engine_on = nowOn; //Reset the time at which the car starts at
     }
     else
@@ -4479,5 +4527,3 @@ void save_params_and_display(void)
   //Turn the Backlight off
   needBacklight(false);
 }
-
-
