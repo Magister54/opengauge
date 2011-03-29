@@ -1,5 +1,3 @@
-
-
 /* OBDuino32K  (Requires Atmega328 for your Arduino)
 
  Copyright (C) 2008-2010
@@ -11,6 +9,14 @@
  LCD bignum: Frederic based on mpguino code by Dave, Eimantas
 
 Latest Changes
+Mar 29th, 2011
+ AutoSave after 30min while driving (disabled by default)
+ Config timeout (10s by default, last changes always accepted) (~100 bytes used)
+ Battery voltage PID for ISO 9141 (was only for ELM) see get_batteryvoltage() for wiring instructions
+ ISO 9141 initialization code trim (128 bytes saved)
+ Gallons and litres conversion changed without functions (234 bytes saved)
+ calcTimeDiff modified according to http://www.arduino.cc/playground/Code/TimingRollover (200 bytes saved)
+ Bug fix in get_icons() smoothed vss was wrongly compared with toggle_speed 
 Mar 10th, 2011
  Add smoothing of instant cons
 Nov 7th, 2010
@@ -63,11 +69,18 @@ To-Do:
   Features Requested:
     1. Aero-Drag calculations?
     2. SD Card logging
-    3. Add another Fake PID to track max values ( Speed, RPM, Tank KM's, etc...)
+    3. Add another Fake PID to track max values (Speed, RPM, Tank KM's, etc...)
     4. Add a "Score" PID, to rate you for a trip (Quickness, IdleTime, Fuel Used etc as factors)
   
   Other:
     1. Trim the Code as we are aproaching the 30.7K limit.
+      a) params.use_metric could be changed to "#define", a lot of "if" could be 
+          changed to #ifdef (~1-2 K bytes expected, 1546bytes saved in metric mode) 
+      b) in config always save params (~200-300 bytes expected)
+      c) millis() rollover handling inspired by http://www.arduino.cc/playground/Code/TimingRollover 
+          [diff = calcTimeDiff(start, end) = (long)(end - start)], could save ~230bytes.
+          Partly done: modified calcTimeDiff, but removing calls to function could save some more.
+
     2. Move variable caching strings to PROGMEM
     3. Add a "dirty" flag to tank data when the obduino detects that it has been
         disconnected from the car to indicate that the data may no longer be complete
@@ -143,6 +156,12 @@ To-Do:
 // Uncomment for a debug output build
 //#define DEBUGOutput
 
+// Comment to disable auto-save 
+// Uncoment to enable auto-save after 30min (disabled in debug mode)
+// EEPROM has limited write cycles 100.000 (probably more) and 
+// saving more often could affect EEPROM, feel free to disable
+//#define AutoSave
+
 // Comment to use MC33290 ISO K line chip
 // Uncomment to use ELM327
 //#define ELM
@@ -201,6 +220,10 @@ To-Do:
 //#define UseOutsideTemperatureSensor
 //#define TemperatureSensorTypeKTY81_210
 
+// Comment out to do not use voltage sensor
+// Uncomment to use voltage sensor
+//#define BatteryVoltageSensor
+
 // Define currency symbols 
 #define CurrencyPrintString "$%s"
 //#define CurrencyPrintString "%s Lt"
@@ -248,6 +271,7 @@ void get_cost(char *retbuf, byte ctrip);
 #define KEY_WAIT 300 // Wait for potential other key press //Was 1000, but 300 works better
 #define ACCU_WAIT 500 // Only accumulate data so often.
 #define BUTTON_DELAY  100 //Was 125, but 100 works better
+#define MENU_TIMEOUT 10000 //Wait 10s and close config menu if no key is pressed
 
 #ifdef UseOutsideTemperatureSensor
   #define OutsideTemperaturePin 15 // Inside temperature sensor, on analog 1
@@ -255,6 +279,10 @@ void get_cost(char *retbuf, byte ctrip);
 
 #ifdef UseInsideTemperatureSensor
   #define InsideTemperaturePin 16 // Inside temperature sensor, on analog 2
+#endif
+
+#ifdef BatteryVoltageSensor
+  #define BatteryVoltagePin 14 // Battery voltage sensor, on analog 0
 #endif
 
 // use analog pins as digital pins for buttons
@@ -858,6 +886,10 @@ long vss=0;  // speed
 long maf=0;  // MAF
 unsigned long engine_on, engine_off; //used to track time of trip.
 
+#ifdef AutoSave
+unsigned long old_time_params;
+#endif
+
 #ifdef UsePIDCache
 // Cache PID's value
 #define MaxPIDCacheCount 5
@@ -906,6 +938,12 @@ byte param_saved=0;
 #ifdef do_ISO_Reinit
 #ifndef carAlarmScreen  
 #error ISO reinit will not function when not displaying the car alarm screen (#define carAlarmScreen)
+#endif
+#endif
+
+#ifdef DEBUG
+#ifdef AutoSave
+#error AutoSave could not be enabled in DEBUG mode (it will save crappy data)
 #endif
 #endif
 
@@ -1133,18 +1171,14 @@ void iso_write_byte(byte b)
 // inspired by SternOBDII\code\checksum.c
 byte iso_checksum(byte *data, byte len)
 {
-  byte i;
-  byte crc;
-
-  crc=0;
-  for(i=0; i<len; i++)
+  byte crc=0;
+  for(byte i=0; i<len; i++)
     crc=crc+data[i];
-
   return crc;
 }
 
 // inspired by SternOBDII\code\iso.c
-byte iso_write_data(byte *data, byte len)
+void iso_write_data(byte *data, byte len)
 {
   byte i, n;
   byte buf[20];
@@ -1173,11 +1207,11 @@ byte iso_write_data(byte *data, byte len)
   // send char one by one
   n=i+1;
   for(i=0; i<n; i++)
-  {
     iso_write_byte(buf[i]);
-  }
 
-  return 0;
+// CodeOptimization (2bytes)
+// function changed to 'void' (was byte, but not used, always returned 0)
+//  return 0; 
 }
 
 // read n byte(s) of data (+ header + cmd and crc)
@@ -1222,6 +1256,20 @@ void iso_init()
   long currentTime = millis();
   static long initTime;
 #ifdef ISO_9141
+
+// CodeOptimization (128bytes)
+// Changed ISO init 2-7 steps to take values from array (could be moved to PROGMEM)
+// ISO_14230_slow could be changed too (same way)
+  byte ISOSteps[8] = {
+                       0,  //0 not used
+                       30, //1 HIGH
+                       20, //2 LOW
+                       40, //3 HIGH
+                       40, //4 LOW
+                       40, //5 HIGH
+                       40, //6 LOW
+                       26  //7 HIGH
+                     }; 
   switch (ISO_InitStep)
   {
     case 0:
@@ -1232,58 +1280,25 @@ void iso_init()
       initTime = currentTime + 3000;
       ISO_InitStep++;
       break;
+
     case 1:
-      if (currentTime >= initTime)
-      {
-        // drive K line high for 300ms
-        digitalWrite(K_OUT, HIGH);
-        #ifdef useL_Line
-          digitalWrite(L_OUT, HIGH);
-        #endif
-        initTime = currentTime + 300;
-        ISO_InitStep++;
-      }
-      break;
     case 2:
+    case 3:
+    case 4:
+    case 5:
+    case 6:
     case 7:
       if (currentTime >= initTime)
       {
-        // start or stop bit
-        digitalWrite(K_OUT, (ISO_InitStep == 2 ? LOW : HIGH));
+        digitalWrite(K_OUT, ISO_InitStep % 2);
         #ifdef useL_Line
-          digitalWrite(L_OUT, (ISO_InitStep == 2 ? LOW : HIGH));
+          digitalWrite(L_OUT, ISO_InitStep % 2);
         #endif
-        initTime = currentTime + (ISO_InitStep == 2 ? 200 : 260);
+        initTime = currentTime + ISOSteps[ISO_InitStep] * 10;
         ISO_InitStep++;
       }
       break;
-    case 3:
-    case 5:
-      if (currentTime >= initTime)
-      {
-        // two bits HIGH
-        digitalWrite(K_OUT, HIGH);
-        #ifdef useL_Line
-          digitalWrite(L_OUT, HIGH);
-        #endif
-        initTime = currentTime + 400;
-        ISO_InitStep++;
-      }
-      break;
-    case 4:
-    case 6:
-      if (currentTime >= initTime)
-      {
-        // two bits LOW
-        digitalWrite(K_OUT, LOW);
-        #ifdef useL_Line
-          digitalWrite(L_OUT, LOW);
-          // Note: after this do we drive the L line back up high, or just leave it alone???
-        #endif
-        initTime = currentTime + 400;
-        ISO_InitStep++;
-      }
-      break;
+
     case 8:
       if (currentTime >= initTime)
       {
@@ -1430,7 +1445,7 @@ void iso_init()
         do
         {
            // If we find any data, keep catching it until it ends
-           while (iso_read_byte(&dataCaught))
+           while(iso_read_byte(&dataCaught))
            {
               gotData = true;
               dataResponse[responseIndex] = dataCaught;
@@ -1932,6 +1947,27 @@ void long_to_dec_str(long value, char *decs, byte prec)
   decs[pos] = (params.use_metric && params.use_comma) ? ',' : '.';
 }
 
+#ifdef BatteryVoltageSensor
+// Wiring:
+// 12V ---- 30kOhm ---|--- 10kOhm ---- 0V(GND)
+//                    |
+//                    A0 (analog pin)
+void get_batteryvoltage(char *retbuf)
+{
+  #define VoltageDevider 1955L // (30kOhm+10kOhm) / 10kOhm * 5V / 1023 * 100000
+  
+  long Voltage = analogRead(BatteryVoltagePin-14);
+#ifdef DEBUGOutput
+  Voltage = 535;
+#endif
+  Voltage = (Voltage * VoltageDevider) / 1000L; 
+  
+  char decs[16];
+  long_to_dec_str(Voltage, decs, 2);
+  sprintf_P(retbuf, PSTR("%s V"), decs);
+}
+#endif
+
 #if defined UseInsideTemperatureSensor || defined UseOutsideTemperatureSensor
 void get_temperature(char *retbuf, byte TemperatureSensorPin)
 {
@@ -2003,7 +2039,7 @@ void get_temperature(char *retbuf, byte TemperatureSensorPin)
 }
 #endif
 
-#define NBSMOOTH	16
+#define NBSMOOTH	8
 byte tvss[NBSMOOTH];  // last n speed
 unsigned int tmaf[NBSMOOTH];  // last n MAF
 static void clear_icons_tvss(void)
@@ -2036,7 +2072,7 @@ unsigned int get_icons(char *retbuf)
 
   if(nb_entry!=0)
   {
-		maf=(maf*params.fuel_adjust)/((unsigned int)nb_entry*100);
+    maf=(maf*params.fuel_adjust)/((unsigned int)nb_entry*100);
   }
 
   vss/=NBSMOOTH;		// average the N latest speed
@@ -2050,18 +2086,24 @@ unsigned int get_icons(char *retbuf)
   // = maf*0.3355/vss L/km
   // mul by 100 to have L/100km
 
+  //need to remember if speed was too low, because later it is 
+  //multiplied by speed_adjust and does not match condition anymore
+  boolean lowSpeed = false; 
   if(vss<toggle_speed)
+  {
     vss=10000;
+    lowSpeed=true;
+  }  
   else
     vss*=params.speed_adjust;
 
   // if maf is 0 it will just output 0
-	cons=(maf * GasConst)/vss;
+  cons=(maf * GasConst)/vss;
 
   if(params.use_metric)
   {
     long_to_dec_str(cons, decs, 2);
-    sprintf_P(retbuf, pctspcts, decs, (vss<toggle_speed)?"L\004":"\001\002" );
+    sprintf_P(retbuf, pctspcts, decs, lowSpeed?"L\004":"\001\002" );
   }
   else
   {
@@ -2073,7 +2115,7 @@ unsigned int get_icons(char *retbuf)
 
     // new comment: convert from L/100 to MPG
 
-    if(vss<toggle_speed)
+    if(lowSpeed)
         cons=(cons*10)/378;   // convert to gallon, can be 0 G/h
     else
     {
@@ -2084,7 +2126,7 @@ unsigned int get_icons(char *retbuf)
     }
 
     long_to_dec_str(cons, decs, 1);
-    sprintf_P(retbuf, pctspcts, decs, (vss<toggle_speed)?"G\004":"\006\007" );
+    sprintf_P(retbuf, pctspcts, decs, lowSpeed?"G\004":"\006\007" );
   }
 
   return (unsigned int) cons;
@@ -2158,12 +2200,12 @@ void get_fuel(char *retbuf, byte ctrip)
   unsigned long cfuel;
   char decs[16];
 
-  // convert from µL to cL
+  // convert from uL to cL
   cfuel=params.trip[ctrip].fuel/10000;
 
   // convert in gallon if requested
   if(!params.use_metric)
-    cfuel = convertToGallons(cfuel);
+    cfuel = (cfuel * 100L) / 378L;//convertToGallons(cfuel);
 
   long_to_dec_str(cfuel, decs, 2);
   sprintf_P(retbuf, pctspcts, decs, params.use_metric?"L":"G" );
@@ -2177,12 +2219,12 @@ void get_waste(char *retbuf, byte ctrip)
   unsigned long cfuel;
   char decs[16];
 
-  // convert from µL to cL
+  // convert from uL to cL
   cfuel=params.trip[ctrip].waste/10000;
 
   // convert in gallon if requested
   if(!params.use_metric)
-    cfuel = convertToGallons(cfuel);
+    cfuel = (cfuel * 100L) / 378L;//convertToGallons(cfuel);
 
   long_to_dec_str(cfuel, decs, 2);
   sprintf_P(retbuf, pctspcts, decs, params.use_metric?"L":"G" );
@@ -2218,7 +2260,7 @@ void get_remain_dist(char *retbuf)
   // tank size is in litres (converted at input time)
   tank_tmp=params.tank_size;
 
-  // convert from µL to dL
+  // convert from uL to dL
   remain_fuel=tank_tmp - params.trip[TANK].fuel/100000;
 
   // calculate remaining distance using tank cons and remaining fuel
@@ -2259,9 +2301,9 @@ void accu_trip(void)
 
   // time elapsed
   time_now = millis();
-  delta_time = time_now - old_time;
+  delta_time = (long)(time_now - old_time); //must take care of rollover
   old_time = time_now;
-
+  
   // distance in cm
   // 3km/h = 83cm/s and we can sample n times per second or so with CAN
   // so having the value in cm is not too large, not too weak.
@@ -2284,6 +2326,12 @@ void accu_trip(void)
   {
     return;
   }
+
+  // need auto-save if car is running
+  #ifdef AutoSave
+    if ((long)(time_now - old_time_params) > 30L * 60000L) // more then 30min
+      params_save();
+  #endif   
 
   // accumulate fuel only if not in DFCO
   // if throttle position is close to idle and we are in open loop -> DFCO
@@ -2362,19 +2410,19 @@ void accu_trip(void)
       maf=(imap*params.eng_dis)/5;
     }
     // add MAF result to trip
-    // we want fuel used in µL
+    // we want fuel used in uL
     // maf gives grams of air/s
     // divide by 100 because our MAF return is not divided!
     // divide by 14.7 (a/f ratio) to have grams of fuel/s
     // divide by 730 to have L/s
-    // mul by 1000000 to have µL/s
+    // mul by 1000000 to have uL/s
     // divide by 1000 because delta_time is in ms
 
     // at idle MAF output is about 2.25 g of air /s on my car
     // so about 0.15g of fuel or 0.210 mL
-    // or about 210 µL of fuel/s so µL is not too weak nor too large
+    // or about 210 uL of fuel/s so uL is not too weak nor too large
     // as we sample about 4 times per second at 9600 bauds
-    // ulong so max value is 4'294'967'295 µL or 4'294 L (about 1136 gallon)
+    // ulong so max value is 4'294'967'295 uL or 4'294 L (about 1136 gallon)
     // also, adjust maf with fuel param, will be used to display instant cons
     delta_fuel=(maf*params.fuel_adjust*delta_time) / GasMafConst;
     for(byte i=0; i<NBTRIP; i++) {
@@ -2432,6 +2480,10 @@ void display(byte location, byte pid)
   else if(pid==CAN_STATUS)
     elm_command(str, PSTR("ATCS\r"));
 #endif
+#ifdef BatteryVoltageSensor
+  else if(pid==BATT_VOLTAGE)
+    get_batteryvoltage(str);
+#endif
   else if (pid==OUTING_CONS)
     get_cons(str,OUTING);
   else if (pid==OUTING_FUEL)
@@ -2471,9 +2523,22 @@ void display(byte location, byte pid)
 
   byte row = location / 2;  // Two PIDs per line
   boolean isLeft = location % 2 == 0; // First PID per line is always left
-  byte textPos    = isLeft ? 0 : LCD_COLS - strlen(str);
-  byte clearStart = isLeft ? strlen(str) : LCD_SPLIT;
-  byte clearEnd   = isLeft ? LCD_SPLIT : textPos;
+
+// CodeOptimization (10 bytes)
+// same "if condition" should be done in one "if"
+//  byte textPos    = isLeft ? 0 : LCD_COLS - strlen(str);
+//  byte clearStart = isLeft ? strlen(str) : LCD_SPLIT;
+//  byte clearEnd   = isLeft ? LCD_SPLIT : textPos;
+
+  byte textPos    = 0;
+  byte clearStart = strlen(str);
+  byte clearEnd   = LCD_SPLIT;
+  if (!isLeft)
+  {
+    textPos    = LCD_COLS - strlen(str);
+    clearStart = LCD_SPLIT;
+    clearEnd   = textPos;
+  }   
 
   lcd.setCursor(textPos,row);
   lcd.print(str);
@@ -2503,6 +2568,18 @@ void check_supported_pids(void)
     pid41to60_support = (get_pid(PID_SUPPORT40, str, &tempLong)) ? tempLong : 0;
 }
 
+void display_mil_code_count(char *str, unsigned long *n, byte *count)
+{
+  // we have MIL on
+  *count=(*n>>24) & 0x7F;
+  lcd_cls_print_P(PSTR("CHECK ENGINE ON"));
+  lcd.setCursor(0,1);
+  sprintf_P(str, PSTR("%d CODE(S) IN ECU"), *count);
+  lcd.print(str);
+  delay(1500);
+  lcd.clear();
+}  
+  
 // might be incomplete
 void check_mil_code(bool Silent)
 {
@@ -2534,15 +2611,8 @@ void check_mil_code(bool Silent)
    */
   if(1L<<31 & n)  // test bit A7
   {
-    // we have MIL on
-    nb=(n>>24) & 0x7F;
-    lcd_cls_print_P(PSTR("CHECK ENGINE ON"));
-    lcd.setCursor(0,1);
-    sprintf_P(str, PSTR("%d CODE(S) IN ECU"), nb);
-    lcd.print(str);
-    delay(2000);
-    lcd.clear();
-
+    display_mil_code_count(str, &n, &nb);
+    
 #ifdef ELM
     // retrieve code
     elm_command(str, PSTR("03\r"));
@@ -2643,7 +2713,13 @@ void check_mil_code(bool Silent)
     }
     delay(2000);
   
+    lcd_cls_print_P(PSTR("Clear DTC?"));
+    byte ClearDTC = menu_select_yes_no(0);
+    if (ClearDTC == 1)
+      clear_mil_code();
 
+    lcd.clear();
+    
 #endif
   }
   else 
@@ -2687,44 +2763,41 @@ void clear_mil_code(void)
    */
   if(1L<<31 & n)  // test bit A7
   {
-    // we have MIL on
-    nb=(n>>24) & 0x7F;
-    lcd_cls_print_P(PSTR("CHECK ENGINE ON"));
-    lcd.setCursor(0,1);
-    sprintf_P(str, PSTR("%d CODE(S) IN ECU"), nb);
-    lcd.print(str);
-    delay(1000);
-    lcd_cls_print_P(PSTR("Clearing codes..."));
-
-#ifdef ELM
-    //Need some code to work :)
-    delay(1000);
-    lcd.clear();
-#else
-    // clear code
-    cmd[0]=0x04;
-    iso_write_data(cmd, 1);
-
-    lcd_cls_print_P(PSTR("Codes cleared"));
-    delay(1000);
-
-    Serial.flush();
-    lcd.clear();
-#endif
-  }
+    display_mil_code_count(str, &n, &nb);
+  }  
   else
   {
     lcd_cls_print_P(PSTR("No DTC codes"));
     delay(1000);
     lcd.clear();
   }
+  
+  // Clear codes always. If no MIL is iluminated, clearing codes still clears Long time fuel trim.
+  
+  lcd_cls_print_P(PSTR("Clearing codes..."));
+  
+#ifdef ELM
+  //Need some code to work :)
+  delay(1000);
+  lcd.clear();
+#else
+  // clear code
+  cmd[0]=0x04;
+  iso_write_data(cmd, 1);
+
+  lcd_cls_print_P(PSTR("Codes cleared"));
+  delay(1000);
+
+  Serial.flush();
+  lcd.clear();
+#endif
 }
 
 /*
  * Configuration menu
  */
 
-void delay_reset_button(void)
+boolean delay_reset_button(void)
 {
   // accumulate data for trip while in the menu config, do not pool too often.
   // but anyway you should not configure your OBDuino while driving!
@@ -2743,12 +2816,19 @@ void delay_reset_button(void)
   }
   else
   {
-    if (calcTimeDiff(lastButtonTime, millis()) > KEY_WAIT &&
+    //should be unsigned long if timeout is more 60s
+    unsigned int timeSinceLastButton = calcTimeDiff(lastButtonTime, millis()); //calcTimeDiff uses 40-50bytes each call
+    
+    if (timeSinceLastButton > KEY_WAIT &&
         calcTimeDiff(old_time, millis()) > ACCU_WAIT)
     {
       accu_trip();
     }
+    
+    if (timeSinceLastButton > MENU_TIMEOUT)
+      return true;
   }
+  return false;
 }
 
 // common code used in a couple of menu section
@@ -2757,7 +2837,7 @@ byte menu_select_yes_no(byte p)
   boolean exitMenu = false;
 
   // set value with left/right and set with middle
-  delay_reset_button();  // make sure to clear button
+  exitMenu |= delay_reset_button();  // make sure to clear button
 
   do
   {
@@ -2774,7 +2854,7 @@ byte menu_select_yes_no(byte p)
     else
       lcd_print_P(select_yes);
 
-    delay_reset_button();
+    exitMenu |= delay_reset_button();
   }
   while(!exitMenu);
 
@@ -2797,14 +2877,17 @@ byte menu_selection(char ** menu, byte arraySize)
   byte screenChars = 0;  // Characters currently sent to screen
   byte menuItem = 0;     // Menu items past current selection
   boolean exitMenu = false;
+  boolean forceExit = false;
 
   // Note: values are changed with left/right and set with middle
   // Default selection is always the first selection, which should be 'Exit'
 
   lcd.clear();
   lcd.print((char *)pgm_read_word(&(menu[0])));
-  delay_reset_button();  // make sure to clear button
-
+  forceExit = delay_reset_button();  // make sure to clear button
+  if (forceExit) 
+    return 0; // selection "exit"
+    
   do
   {
     if(LEFT_BUTTON_PRESSED && selection > 1)
@@ -2855,10 +2938,13 @@ byte menu_selection(char ** menu, byte arraySize)
     }
 
     // Clean up button presses
-    delay_reset_button();
+    forceExit = delay_reset_button();
   }
-  while(!exitMenu);
+  while(!exitMenu && !forceExit);
 
+  if (forceExit) 
+    return 0;
+    
   return selection - 1;
 }
 
@@ -2870,6 +2956,7 @@ void config_menu(void)
   unsigned int fuelUnits = 0;
   unsigned long tankUnits = 0;
   boolean changed = false;
+  boolean exitMenu = false;
 
 #ifdef ELM
 #ifndef DEBUG  // it takes 98 bytes
@@ -2925,8 +3012,8 @@ void config_menu(void)
 
             analogWrite(ContrastPin, params.contrast);  // change dynamicaly
             sprintf_P(str, pctd, params.contrast);
-            displaySecondLine(5, str);
-          } while(!MIDDLE_BUTTON_PRESSED);
+            exitMenu = displaySecondLine(5, str);
+          } while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
 
           if (oldByteValue != params.contrast)
           {
@@ -2938,6 +3025,7 @@ void config_menu(void)
           lcd_cls_print_P(PSTR("Use metric unit"));
           oldByteValue = params.use_metric;
           params.use_metric=menu_select_yes_no(params.use_metric);
+
           if (oldByteValue != params.use_metric)
           {
             saveParams = true;
@@ -2971,8 +3059,8 @@ void config_menu(void)
               params.per_hour_speed++;
 
             sprintf_P(str, pctd, params.per_hour_speed);
-            displaySecondLine(5, str);
-          } while(!MIDDLE_BUTTON_PRESSED);
+            exitMenu = displaySecondLine(5, str);
+          } while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
 
           if (oldByteValue != params.per_hour_speed)
           {
@@ -3005,7 +3093,7 @@ void config_menu(void)
           if(!params.use_metric)
           {
             lcd_print_P(PSTR("G)"));
-            fuelUnits = convertToGallons(params.tank_size);
+            fuelUnits = (params.tank_size * 100L) / 378L;//convertToGallons(params.tank_size);
           }
           else
           {
@@ -3029,14 +3117,14 @@ void config_menu(void)
 
             long_to_dec_str(fuelUnits, decs, 1);
             sprintf_P(str, PSTR("- %s + "), decs);
-            displaySecondLine(4, str);
-          } while(!MIDDLE_BUTTON_PRESSED);
+            exitMenu = displaySecondLine(4, str);
+          } while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
 
           if (changed)
           {
             if(!params.use_metric)
             {
-              params.tank_size = convertToLitres(fuelUnits);
+              params.tank_size = (fuelUnits * 378L) / 100L; //convertToLitres(fuelUnits);
             }
             else
             {
@@ -3062,7 +3150,7 @@ void config_menu(void)
           {
             lcd_print_P(PSTR("G)"));
             // Convert unit price to litres for the cost per gallon. (ie $1 a litre = $3.785 per gallon)
-            fuelUnits = convertToLitres(params.gas_price);
+            fuelUnits = (params.gas_price * 378L) / 100L; //convertToLitres(params.gas_price);
           }
           else
           {
@@ -3073,44 +3161,54 @@ void config_menu(void)
           // set value with left/right and set with middle
           do
           {
-            if(LEFT_BUTTON_PRESSED){
+            if(LEFT_BUTTON_PRESSED)
+            {
               changed = true;
               lastButton--;
-              if(lastButton >= 0) {
+              if(lastButton >= 0) 
+              {
                 lastButton = 0;
                 fuelUnits--;
-              } else if (lastButton < -3 && lastButton > -7) {
+              } else if (lastButton < -3 && lastButton > -7) 
+              {
                 fuelUnits-=2;
-              } else if (lastButton <= -7) {
+              } else if (lastButton <= -7) 
+              {
                 fuelUnits-=10;
-              } else {
+              } else 
+              {
                 fuelUnits--;
               }
-            } else if(RIGHT_BUTTON_PRESSED){
+            } else if(RIGHT_BUTTON_PRESSED)
+            {
               changed = true;
               lastButton++;
-              if(lastButton <= 0) {
+              if(lastButton <= 0) 
+              {
                 lastButton = 0;
                 fuelUnits++;
-              } else if (lastButton > 3 && lastButton < 7) {
+              } else if (lastButton > 3 && lastButton < 7) 
+              {
                 fuelUnits+=2;
-              } else if (lastButton >= 7) {
+              } else if (lastButton >= 7) 
+              {
                 fuelUnits+=10;
-              } else {
+              } else 
+              {
                 fuelUnits++;
               }
             }
 
             long_to_dec_str(fuelUnits, decs, fuelUnits > 999 ? 3 : 1);
             sprintf_P(str, gasPrice[fuelUnits > 999], decs);
-            displaySecondLine(3, str);
-          } while(!MIDDLE_BUTTON_PRESSED);
+            exitMenu = displaySecondLine(3, str);
+          } while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
 
           if (changed)
           {
             if(!params.use_metric)
             {
-              params.gas_price = convertToGallons(fuelUnits);
+              params.gas_price = (fuelUnits * 100L) / 378L; //convertToGallons(fuelUnits);
             }
             else
             {
@@ -3137,8 +3235,8 @@ void config_menu(void)
               params.fuel_adjust++;
 
             sprintf_P(str, pctdpctpct, params.fuel_adjust);
-            displaySecondLine(4, str);
-          } while(!MIDDLE_BUTTON_PRESSED);
+            exitMenu = displaySecondLine(4, str);
+          } while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
 
           if (oldByteValue != params.fuel_adjust)
           {
@@ -3158,8 +3256,8 @@ void config_menu(void)
               params.speed_adjust++;
 
             sprintf_P(str, pctdpctpct, params.speed_adjust);
-            displaySecondLine(4, str);
-          } while(!MIDDLE_BUTTON_PRESSED);
+            exitMenu = displaySecondLine(4, str);
+          } while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
 
           if (oldByteValue != params.fuel_adjust)
           {
@@ -3179,8 +3277,8 @@ void config_menu(void)
               params.OutingStopOver++;
 
             sprintf_P(str, PSTR("- %2d Min + "), params.OutingStopOver * MINUTES_GRANULARITY);
-            displaySecondLine(3, str);
-          } while(!MIDDLE_BUTTON_PRESSED);
+            exitMenu = displaySecondLine(3, str);
+          } while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
 
           if (oldByteValue != params.OutingStopOver)
           {
@@ -3203,8 +3301,8 @@ void config_menu(void)
               params.TripStopOver++;
 
             sprintf_P(str, PSTR("- %2d Hrs + "), params.TripStopOver);
-            displaySecondLine(3, str);
-          } while(!MIDDLE_BUTTON_PRESSED);
+            exitMenu = displaySecondLine(3, str);
+          } while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
 
           if (oldByteValue != params.TripStopOver)
           {
@@ -3221,7 +3319,7 @@ void config_menu(void)
           if(!params.use_metric)
           {
             lcd_print_P(PSTR("G)"));
-            tankUnits = convertToGallons(params.trip[0].fuel / 1000 / 100); // converted from uL to dL
+            tankUnits = params.trip[0].fuel / 1000 /* / 100 * 100L */ / 378L; //convertToGallons(params.trip[0].fuel / 1000 / 100); // converted from uL to dL
           }
           else
           {
@@ -3245,14 +3343,14 @@ void config_menu(void)
 
             long_to_dec_str(tankUnits, decs, 1);
             sprintf_P(str, PSTR("- %s + "), decs);
-            displaySecondLine(4, str);
-          } while(!MIDDLE_BUTTON_PRESSED);
+            exitMenu = displaySecondLine(4, str);
+          } while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
 
           if (changed)
           {
             if(!params.use_metric)
             {
-              params.trip[0].fuel = convertToLitres(tankUnits) * 1000 * 100;
+              params.trip[0].fuel = tankUnits * 378L /* / 100L * 100 */ * 1000; //convertToLitres(tankUnits) * 1000 * 100;
             }
             else
             {
@@ -3276,7 +3374,7 @@ void config_menu(void)
           if(!params.use_metric)
           {
             lcd_print_P(PSTR("M)"));
-            tankUnits = (params.trip[0].dist / 100 / 1000) * 1000 / 1609; // converted from cm to km
+            tankUnits = params.trip[0].dist / 100 /* / 1000 * 1000 */ / 1609; // converted from cm to km
           }
           else
           {
@@ -3300,8 +3398,8 @@ void config_menu(void)
 
             long_to_dec_str(tankUnits, decs, 0);
             sprintf_P(str, PSTR("- %s + "), decs);
-            displaySecondLine(4, str);
-          } while(!MIDDLE_BUTTON_PRESSED);
+            exitMenu = displaySecondLine(4, str);
+          } while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
 
           if (changed)
           {
@@ -3338,9 +3436,8 @@ void config_menu(void)
 
             long_to_dec_str(params.eng_dis, decs, 1);
             sprintf_P(str, PSTR("- %sL + "), decs);
-            displaySecondLine(4, str);
-          }
-          while(!MIDDLE_BUTTON_PRESSED);
+            exitMenu = displaySecondLine(4, str);
+          } while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
 
           if (oldByteValue != params.eng_dis)
           {
@@ -3387,8 +3484,8 @@ void config_menu(void)
               char strpid[10];
               strcpy_P(strpid, PID_Desc[pid]);
               sprintf_P(str, PSTR("- %8s +  "), strpid);
-              displaySecondLine(2, str);
-            } while(!MIDDLE_BUTTON_PRESSED);
+              exitMenu = displaySecondLine(2, str);
+            } while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
 
             // PID has changed so set it
             if (oldByteValue != pid)
@@ -3403,11 +3500,9 @@ void config_menu(void)
     else if (selection == 4)
     {
        lcd_cls_print_P(PSTR("Clear DTC?"));
-       int ClearDTC = menu_select_yes_no(0);
+       byte ClearDTC = menu_select_yes_no(1);
        if (ClearDTC == 1)
-       {
-          clear_mil_code();
-       }
+         clear_mil_code();
     }
   } while (selection != 0);
 
@@ -3423,11 +3518,11 @@ void config_menu(void)
 }
 
 // This helps reduce code size by containing repeated functionality.
-void displaySecondLine(byte position, char * str)
+boolean displaySecondLine(byte position, char * str)
 {
   lcd.setCursor(position,1);
   lcd.print(str);
-  delay_reset_button();
+  return delay_reset_button();
 }
 
 // Reworked a little to allow all trip types to be reset from one function.
@@ -3465,15 +3560,19 @@ void trip_reset(byte ctrip, boolean ask)
   }
 }
 
+/*
 unsigned int convertToGallons(unsigned int litres)
 {
   return (unsigned int) ( ((unsigned long)litres*100L) / 378L );
 }
+*/
 
+/*
 unsigned int convertToLitres(unsigned int gallons)
 {
   return (unsigned int) ( ((unsigned long)gallons*378L) / 100L );
 }
+*/
 
 int convertToFarenheit(int celsius)
 {
@@ -3643,10 +3742,13 @@ void setup()                    // run once, when the sketch starts
 #ifdef UseOutsideTemperatureSensor
   pinMode(OutsideTemperaturePin, INPUT);
 #endif
+#ifdef BatteryVoltageSensor
+  pinMode(BatteryVoltagePin, INPUT);
+#endif
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v187"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v188"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
@@ -3978,7 +4080,8 @@ void loop()                     // run over and over again
 // Calculate the time difference, and account for roll over too
 unsigned long calcTimeDiff(unsigned long start, unsigned long end)
 {
-  if (start < end)
+/*
+if (start < end)
   {
     return end - start;
   }
@@ -3986,6 +4089,9 @@ unsigned long calcTimeDiff(unsigned long start, unsigned long end)
   {
     return ULONG_MAX - start + end;
   }
+*/
+  // inspired by http://www.arduino.cc/playground/Code/TimingRollover saves 200bytes
+  return (long)(end - start);
 }
 
 #ifdef useECUState
@@ -4033,7 +4139,7 @@ void displayAlarmScreen(void)
     pingPosition = 0;
     pingDirection = 0;
 
-    lcd_cls_print_P(PSTR("OBDuino Security" ));
+    lcd_cls_print_P(PSTR("OBDuino Security"));
     lcd.setCursor(pingPosition,1);
     lcd.write('*');
 
@@ -4089,6 +4195,10 @@ void params_save(void)
   eeprom_write_block((const void*)&params, (void*)0, sizeof(params_t));
   // write CRC after params struct
   eeprom_write_word((uint16_t*)sizeof(params_t), crc);
+  
+  #ifdef AutoSave
+    old_time_params = millis();
+  #endif  
 }
 
 void params_load(void)
@@ -4096,6 +4206,10 @@ void params_load(void)
   params_t params_tmp;
   uint16_t crc, crc_calc;
   byte *p;
+
+  #ifdef AutoSave
+    old_time_params = millis();
+  #endif  
 
   // read params
   eeprom_read_block((void*)&params_tmp, (void*)0, sizeof(params_t));
