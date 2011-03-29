@@ -196,15 +196,15 @@ To-Do:
 // Comment out if ISO 9141 does not need to reinit
 // Uncomment define below to force reinitialization of ISO 9141 after no ECU communication
 // this requires ECU polling
-#define do_ISO_Reinit 
+//#define do_ISO_Reinit 
 
 // Comment out if ISO 9141 initialization should be done on first startup
 // Uncomment define below to skip initialization of ISO 9141 after first startup, initialization will be done in ISO_Reinit mode
-#define skip_ISO_Init 
+//#define skip_ISO_Init 
 
 // Comment out to use the PID screen when the car is off (This will interfere with ISO reinit process)
 // Uncomment to use the Car Alarm Screen when the car is off
-#define carAlarmScreen
+//#define carAlarmScreen
 
 // Comment out to disable trip data saving after engine is off and RPM = 0
 // Uncomment to save trip data after engine is off and RPM = 0
@@ -3748,7 +3748,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v188"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v189"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
