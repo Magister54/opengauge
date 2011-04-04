@@ -1,3 +1,5 @@
+
+
 /* OBDuino32K  (Requires Atmega328 for your Arduino)
 
  Copyright (C) 2008-2010
@@ -9,7 +11,21 @@
  LCD bignum: Frederic based on mpguino code by Dave, Eimantas
 
 Latest Changes
-Mar 29th, 2011
+
+Apr 04th, 2011 (v190)
+ ATTENTION! this update needed additional parameters saving to EEPROM, last tank data will be lost.
+
+ ISO reinit
+ Driving and idling times for each trip (could be used for average speed and other in future)
+ Max speed PID for each trip (max MAF, RPM, LOAD planned)
+ ISO init first delay changes: 300ms, 600ms, 1200ms, 2400ms, 4800ms, 300ms...
+
+ BIG pid can be configured
+ do_ISO_Reinit and skip_ISO_Init disabled by default
+ carAlarmScreen disabled by default and allowed to disable it separetly
+ Big font type could be changed without recompiling (~400bytes fonts + ~200bytes config)
+  
+Mar 29th, 2011 (v189)
  AutoSave after 30min while driving (disabled by default)
  Config timeout (10s by default, last changes always accepted) (~100 bytes used)
  Battery voltage PID for ISO 9141 (was only for ELM) see get_batteryvoltage() for wiring instructions
@@ -71,6 +87,7 @@ To-Do:
     2. SD Card logging
     3. Add another Fake PID to track max values (Speed, RPM, Tank KM's, etc...)
     4. Add a "Score" PID, to rate you for a trip (Quickness, IdleTime, Fuel Used etc as factors)
+    5. Allow config for L/100 or km/l
   
   Other:
     1. Trim the Code as we are aproaching the 30.7K limit.
@@ -84,6 +101,7 @@ To-Do:
     2. Move variable caching strings to PROGMEM
     3. Add a "dirty" flag to tank data when the obduino detects that it has been
         disconnected from the car to indicate that the data may no longer be complete
+    4. Config menu optimization (one universal function for all items)
 
 
  This program is free software; you can redistribute it and/or modify it under
@@ -140,13 +158,13 @@ To-Do:
 #define use_BIG_font
 
 // Uncomment only one, that will be used.
-//#define BIG_font_type_3x2 // CAN'T BE USED WITH BIG_font_hybrid
-//#define BIG_font_type_2x2_alpha
-#define BIG_font_type_2x2_beta
+//#define BIG_font_type_3x2 // CAN'T BE USED WITH BIG_font_hybrid // define not used anymore
+//#define BIG_font_type_2x2_alpha // define used anymore
+//#define BIG_font_type_2x2_beta // define used anymore
 
 //Uncomment to enable hybrid display on Average fuel Big num screen
 //This will display Big Num Average, and in the corner, The instant
-#define BIG_font_hybrid
+//#define BIG_font_hybrid // Not used anymore
 
 // Comment for normal build
 // Uncomment for a debug build
@@ -187,6 +205,10 @@ To-Do:
 // ON VW MK4 1ms works fine (but is same as 10ms)
 // Fasted PID read rate is 19-20pids/s
 // Discusion about lower values then allowed in ISO9141 specification is in forum page 59-60
+
+// This delay also affects config menu behaviour, because in accu_trip() minimum 3 pids are readed
+// we get 3x55ms=165ms gap in ACCU_WAIT frame then buttons are inactive. 
+// Need to minimize PID read delay or increase ACCU_WAIT for better config menu response.
 #define ISORequestDelay 55
 
 // Comment out to just try the PIDs without need to find ECU
@@ -254,7 +276,7 @@ void lcd_print_P(char *string);  // to work with string in flash and PSTR()
 void lcd_cls_print_P(char *string);  // clear screen and display string
 void lcd_char_init();
 void lcd_char_bignum();
-void bigNum(unsigned long t, char *txt1, char *txt2);
+void bigNum(char *txt, char *txt1);
 
 // Memory prototypes
 void params_load(void);
@@ -415,7 +437,17 @@ unsigned long  pid41to60_support=0;
 
 /* our internal fake PIDs */
 
-#define FIRST_FAKE_PID 0xE7 // same as the first one defined below
+#define FIRST_FAKE_PID 0xDE // same as the first one defined below
+
+#define OUTING_MAX_VSS    0xDE
+#define TRIP_MAX_VSS      0xDF
+#define TANK_MAX_VSS      0xE0
+#define OUTING_IDLE_TIME  0xE1
+#define TRIP_IDLE_TIME    0xE2
+#define TANK_IDLE_TIME    0xE3
+#define OUTING_DRIVE_TIME 0xE4
+#define TRIP_DRIVE_TIME   0xE5
+#define TANK_DRIVE_TIME   0xE6
 
 #define OUTSIDE_TEMP  0xE7    // temperature outside the car
 #define INSIDE_TEMP   0xE8    // temperature inside the car
@@ -673,17 +705,19 @@ prog_char PID_Desc[256][9] PROGMEM=
 "", // 0xDB
 "", // 0xDC
 "", // 0xDD
-"", // 0xDE
-"", // 0xDF
-"", // 0xE0
-"", // 0xE1
-"", // 0xE2
-"", // 0xE3
-"", // 0xE4
-"", // 0xE5
-"", // 0xE6
+"Out MVSS", // 0xDE
+"Trp MVSS", // 0xDF
+"Tnk MVSS", // 0xE0
+"Out Idle", // 0xE1
+"Trp Idle", // 0xE2
+"Tnk Idle", // 0xE3
+"OutDrive", // 0xE4
+"TrpDrive", // 0xE5
+"TnkDrive", // 0xE6
+
 "OutsideT", // 0xE7   temperature outside car
 "Inside T", // 0xE8   temperature inside car
+
 "OutWaste", // 0xE9   outing waste
 "TrpWaste", // 0xEA   trip waste
 "TnkWaste", // 0xEB   tank waste
@@ -736,6 +770,7 @@ prog_uchar pid_reslen[] PROGMEM=
 
 // Number of screens of PIDs
 #define NBSCREEN  3  // 12 PIDs should be enough for everyone
+#define BIG_NBSCREEN 2
 byte active_screen=0;  // 0,1,2,... selected by left button
 
 prog_char pctd[] PROGMEM="- %d + "; // used in a couple of place
@@ -748,9 +783,9 @@ prog_char gasPrice[][10] PROGMEM={"-  %s\354 + ", CurrencyAdjustString}; // dual
 
 // menu items used by menu_selection.
 prog_char *topMenu[] PROGMEM = {"Configure menu", "Exit", "Display", "Adjust", "PIDs", "Clear DTC"};
-prog_char *displayMenu[] PROGMEM = {"Display menu", "Exit", "Contrast", "Metric", "Fuel/Hour"};
+prog_char *displayMenu[] PROGMEM = {"Display menu", "Exit", "Contrast", "Metric", "Fuel/Hour", "Font"};
 prog_char *adjustMenu[] PROGMEM = {"Adjust menu", "Exit", "Tank Size", "Fuel Cost", "Fuel %", "Speed %", "Out Wait", "Trip Wait", "Tank Used", "Tank Dist", "Eng Disp", };
-prog_char *PIDMenu[] PROGMEM = {"PID Screen menu", "Exit", "Scr 1", "Scr 2", "Scr 3"};
+prog_char *PIDMenu[] PROGMEM = {"PID Screen menu", "Exit", "Scr 1", "Scr 2", "Scr 3", "Big 1", "Big 2"};
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(*(x)))
 
@@ -782,6 +817,19 @@ typedef struct
 }
 trip_t;
 
+// saving trip max data and time  
+typedef struct
+{
+  unsigned char maxspeed;    // in km/h
+  unsigned int maxrpm;       // in rpm 
+  unsigned char maxload;     // in %
+  unsigned char maxmaf;      // in g
+  
+  unsigned long timedriving; // in ms
+  unsigned long timeidling;  // in ms
+}
+trip_max;
+
 // each screen contains n PIDs (two per line)
 typedef struct
 {
@@ -804,8 +852,11 @@ typedef struct
   unsigned int  tank_size;   // tank size in dL or dgal depending of unit
   byte OutingStopOver; // Allowable stop over time (in tens of minutes). Exceeding time starts a new outing.
   byte TripStopOver;   // Allowable stop over time (in hours). Exceeding time starts a new outing.
-  trip_t trip[NBTRIP];        // trip0=tank, trip1=a trip
-  screen_t screen[NBSCREEN];  // screen
+  trip_t trip[NBTRIP];        // trip0=tank, trip1=a trip, trip2=outing
+  trip_max tripmax[NBTRIP];   // trip0=tank, trip1=a trip, trip2=outing
+  screen_t screen[NBSCREEN + BIG_NBSCREEN];  // screen
+  byte BigFontType;    // Posible values: 0 - 2x2_alpha; 1 - 2x2_beta; 2 - 2x3.
+  byte MetricDisplayType; // Possible values: 0 - l/100km; 1 - km/l. //reserved place for future development
 }
 params_t;
 
@@ -824,9 +875,14 @@ params_t params=
   6, // 60 minutes (6 X 10) stop or less will not cause outing reset
   12, // 12 hour stop or less will not cause trip reset
   {
-    { 0,0,0 }, // tank: dist, fuel, waste
-    { 0,0,0 }, // trip: dist, fuel, waste
+    { 0,0,0 }, // tank:  dist, fuel, waste
+    { 0,0,0 }, // trip:  dist, fuel, waste
     { 0,0,0 }  // outing:dist, fuel, waste
+  },
+  {
+    { 0,0,0,0, 0,0 }, // tank:  speed,rpm,load,maf; time driving, time idling
+    { 0,0,0,0, 0,0 }, // trip:  speed,rpm,load,maf; time driving, time idling
+    { 0,0,0,0, 0,0 }  // outing:speed,rpm,load,maf; time driving, time idling
   },
   {
     { {FUEL_CONS,LOAD_VALUE,TANK_CONS,OUTING_FUEL
@@ -843,8 +899,20 @@ params_t params=
        #if LCD_ROWS == 4
          ,TANK_WASTE,TANK_COST,ENGINE_RPM,VEHICLE_SPEED
        #endif
-       } }
-  }
+       } },
+    { {FUEL_CONS,NO_DISPLAY,NO_DISPLAY,NO_DISPLAY
+       #if LCD_ROWS == 4
+         ,NO_DISPLAY,NO_DISPLAY,NO_DISPLAY,NO_DISPLAY
+       #endif
+       } },      
+    { {ENGINE_RPM,FUEL_CONS,NO_DISPLAY,NO_DISPLAY
+       #if LCD_ROWS == 4
+         ,NO_DISPLAY,NO_DISPLAY,NO_DISPLAY,NO_DISPLAY
+       #endif
+       } }      
+  },
+  0, //BigFontType
+  0 //MetricDisplayType
 };
 
 prog_char * econ_Visual[] PROGMEM=
@@ -935,11 +1003,14 @@ byte param_saved=0;
 #endif
 #endif
 
+/*
+// This check is not needed anymore
 #ifdef do_ISO_Reinit
 #ifndef carAlarmScreen  
 #error ISO reinit will not function when not displaying the car alarm screen (#define carAlarmScreen)
 #endif
 #endif
+*/
 
 #ifdef DEBUG
 #ifdef AutoSave
@@ -959,6 +1030,7 @@ boolean refreshAlarmScreen; // Used to cause non-repeating screen data to displa
 // ISO 9141 communication variables
 byte ISO_InitStep = 0;  // Init is multistage, this is the counter
 boolean ECUconnection;  // Have we connected to the ECU or not
+unsigned long lastReceivedPIDTime = 0;
 
 #ifdef DEBUGOutput // debug information for ISO9141 init debuging
   byte LastISO_InitStep = 0;  // Init is multistage, this is last stage memory
@@ -984,7 +1056,7 @@ ISR(PCINT1_vect)
   static unsigned long last_millis = 0;
   unsigned long m = millis();
 
-  if (m - last_millis > 20)
+  if ((long)(m - last_millis) > 20)
   { // do pushbutton stuff
     buttonState |= ~PINC;
   }
@@ -1242,7 +1314,8 @@ byte iso_read_data(byte *data, byte len)
   // we send only one command, so result start at buf[4] Actually, result starts at buf[5], buf[4] is pid requested...
   memcpy(data, buf+5, len);
 
-  delay(ISORequestDelay);    //guarantee 55 ms pause between requests
+  lastReceivedPIDTime = millis();
+//  delay(ISORequestDelay);    //guarantee 55 ms pause between requests
 
   return dataSize - 6; // return payload length
 }
@@ -1255,6 +1328,7 @@ void iso_init()
 {
   long currentTime = millis();
   static long initTime;
+  static int initFirstDelay = 300;
 #ifdef ISO_9141
 
 // CodeOptimization (128bytes)
@@ -1277,7 +1351,8 @@ void iso_init()
       ECUconnection = false;
       serial_tx_off(); //disable UART so we can "bit-Bang" the slow init.
       serial_rx_off();
-      initTime = currentTime + 3000;
+      initTime = currentTime + initFirstDelay;
+      initFirstDelay = (initFirstDelay % 4500) * 2; //if 4800 then down to 300ms AND sequence: 300, 600, 1200, 2400, 4800
       ISO_InitStep++;
       break;
 
@@ -1391,7 +1466,8 @@ void iso_init()
       ECUconnection = false;
       serial_tx_off(); //disable UART so we can "bit-Bang" the slow init.
       serial_rx_off();
-      initTime = currentTime + 3000;
+      initTime = currentTime + initFirstDelay;
+      initFirstDelay = (initFirstDelay % 4500) * 2; //if 4800 then down to 300ms AND sequence: 300, 600, 1200, 2400, 4800
       ISO_InitStep++;
       break;
     case 1:
@@ -1475,7 +1551,8 @@ void iso_init()
       ECUconnection = false;
       serial_tx_off(); //disable UART so we can "bit-Bang" the slow init.
       serial_rx_off();
-      initTime = currentTime + 3000;
+      initTime = currentTime  + initFirstDelay;
+      initFirstDelay = (initFirstDelay % 4500) * 2; //if 4800 then down to 300ms AND sequence: 300, 600, 1200, 2400, 4800
       ISO_InitStep++;
       break;
     case 1:
@@ -1620,10 +1697,10 @@ boolean is_pid_supported(byte pid, byte mode)
       return true;
   }
   else
-  if( mode && pid>=FIRST_FAKE_PID)
-    return true;
+    if (mode && pid>=FIRST_FAKE_PID) 
+      return true;
 
-return false;
+  return false;
 }
 
 // Get value of a PID, and place in long pointer
@@ -1648,7 +1725,7 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
   nbpid++;
   // time elapsed
   time_now = millis();
-  delta_time = time_now - getpid_time;
+  delta_time = (long)(time_now - getpid_time);
   if(delta_time>1000)
   {
     nbpid_per_second=nbpid;
@@ -1696,6 +1773,11 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
   elm_compact_response(buf, str);
 #endif
 #else
+  // wait until ISORequestDelay is delayed after last PID read
+
+  while (long(millis() - ISORequestDelay) < lastReceivedPIDTime)
+    delay(1);
+
   cmd[0]=0x01;    // ISO cmd 1, get PID
   cmd[1]=pid;
   // send command, length 2
@@ -2080,7 +2162,7 @@ unsigned int get_icons(char *retbuf)
   // divide MAF by 100 because our function return MAF*100
   // but multiply by 100 for double digits precision
   // divide MAF by 14.7 air/fuel ratio to have g of fuel/s
-  // divide by 730 (g/L at 15°C) according to Canadian Gov to have L/s
+  // divide by 730 (g/L at 15C) according to Canadian Gov to have L/s
   // multiply by 3600 to get litre per hour
   // formula: (3600 * MAF) / (14.7 * 730 * VSS)
   // = maf*0.3355/vss L/km
@@ -2278,6 +2360,15 @@ void get_remain_dist(char *retbuf)
   sprintf_P(retbuf, pctldpcts, remain_dist, params.use_metric?"\003":"\006" );
 }
 
+//get_max_vss returns max speed achieved in trip
+void get_max_vss(char *retbuf, byte trip)
+{
+  unsigned int speed = params.tripmax[trip].maxspeed;
+  if(!params.use_metric)
+     speed=(speed*100U)/161U; //low differense between 1609 and 1610
+  sprintf_P(retbuf, pctldpcts, speed, params.use_metric?"\003\004":"\006\004");  
+}
+
 /*
  * accumulate data for trip, called every loop()
  */
@@ -2318,7 +2409,13 @@ void accu_trip(void)
     delta_dist=(vss*delta_time)/36;
     // accumulate for all trips
     for(byte i=0; i<NBTRIP; i++)
+    {
       params.trip[i].dist+=delta_dist;
+
+      // collect max data
+      if (vss > params.tripmax[i].maxspeed)
+        params.tripmax[i].maxspeed = vss;
+    }  
   }
 
   // if engine is stopped, we can get out now
@@ -2425,12 +2522,21 @@ void accu_trip(void)
     // ulong so max value is 4'294'967'295 uL or 4'294 L (about 1136 gallon)
     // also, adjust maf with fuel param, will be used to display instant cons
     delta_fuel=(maf*params.fuel_adjust*delta_time) / GasMafConst;
-    for(byte i=0; i<NBTRIP; i++) {
+    for(byte i=0; i<NBTRIP; i++) 
+    {
       params.trip[i].fuel+=delta_fuel;
       //code to accumlate fuel wasted while idling
-      if ( vss == 0 )  {//car not moving
+      if ( vss == 0 )
+      {//car not moving
         params.trip[i].waste+=delta_fuel;
+        params.tripmax[i].timeidling += delta_time;
       }
+      else
+        params.tripmax[i].timedriving += delta_time;
+      
+      // collect max data
+      if (maf > params.tripmax[i].maxmaf)
+        params.tripmax[i].maxmaf = maf;
     }
   }
   tvss[tindex]=vss;
@@ -2439,13 +2545,31 @@ void accu_trip(void)
   tindex = (tindex+1) % NBSMOOTH;
 }
 
-void display(byte location, byte pid)
+// this function is needet for normal PID display and BIG PID display
+// as well in this form, compiled size is lower in 70bytes, why?
+void get_pid_internal(char *str, byte pid)
 {
-  char str[STRLEN];
-
   /* check if it's a real PID or our internal one */
   if(pid==NO_DISPLAY)
     return;
+  else if(pid==OUTING_MAX_VSS)
+    get_max_vss(str, OUTING);
+  else if(pid==TRIP_MAX_VSS)
+    get_max_vss(str, TRIP);
+  else if(pid==TANK_MAX_VSS)
+    get_max_vss(str, TANK);   
+  else if(pid==OUTING_IDLE_TIME)
+    get_trip_time(str, OUTING, 1);
+  else if(pid==TRIP_IDLE_TIME)
+    get_trip_time(str, TRIP, 1);
+  else if(pid==TANK_IDLE_TIME)
+    get_trip_time(str, TANK, 1);
+  else if(pid==OUTING_DRIVE_TIME)
+    get_trip_time(str, OUTING, 0);
+  else if(pid==TRIP_DRIVE_TIME)
+    get_trip_time(str, TRIP, 0);
+  else if(pid==TANK_DRIVE_TIME)
+    get_trip_time(str, TANK, 0);    
   else if(pid==OUTING_COST)
     get_cost(str, OUTING);
   else if(pid==TRIP_COST)
@@ -2500,11 +2624,8 @@ void display(byte location, byte pid)
   else if (pid==OUTSIDE_TEMP)
     get_temperature(str, OutsideTemperaturePin);
 #endif    
-    
   else if(pid==PID_SEC)
-  {
     sprintf_P(str, PSTR("%d pid/s"), nbpid_per_second);
-  }
 #ifdef DEBUG
   else if(pid==FREE_MEM)
     sprintf_P(str, PSTR("%d free"), memoryTest());
@@ -2514,6 +2635,16 @@ void display(byte location, byte pid)
 #endif
   else
     get_pid(pid, str, &tempLong);
+}
+
+void display(byte location, byte pid)
+{
+  char str[STRLEN];
+  
+  if(pid==NO_DISPLAY)
+    return;
+
+  get_pid_internal(str, pid);
 
   // left locations are left aligned
   // right locations are right aligned
@@ -2554,11 +2685,18 @@ void display(byte location, byte pid)
 void check_supported_pids(void)
 {
   char str[STRLEN];
-
+  //long tempPID; //local variable is 4bytes less then global tempLong, why?
+  
 #ifdef DEBUG
   pid01to20_support=0xBE1FA812;
 #else
-  pid01to20_support  = (get_pid(PID_SUPPORT00, str, &tempLong)) ? tempLong : 0;
+  // on some ECU first PID read attemts some time fails, changed to 3 attempts
+  for (byte i=0; i<3; i++)
+  {
+    pid01to20_support  = (get_pid(PID_SUPPORT00, str, &tempLong)) ? tempLong : 0;
+    if (pid01to20_support) 
+      break; 
+  }
 #endif
 
   if(is_pid_supported(PID_SUPPORT20, 0))
@@ -3067,6 +3205,31 @@ void config_menu(void)
             saveParams = true;
           }
         }
+        else if (displaySelection == 4) // Font
+        {
+          oldByteValue = params.BigFontType;
+
+          // speed from which we toggle to fuel/hour
+          lcd_cls_print_P(PSTR("Font type"));
+          // set value with left/right and set with middle
+          do
+          {
+            if(LEFT_BUTTON_PRESSED && params.BigFontType!=0)
+              params.BigFontType--;
+            else if(RIGHT_BUTTON_PRESSED && params.BigFontType!=2)
+              params.BigFontType++;
+
+            sprintf_P(str, pctd, params.BigFontType);
+            exitMenu = displaySecondLine(5, str);
+          } while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
+
+          if (oldByteValue != params.BigFontType)
+          {
+            if(active_screen>=NBSCREEN)
+              lcd_char_bignum();
+            saveParams = true;
+          }
+        }
       } while (displaySelection != 0); // exit from this menu
     }
     else if (selection == 2) // Adjust
@@ -3458,7 +3621,7 @@ void config_menu(void)
       {
         PIDSelection = menu_selection(PIDMenu, ARRAY_SIZE(PIDMenu));
 
-        if (PIDSelection != 0 && PIDSelection <= NBSCREEN)
+        if (PIDSelection != 0 && PIDSelection <= NBSCREEN + BIG_NBSCREEN)
         {
           cur_screen = PIDSelection - 1;
           for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
@@ -3547,6 +3710,17 @@ void trip_reset(byte ctrip, boolean ask)
     params.trip[ctrip].fuel=0L;
     params.trip[ctrip].waste=0L;
 
+    params.tripmax[ctrip].maxspeed = 0;
+    params.tripmax[ctrip].maxrpm = 0;
+    params.tripmax[ctrip].maxload = 0;
+    params.tripmax[ctrip].maxmaf = 0;
+
+    params.tripmax[ctrip].timedriving = 0L;
+    params.tripmax[ctrip].timeidling = 0L;
+
+// memset is better, should be tested some time    
+//    memset(&params.tripmax[ctrip], 0, sizeof(trip_max));
+
     if (ctrip == OUTING && ask)
     {
       // Reset the start time to now too
@@ -3611,8 +3785,7 @@ void test_buttons(void)
   else if(LEFT_BUTTON_PRESSED)
   {
 #if 1  // set to 1 to test bignum
-    // + 2 because we can display two thing in bignum
-    active_screen = (active_screen+1) % (NBSCREEN+2);
+    active_screen = (active_screen+1) % (NBSCREEN+BIG_NBSCREEN);
 #else
     active_screen = (active_screen+1) % (NBSCREEN);
 #endif
@@ -3748,7 +3921,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v189"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v190"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
@@ -3792,7 +3965,7 @@ void setup()                    // run once, when the sketch starts
        else
        {
          sprintf_P(str, PSTR("F!%X%d %X%d %X %X%d  "), LastReceived1, LastReceived1OK, LastReceived2, LastReceived2OK, LastSend1, LastReceived3, LastReceived3OK);
-         lcd_gotoXY(0,1);
+         lcd.setCursor(0, 1);
        }  
      #else
        sprintf_P(str, PSTR("Failed!       "));
@@ -3835,17 +4008,49 @@ void setup()                    // run once, when the sketch starts
 #endif 
 }
 
+static void DisplayLCDPIDS(char *str, char *str2)
+{
+  if (active_screen<NBSCREEN)
+    for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
+      display(current_PID, params.screen[active_screen].PID[current_PID]);
+  else
+  if (active_screen==NBSCREEN)
+  {
+    get_pid_internal(str, params.screen[active_screen].PID[0]);
+    bigNum(str, "");
+//    bigNum(str, "INST", params.use_metric?(vss > params.per_hour_speed?"L/KM":"L/Hr"):(vss > params.per_hour_speed?"MPG ":"G/Hr"));
+  } else 
+  {
+    //params.screen[active_screen].PID[0]
+    if (params.BigFontType < 2)
+    {
+      get_pid_internal(str2, params.screen[active_screen].PID[1]);
+      str2[5] ='\0';
+
+      get_pid_internal(str, params.screen[active_screen].PID[0]);
+      bigNum(str, str2);
+//      bigNum(str, str2, params.use_metric?"AVG L/KM":"AVG MPG ");
+    }  
+    else
+    {
+      get_pid_internal(str, params.screen[active_screen].PID[0]);
+      bigNum(str, "");
+//      bigNum(str, "AVG", params.use_metric?"L/KM":"MPG ");
+    }  
+  }
+}
+
 /*
  * Main loop
  */
 
 void loop()                     // run over and over again
 {
-  #ifdef useECUState
   char str[STRLEN];
-  #ifdef BIG_font_hybrid
   char str2[STRLEN];
-  #endif
+
+  #ifdef useECUState
+
     #ifdef DEBUG
       ECUconnection = true;
       has_rpm = true;
@@ -3929,39 +4134,7 @@ void loop()                     // run over and over again
     accu_trip();
 
     // display on LCD
-    if (active_screen<NBSCREEN)
-      for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
-        display(current_PID, params.screen[active_screen].PID[current_PID]);
-    else
-    if (active_screen==NBSCREEN){
-      if (params.use_metric) {
-        if (vss > params.per_hour_speed) {
-          bigNum(get_icons(str), "INST", "L/KM");
-        } else {
-          bigNum(get_icons(str), "INST", "L/Hr");
-        }
-      } else {
-        if (vss > params.per_hour_speed) {
-          bigNum(get_icons(str), "INST", "MPG ");
-        } else {
-          bigNum(get_icons(str), "INST", "G/Hr");
-        }
-      }
-    } else {
-    #ifdef BIG_font_hybrid
-    get_icons(str2);
-    str2[5] ='\0';
-      if (params.use_metric)
-        bigNum(get_cons(str, OUTING), str2, "AVG L/K");
-      else
-        bigNum(get_cons(str, OUTING), str2, "AVG MPG ");
-    #else
-      if (params.use_metric)
-        bigNum(get_cons(str, OUTING), "AVG", "L/KM");
-      else
-        bigNum(get_cons(str, OUTING), "AVG", "MPG ");    
-    #endif
-    }
+    DisplayLCDPIDS(str, str2);
   }
   else
   {
@@ -3971,8 +4144,8 @@ void loop()                     // run over and over again
        displayAlarmScreen();
     #else
      // for some reason the display on LCD
-     for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
-       display(current_PID, params.screen[active_screen].PID[current_PID]);
+     if (ISO_InitStep < 2) // Print to LCD if idle only
+       DisplayLCDPIDS(str, str2);
     #endif
 
     #ifdef do_ISO_Reinit
@@ -3980,7 +4153,6 @@ void loop()                     // run over and over again
     #endif
   }
 #else
-  char str[STRLEN];
 
   // test if engine is started
   has_rpm = (get_pid(ENGINE_RPM, str, &tempLong) && tempLong > 0) ? 1 : 0;
@@ -4026,50 +4198,21 @@ void loop()                     // run over and over again
     #endif
   }
 
-  #ifdef carAlarmScreen
-    displayAlarmScreen();
-  #else
-
-  // this read and assign vss and maf and accumulate trip data
-  accu_trip();
-
-  // display on LCD
-  if (active_screen<NBSCREEN)
-    for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
-      display(current_PID, params.screen[active_screen].PID[current_PID]);
+  if (engine_started)
+  {
+    // this read and assign vss and maf and accumulate trip data
+    accu_trip();
+    // display on LCD
+    DisplayLCDPIDS(str, str2);
+  }  
   else
-    if (active_screen==NBSCREEN){
-      if (params.use_metric) {
-        if (vss > params.per_hour_speed) {
-          bigNum(get_icons(str), "INST", "L/KM");
-        } else {
-          bigNum(get_icons(str), "INST", "L/Hr");
-        }
-      } else {
-        if (vss > params.per_hour_speed) {
-          bigNum(get_icons(str), "INST", "MPG ");
-        } else {
-          bigNum(get_icons(str), "INST", "G/Hr");
-        }
-      }
-    } else {
-    #ifdef BIG_font_hybrid
-    get_icons(str2);
-    str2[5] ='\0';
-
-      if (params.use_metric)
-        bigNum(get_cons(str, OUTING), str2, "AVG L/K");
-      else
-        bigNum(get_cons(str, OUTING), str2, "AVG MPG ");
+  {
+    #ifdef carAlarmScreen
+      displayAlarmScreen();
     #else
-      if (params.use_metric)
-        bigNum(get_cons(str, OUTING), "AVG", "L/KM");
-      else
-        bigNum(get_cons(str, OUTING), "AVG", "MPG ");    
-    #endif+
-    }
-
-  #endif
+      DisplayLCDPIDS(str, str2);
+    #endif  
+  }
 
 #endif
 
@@ -4265,7 +4408,7 @@ void lcd_char_init()
   // char 0 is not used
   // 1&2 is the L/100 datagram in 2 chars only
   // 3&4 is the km/h datagram in 2 chars only
-  // 5 is the ° char (degree)
+  // 5 is the � char (degree)
   // 6&7 is the mi/g char
 #define NB_CHAR  7
   // set cg ram to address 0x08 (B001000) to skip the
@@ -4292,23 +4435,11 @@ void lcd_char_bignum()
   //creating the custom fonts:
   lcd.command(B01001000); // set cgram
 
-#ifdef BIG_font_type_3x2
-  #define BIGFontSymbolCount 5
-  static prog_uchar chars[BIGFontSymbolCount*8] PROGMEM = { 
-    B11111, B00000, B11111, B11111, B00000, 
-    B11111, B00000, B11111, B11111, B00000, 
-    B00000, B00000, B00000, B11111, B00000, 
-    B00000, B00000, B00000, B11111, B00000, 
-    B00000, B00000, B00000, B11111, B00000, 
-    B00000, B00000, B00000, B11111, B01110, 
-    B00000, B11111, B11111, B11111, B01110, 
-    B00000, B11111, B11111, B11111, B01110 
-  };
-#endif
-
-#ifdef BIG_font_type_2x2_alpha
+  #define BIGFontFontCount 3
   #define BIGFontSymbolCount 8
-  static prog_uchar chars[BIGFontSymbolCount*8] PROGMEM = { 
+  
+  static prog_uchar chars[BIGFontFontCount*BIGFontSymbolCount*8] PROGMEM = {
+    //2x2_alpha 
     B00000, B11111, B11000, B00011, B11111, B11111, B11111, B11111,
     B00000, B11111, B11000, B00011, B11111, B11111, B11111, B11111,
     B00000, B00011, B11000, B00011, B11000, B00011, B00000, B00000,
@@ -4316,13 +4447,9 @@ void lcd_char_bignum()
     B00000, B00011, B11000, B00011, B11000, B00011, B00000, B00000,
     B00000, B00011, B11000, B00011, B11000, B00011, B00000, B00000,
     B11111, B00011, B11111, B11111, B11111, B11111, B00000, B11111,
-    B11111, B00011, B11111, B11111, B11111, B11111, B00000, B11111
-  };
-#endif
+    B11111, B00011, B11111, B11111, B11111, B11111, B00000, B11111,
 
-#ifdef BIG_font_type_2x2_beta
-  #define BIGFontSymbolCount 8
-  static prog_uchar chars[BIGFontSymbolCount*8] PROGMEM = { 
+    //2x2_beta
     B11111, B11111, B11000, B00011, B11111, B11111, B11111, B00000,
     B11111, B11111, B11000, B00011, B11111, B11111, B11111, B00000,
     B11000, B00011, B11000, B00011, B11000, B00011, B00000, B00000,
@@ -4330,13 +4457,22 @@ void lcd_char_bignum()
     B11000, B00011, B11000, B00011, B11000, B00011, B00000, B00000,
     B11000, B00011, B11000, B00011, B11000, B00011, B00000, B00000,
     B11000, B00011, B11111, B11111, B11111, B11111, B00000, B11111,
-    B11000, B00011, B11111, B11111, B11111, B11111, B00000, B11111
+    B11000, B00011, B11111, B11111, B11111, B11111, B00000, B11111,
+
+    //2x3
+    B11111, B00000, B11111, B11111, B00000, B00000, B00000, B00000,
+    B11111, B00000, B11111, B11111, B00000, B00000, B00000, B00000, 
+    B00000, B00000, B00000, B11111, B00000, B00000, B00000, B00000, 
+    B00000, B00000, B00000, B11111, B00000, B00000, B00000, B00000, 
+    B00000, B00000, B00000, B11111, B00000, B00000, B00000, B00000, 
+    B00000, B00000, B00000, B11111, B01110, B00000, B00000, B00000, 
+    B00000, B11111, B11111, B11111, B01110, B00000, B00000, B00000, 
+    B00000, B11111, B11111, B11111, B01110, B00000, B00000, B00000 
   };
-#endif
 
   for (byte x = 0; x < BIGFontSymbolCount; x++)
     for (byte y = 0; y < 8; y++)
-      lcd.write(pgm_read_byte(&chars[y*BIGFontSymbolCount+x])); //write the character data to the character generator ram
+      lcd.write(pgm_read_byte(&chars[params.BigFontType*BIGFontSymbolCount*8 + y*BIGFontSymbolCount + x])); //write the character data to the character generator ram
 }
 
 char fBuff[7];//used by format
@@ -4378,145 +4514,169 @@ char *format(unsigned long num)
   return fBuff;
 }
 
-void bigNum(unsigned long t, char *txt1, char *txt2)
+void bigNum(char *txt, char *txt1)
 {
-#ifdef BIG_font_type_3x2
-  static prog_char bignumchars1[40] PROGMEM = { 
-                          4, 1, 4, 0, 
-                          1, 4, 32, 0, 
-                          3, 3, 4, 0, 
-                          1, 3, 4, 0, 
-                          4, 2, 4, 0, 
-                          4, 3, 3, 0, 
-                          4, 3, 3, 0, 
-                          1, 1, 4, 0, 
-                          4, 3, 4, 0, 
-                          4, 3, 4, 0 
-                        };
-  static prog_char bignumchars2[40] PROGMEM = { 
-                          4, 2, 4, 0, 
-                          2, 4, 2, 0, 
-                          4, 2, 2, 0, 
-                          2, 2, 4, 0, 
-                          32, 32, 4, 0, 
-                          2, 2, 4, 0, 
-                          4, 2, 4, 0, 
-                          32, 4, 32, 0, 
-                          4, 2, 4, 0, 
-                          2, 2, 4, 0 
-                        };
-  #define FontWidth 4
-  #define DecimalPointSymbol 5
-#endif
+  static prog_char bignumchars1[40*BIGFontFontCount] PROGMEM = { 
+                          5,  2, 0, 0,
+                          2, 32, 0, 0,
+                          8,  6, 0, 0,
+                          7,  6, 0, 0,
+                          3,  4, 0, 0,
+                          5,  8, 0, 0,
+                          5,  8, 0, 0,
+                          7,  2, 0, 0,
+                          5,  6, 0, 0,
+                          5,  6, 0, 0,
 
-#ifdef BIG_font_type_2x2_alpha
-  static prog_char bignumchars1[30] PROGMEM = { 
-                          5,  2, 0, 
-                          2, 32, 0,
-                          8,  6, 0,
-                          7,  6, 0,
-                          3,  4, 0,
-                          5,  8, 0,
-                          5,  8, 0,
-                          7,  2, 0,
-                          5,  6, 0,
-                          5,  6, 0
-                        };
-  static prog_char bignumchars2[30] PROGMEM = { 
-                          3,  4,  0,
-                          4,  1,  0,
-                          3,  1,  0,
-                          1,  4,  0,
-                          32, 2,  0,
-                          1,  4,  0,
-                          3,  4,  0,
-                          32, 2,  0,
-                          3,  4,  0,
-                          1,  4,  0
-                        };
-  #define FontWidth 3                      
-  #define DecimalPointSymbol '.'
-#endif
+                          1,  2, 0, 0,
+                          2, 32, 0, 0,
+                          7,  6, 0, 0,
+                          7,  6, 0, 0,
+                          3,  4, 0, 0,
+                          5,  7, 0, 0,
+                          1,  7, 0, 0,
+                          7,  2, 0, 0,
+                          5,  6, 0, 0,
+                          5,  6, 0, 0,
 
-#ifdef BIG_font_type_2x2_beta
-  static prog_char bignumchars1[30] PROGMEM = { 
-                          1,  2, 0, 
-                          2, 32, 0,
-                          7,  6, 0,
-                          7,  6, 0,
-                          3,  4, 0,
-                          5,  7, 0,
-                          1,  7, 0,
-                          7,  2, 0,
-                          5,  6, 0,
-                          5,  6, 0
+                          4, 1, 4, 0,
+                          1, 4, 32, 0,
+                          3, 3, 4, 0,
+                          1, 3, 4, 0,
+                          4, 2, 4, 0,
+                          4, 3, 3, 0,
+                          4, 3, 3, 0,
+                          1, 1, 4, 0,
+                          4, 3, 4, 0,
+                          4, 3, 4, 0
                         };
-  static prog_char bignumchars2[30] PROGMEM = { 
-                          3,  4,  0,
-                          4,  8,  0,
-                          5,  8,  0,
-                          8,  4,  0,
-                          32, 2,  0,
-                          8,  6,  0,
-                          5,  6,  0,
-                          32, 2,  0,
-                          3,  4,  0,
-                          8,  4,  0
+  static prog_char bignumchars2[40*BIGFontFontCount] PROGMEM = { 
+                          3,  4,  0, 0,
+                          4,  1,  0, 0,
+                          3,  1,  0, 0,
+                          1,  4,  0, 0,
+                          32, 2,  0, 0,
+                          1,  4,  0, 0,
+                          3,  4,  0, 0,
+                          32, 2,  0, 0,
+                          3,  4,  0, 0,
+                          1,  4,  0, 0,
+
+                          3,  4,  0, 0,
+                          4,  8,  0, 0,
+                          5,  8,  0, 0,
+                          8,  4,  0, 0,
+                          32, 2,  0, 0,
+                          8,  6,  0, 0,
+                          5,  6,  0, 0,
+                          32, 2,  0, 0,
+                          3,  4,  0, 0,
+                          8,  4,  0, 0,
+                          
+                          4, 2, 4, 0,
+                          2, 4, 2, 0,
+                          4, 2, 2, 0,
+                          2, 2, 4, 0,
+                          32, 32, 4, 0,
+                          2, 2, 4, 0,
+                          4, 2, 4, 0,
+                          32, 4, 32, 0,
+                          4, 2, 4, 0,
+                          2, 2, 4, 0
                         };
-  #define FontWidth 3                      
-  #define DecimalPointSymbol '.'
-#endif
 
+  //byte DecimalPointSymbols[BIGFontFontCount] = {5, '.', '.'};
+  //DecimalPointSymbols[params.BigFontType]
 
-  //  char * txt1="INST";  
- /* Want to pass secondary text to allow for both L/KM and L/H when going slow
-  char * txt2 = "L/KM";
-  
-  
-  if (!params.use_metric)
+  byte CharPos = 40*params.BigFontType;
+
+  for (byte line = 0; line < 2; line++)
   {
-    t *= 10;
-    strcpy_P(txt2, PSTR("MPG "));
-  } 
-  */
-  t *= 10; 
-  // decimal point, start as a "space", can be change by after
-  char dp1 = 32;
-  char dp2 = 32;
+    lcd.setCursor(0, line);
+    byte pos = 0;
+    byte digitcount = 0;
+    while (digitcount < 4)
+    {
+      digitcount++;
+      if (txt[pos] >= '0' && txt[pos] <= '9')
+      {
+        byte address = CharPos + (txt[pos] - '0') * 4;
+        lcd_print_P(line==0?&bignumchars1[address]:&bignumchars2[address]);
+        
+        char mark = ' ';
+        if (txt[pos+1] == '.' || txt[pos+1] == ',')
+        {
+          if (line == 1)
+            mark = txt[pos+1];
+          pos++;
+        }  
+        lcd.write(mark);
+        pos++;
+      }
+      else
+        for (byte i=0; i<3; i++)
+          lcd.write(' ');
+    }
 
-  char * r = "009.99"; //default to 999
-  if (t <= 9950)
-  {
-    r = format(t ); //009.86
-    dp1 = DecimalPointSymbol;
-  }
-  else if (t <= 99500)
-  {
-    r = format(t / 10); //0098.6
-    dp2 = DecimalPointSymbol;
-  }
-  else if (t <= 999500)
-  {
-    r = format(t / 100); //00986
-  }
-
-  lcd.setCursor(0, 0);
-  lcd_print_P(&bignumchars1[(r[2] - '0') * FontWidth]);
-  lcd.write(' ');
-  lcd_print_P(&bignumchars1[(r[4] - '0') * FontWidth]);
-  lcd.write(' ');
-  lcd_print_P(&bignumchars1[(r[5] - '0') * FontWidth]);
-  lcd.write(' ');
-  lcd.print(txt1);
-
-  lcd.setCursor(0, 1);
-  lcd_print_P(&bignumchars2[(r[2] - '0') * FontWidth]);
-  lcd.write(dp1);
-  lcd_print_P(&bignumchars2[(r[4] - '0') * FontWidth]);
-  lcd.write(dp2);
-  lcd_print_P(&bignumchars2[(r[5] - '0') * FontWidth]);
-  lcd.write(' ');
-  lcd.print(txt2);
+    byte ScreenPos = 12;
+    // print units on first row
+    if (line == 0)
+    {
+      // need convert L/KM, MPG, C or F to normal symbols
+      pos++; //skip space
+      while (pos < 8 && txt[pos] != 0)
+      {
+        switch (txt[pos])
+        {
+          case 1 : 
+          lcd.write('L');
+          ScreenPos+=1;
+          break;
+          case 2 : 
+          lcd.write('/');
+          lcd.write('k');
+          lcd.write('m');        
+          ScreenPos+=3;
+          break;
+          case 3 : 
+          lcd.write('k');
+          lcd.write('m');
+          ScreenPos+=2;
+          break;
+          case 4 : 
+          lcd.write('/');
+          lcd.write('h');
+          ScreenPos+=2;
+          break;
+          case 5 : 
+          break;
+          case 6 : 
+          lcd.write('M');
+          ScreenPos+=1;
+          break;
+          case 7 : 
+          lcd.write('P');
+          lcd.write('G');
+          ScreenPos+=2;
+          break;
+          default : 
+          lcd.write(txt[pos]);
+          ScreenPos+=1;
+          break;
+        }  
+        pos++;
+      }  
+    }      
+    else
+    {
+      // print any text on second row
+      lcd.print(txt1);
+    }
+    
+    // clear end of line  
+    for (byte i=ScreenPos; i<LCD_COLS; i++)
+      lcd.write(' ');    
+  }    
 }
 
 /*
@@ -4580,6 +4740,23 @@ void eco_visual(char *retbuf) {
   sprintf_P(retbuf, PSTR("%s"), (char*)pgm_read_word(&(econ_Visual[stars])));
 }
 
+//get_trip_time will return trip driving or idling
+void get_trip_time(char *retbuf, byte trip, byte time)
+{
+  unsigned long run_time = params.tripmax[trip].timedriving;
+  if (time == 1) 
+    run_time = params.tripmax[trip].timeidling;
+    
+  int hours, minutes, seconds;  //to store the time
+
+  hours =   (run_time / MILLIS_PER_HOUR);
+  minutes = (run_time % MILLIS_PER_HOUR) / MILLIS_PER_MINUTE;
+  seconds = (run_time % MILLIS_PER_MINUTE) / MILLIS_PER_SECOND;
+
+  //Now we have our varriables parsed, lets display them
+  sprintf_P(retbuf, PSTR("%d:%02d:%02d"), hours, minutes, seconds);
+}
+
 //get_engine_on_time will return the time since the engine has started
 void get_engine_on_time(char *retbuf)
 {
@@ -4604,7 +4781,6 @@ void get_engine_on_time(char *retbuf)
   //Now we have our varriables parsed, lets display them
   sprintf_P(retbuf, PSTR("%d:%02d:%02d"), hours, minutes, seconds);
 }
-
 
 void get_cost(char *retbuf, byte ctrip)
 {
