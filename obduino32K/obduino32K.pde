@@ -2363,10 +2363,10 @@ void get_remain_dist(char *retbuf)
 //get_max_vss returns max speed achieved in trip
 void get_max_vss(char *retbuf, byte trip)
 {
-  unsigned int speed = params.tripmax[trip].maxspeed;
+  long maxspeed = params.tripmax[trip].maxspeed;
   if(!params.use_metric)
-     speed=(speed*100U)/161U; //low differense between 1609 and 1610
-  sprintf_P(retbuf, pctldpcts, speed, params.use_metric?"\003\004":"\006\004");  
+     maxspeed=(maxspeed*100U)/161U; //low differense between 1609 and 1610
+  sprintf_P(retbuf, pctldpcts, maxspeed, params.use_metric?"\003\004":"\006\004");  
 }
 
 /*
@@ -3921,7 +3921,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v190"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v191"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
