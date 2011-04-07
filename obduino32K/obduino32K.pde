@@ -11,7 +11,10 @@
  LCD bignum: Frederic based on mpguino code by Dave, Eimantas
 
 Latest Changes
-
+Apr 06th, 2011 (v192)
+ Removed not used PID_Desc (saved ~1200bytes)
+ Changed SI and US units selection - if disabled saves ~1300bytes
+ 
 Apr 04th, 2011 (v190)
  ATTENTION! this update needed additional parameters saving to EEPROM, last tank data will be lost.
 
@@ -157,15 +160,6 @@ To-Do:
 // Comment out to disable big numebers (4th and 5th sceeens)
 #define use_BIG_font
 
-// Uncomment only one, that will be used.
-//#define BIG_font_type_3x2 // CAN'T BE USED WITH BIG_font_hybrid // define not used anymore
-//#define BIG_font_type_2x2_alpha // define used anymore
-//#define BIG_font_type_2x2_beta // define used anymore
-
-//Uncomment to enable hybrid display on Average fuel Big num screen
-//This will display Big Num Average, and in the corner, The instant
-//#define BIG_font_hybrid // Not used anymore
-
 // Comment for normal build
 // Uncomment for a debug build
 //#define DEBUG
@@ -257,6 +251,17 @@ To-Do:
 // it makes faster refresh rate in ISO mode, but uses ~200bytes of memory
 #define UsePIDCache
 
+// Uncoment to enable changing metric to US system
+// If commented - saves 1300bytes in metric, and 600bytes in US
+#define AllowChangeUnits
+#ifndef AllowChangeUnits
+  #define UseSI
+//  #define UseUS
+#endif
+
+// Uncomment to use SD card logging, neet uncomment #include <FileLogger.h> too (few lines bellow)
+//#define useSDCard (NOT WORKING JET)
+
 #undef int
 #include <stdio.h>
 #include <limits.h>
@@ -265,9 +270,33 @@ To-Do:
 
 #include <LiquidCrystal.h>
 
+#define LCD_RS 4
+#define LCD_ENABLE 5
+
+#define LCD_DATA1 7
+#define LCD_DATA2 8
+#define LCD_DATA3 12
+#define LCD_DATA4 13
+
+#ifdef useSDCard
+  //http://code.google.com/p/arduino-filelogger/
+  //#include <FileLogger.h>
+  
+  // Need to change LCD data pins 12 and 13
+  #define LCD_DATA3 2
+  #define LCD_DATA4 3
+  
+  //wiring instructions:
+  //http://www.arduino.cc/cgi-bin/yabb2/YaBB.pl?num=1206874649/all
+  // SCK_PIN   13 <-> SD ???
+  // MISO_PIN  12 <-> SD ???
+  // MOSI_PIN  11 <-> SD ???
+  // SS_PIN    10 <-> SD ???
+#endif  
+
 // LCD Pins same as mpguino
 // rs=4, enable=5, data=7,8,12,13
-LiquidCrystal lcd(4, 5, 7, 8, 12, 13);
+LiquidCrystal lcd(LCD_RS, LCD_ENABLE, LCD_DATA1, LCD_DATA2, LCD_DATA3, LCD_DATA4);
 #define ContrastPin 6
 #define BrightnessPin 9
 
@@ -275,8 +304,11 @@ LiquidCrystal lcd(4, 5, 7, 8, 12, 13);
 void lcd_print_P(char *string);  // to work with string in flash and PSTR()
 void lcd_cls_print_P(char *string);  // clear screen and display string
 void lcd_char_init();
+
+#ifdef use_BIG_font
 void lcd_char_bignum();
 void bigNum(char *txt, char *txt1);
+#endif
 
 // Memory prototypes
 void params_load(void);
@@ -432,8 +464,12 @@ unsigned long  pid41to60_support=0;
 #define CMD_THR_ACTU  0x4C
 #define TIME_MIL_ON   0x4D
 #define TIME_MIL_CLR  0x4E
+//
+//
+#define FUEL_TYPE     0x51
+#define ETHYL_FUEL    0x52
 
-#define LAST_PID      0x4E  // same as the last one defined above
+#define LAST_PID      0x52  // same as the last one defined above
 
 /* our internal fake PIDs */
 
@@ -481,7 +517,7 @@ unsigned long  pid41to60_support=0;
 #endif
 
 //The Textual Description of each PID
-prog_char PID_Desc[256][9] PROGMEM=
+prog_char PID_Desc[(1+LAST_PID)+(0xFF-FIRST_FAKE_PID)+1][9] PROGMEM=
 {
 "PID00-21", // 0x00   PIDs supported
 "Stat DTC", // 0x01   Monitor status since DTCs cleared.
@@ -566,145 +602,7 @@ prog_char PID_Desc[256][9] PROGMEM=
 "  0x50",   // 0x50   Unknown
 "Fuel Typ", // 0x51   Fuel Type
 "Ethyl F%", // 0x52   Ethanol fuel %
-"", // 0x53
-"", // 0x54
-"", // 0x55
-"", // 0x56
-"", // 0x57
-"", // 0x58
-"", // 0x59
-"", // 0x5A
-"", // 0x5B
-"", // 0x5C
-"", // 0x5D
-"", // 0x5E
-"", // 0x5F
-"", // 0x60
-"", // 0x61
-"", // 0x62
-"", // 0x63
-"", // 0x64
-"", // 0x65
-"", // 0x66
-"", // 0x67
-"", // 0x68
-"", // 0x69
-"", // 0x6A
-"", // 0x6B
-"", // 0x6C
-"", // 0x6D
-"", // 0x6E
-"", // 0x6F
-"", // 0x70
-"", // 0x71
-"", // 0x72
-"", // 0x73
-"", // 0x74
-"", // 0x75
-"", // 0x76
-"", // 0x77
-"", // 0x78
-"", // 0x79
-"", // 0x7A
-"", // 0x7B
-"", // 0x7C
-"", // 0x7D
-"", // 0x7E
-"", // 0x7F
-"", // 0x80
-"", // 0x81
-"", // 0x82
-"", // 0x83
-"", // 0x84
-"", // 0x85
-"", // 0x86
-"", // 0x87
-"", // 0x88
-"", // 0x89
-"", // 0x8A
-"", // 0x8B
-"", // 0x8C
-"", // 0x8D
-"", // 0x8E
-"", // 0x8F
-"", // 0x90
-"", // 0x91
-"", // 0x92
-"", // 0x93
-"", // 0x94
-"", // 0x95
-"", // 0x96
-"", // 0x97
-"", // 0x98
-"", // 0x99
-"", // 0x9A
-"", // 0x9B
-"", // 0x9C
-"", // 0x9D
-"", // 0x9E
-"", // 0x9F
-"", // 0xA0
-"", // 0xA1
-"", // 0xA2
-"", // 0xA3
-"", // 0xA4
-"", // 0xA5
-"", // 0xA6
-"", // 0xA7
-"", // 0xA8
-"", // 0xA9
-"", // 0xAA
-"", // 0xAB
-"", // 0xAC
-"", // 0xAD
-"", // 0xAE
-"", // 0xAF
-"", // 0xB0
-"", // 0xB1
-"", // 0xB2
-"", // 0xB3
-"", // 0xB4
-"", // 0xB5
-"", // 0xB6
-"", // 0xB7
-"", // 0xB8
-"", // 0xB9
-"", // 0xBA
-"", // 0xBB
-"", // 0xBC
-"", // 0xBD
-"", // 0xBE
-"", // 0xBF
-"", // 0xC0
-"", // 0xC1
-"", // 0xC2
-"", // 0xC3   Unknown
-"", // 0xC4   Unknown
-"", // 0xC5
-"", // 0xC6
-"", // 0xC7
-"", // 0xC8
-"", // 0xC9
-"", // 0xCA
-"", // 0xCB
-"", // 0xCC
-"", // 0xCD
-"", // 0xCE
-"", // 0xCF
-"", // 0xD0
-"", // 0xD1
-"", // 0xD2
-"", // 0xD3
-"", // 0xD4
-"", // 0xD5
-"", // 0xD6
-"", // 0xD7
-"", // 0xD8
-"", // 0xD9
-"", // 0xDA
-"", // 0xDB
-"", // 0xDC
-"", // 0xDD
+
 "Out MVSS", // 0xDE
 "Trp MVSS", // 0xDF
 "Tnk MVSS", // 0xE0
@@ -740,7 +638,7 @@ prog_char PID_Desc[256][9] PROGMEM=
 "Out Dist", // 0xFC   distance since engine turned on
 "Can Stat", // 0xFD   Can Status
 "PID_SEC",  // 0xFE
-"Eco Vis",  // 0xFF   Visually dispay relative economy with text
+"Eco Vis"  // 0xFF   Visually dispay relative economy with text
 };
 
 const prog_char obd_std_strings[17][9] PROGMEM =
@@ -770,7 +668,13 @@ prog_uchar pid_reslen[] PROGMEM=
 
 // Number of screens of PIDs
 #define NBSCREEN  3  // 12 PIDs should be enough for everyone
+
+#ifdef use_BIG_font
 #define BIG_NBSCREEN 2
+#else
+#define BIG_NBSCREEN 2
+#endif
+
 byte active_screen=0;  // 0,1,2,... selected by left button
 
 prog_char pctd[] PROGMEM="- %d + "; // used in a couple of place
@@ -780,6 +684,8 @@ prog_char pctldpcts[] PROGMEM="%ld %s"; // used in a couple of place
 prog_char select_no[]  PROGMEM="(NO) YES "; // for config menu
 prog_char select_yes[] PROGMEM=" NO (YES)"; // for config menu
 prog_char gasPrice[][10] PROGMEM={"-  %s\354 + ", CurrencyAdjustString}; // dual string for fuel price
+prog_char noDTCcodes[] PROGMEM="No DTC codes"; // for MIL
+
 
 // menu items used by menu_selection.
 prog_char *topMenu[] PROGMEM = {"Configure menu", "Exit", "Display", "Adjust", "PIDs", "Clear DTC"};
@@ -1277,8 +1183,8 @@ void iso_write_data(byte *data, byte len)
   buf[i]=iso_checksum(buf, i);
 
   // send char one by one
-  n=i+1;
-  for(i=0; i<n; i++)
+  n=i;//+1;
+  for(i=0; i<=n; i++)
     iso_write_byte(buf[i]);
 
 // CodeOptimization (2bytes)
@@ -1290,7 +1196,7 @@ void iso_write_data(byte *data, byte len)
 // return the count of bytes of message (includes all data in message)
 byte iso_read_data(byte *data, byte len)
 {
-  byte i;
+  byte i, c;
   byte buf[20];
   byte dataSize = 0;
 
@@ -1299,7 +1205,8 @@ byte iso_read_data(byte *data, byte len)
   // checksum 1 bytes: [sum(header)+sum(data)]
   // a total of six extra bytes of data
 
-  for(i=0; i<len+6; i++)
+  c = len+6;
+  for(i=0; i<c; i++)
   {
     if (iso_read_byte(buf+i))
     {
@@ -1315,7 +1222,6 @@ byte iso_read_data(byte *data, byte len)
   memcpy(data, buf+5, len);
 
   lastReceivedPIDTime = millis();
-//  delay(ISORequestDelay);    //guarantee 55 ms pause between requests
 
   return dataSize - 6; // return payload length
 }
@@ -1344,119 +1250,104 @@ void iso_init()
                        40, //6 LOW
                        26  //7 HIGH
                      }; 
-  switch (ISO_InitStep)
-  {
-    case 0:
-      // setup
-      ECUconnection = false;
-      serial_tx_off(); //disable UART so we can "bit-Bang" the slow init.
-      serial_rx_off();
-      initTime = currentTime + initFirstDelay;
-      initFirstDelay = (initFirstDelay % 4500) * 2; //if 4800 then down to 300ms AND sequence: 300, 600, 1200, 2400, 4800
-      ISO_InitStep++;
-      break;
 
-    case 1:
-    case 2:
-    case 3:
-    case 4:
-    case 5:
-    case 6:
-    case 7:
-      if (currentTime >= initTime)
+  if (ISO_InitStep == 0)
+  {
+    // setup
+    ECUconnection = false;
+    serial_tx_off(); //disable UART so we can "bit-Bang" the slow init.
+    serial_rx_off();
+    initTime = currentTime + initFirstDelay;
+    initFirstDelay = (initFirstDelay % 4500) * 2; //if 4800 then down to 300ms AND sequence: 300, 600, 1200, 2400, 4800
+    ISO_InitStep++;
+  }
+  else if (currentTime >= initTime)
+  {
+    if (ISO_InitStep > 0 && ISO_InitStep < 8) 
+    {
+      digitalWrite(K_OUT, ISO_InitStep % 2);
+      #ifdef useL_Line
+        digitalWrite(L_OUT, ISO_InitStep % 2);
+      #endif
+      initTime = currentTime + ISOSteps[ISO_InitStep] * 10;
+      ISO_InitStep++;
+    }    
+    else if (ISO_InitStep == 8)
+    {
+      #ifdef useL_Line
+        digitalWrite(L_OUT, LOW);
+      #endif
+
+      // bit banging done, now verify connection at 10400 baud
+      byte b = 0;
+      // switch now to 10400 bauds
+      Serial.begin(10400);
+
+      // wait for 0x55 from the ECU (up to 300ms)
+      //since our time out for reading is 125ms, we will try it up to three times
+      for (byte i=0; i<3; i++)
+        if (iso_read_byte(&b))
+          break;
+          
+      if(b == 0x55)
       {
-        digitalWrite(K_OUT, ISO_InitStep % 2);
-        #ifdef useL_Line
-          digitalWrite(L_OUT, ISO_InitStep % 2);
-        #endif
-        initTime = currentTime + ISOSteps[ISO_InitStep] * 10;
         ISO_InitStep++;
       }
-      break;
-
-    case 8:
-      if (currentTime >= initTime)
+      else
       {
-        #ifdef useL_Line
-          digitalWrite(L_OUT, LOW);
-        #endif
-
-        // bit banging done, now verify connection at 10400 baud
-        byte b = 0;
-        // switch now to 10400 bauds
-        Serial.begin(10400);
-
-        // wait for 0x55 from the ECU (up to 300ms)
-        //since our time out for reading is 125ms, we will try it up to three times
-        byte i=0;
-        while(i<3 && !iso_read_byte(&b))
-        {
-          i++;
-        }
-
-        if(b == 0x55)
-        {
-          ISO_InitStep++;
-        }
-        else
-        {
-          // oops unexpected data, try again
-          ISO_InitStep = 0;
-        }
-      }
-      break;
-    case 9:
-      if (currentTime >= initTime)
-      {
-        byte b;
-        bool bread;
-        
-        bread = iso_read_byte(&b);  // read kw1
-      #ifdef DEBUGOutput
-        LastReceived1 = b;
-        LastReceived1OK = bread ? 1 : 0;
-      #endif
-      
-        bread = iso_read_byte(&b);  // read kw2
-      #ifdef DEBUGOutput
-        LastReceived2 = b;
-        LastReceived2OK = bread ? 1 : 0;
-      #endif
-
-        // 25ms delay needed before reply (url with spec is on forum page 56)
-        // it does not work without it on VW MK4
-        delay(25);
-        
-        // send ~kw2 (invert of last keyword)
-        iso_write_byte(~b);
-      #ifdef DEBUGOutput
-        LastSend1 = ~b;
-      #endif
-      
-        // ECU answer by 0xCC (~0x33)
-        // read several times, ECU not always responds in time
-        byte i=0;
-        bread = iso_read_byte(&b);
-        while (i<3 && !bread)
-        {
-          i++;
-          bread = iso_read_byte(&b);
-        }
-        
-      #ifdef DEBUGOutput
-        LastReceived3 = b;
-        LastReceived3OK = bread ? 1 : 0;
-      #endif
-        
-        if (b == 0xCC)
-        {
-           ECUconnection = true;
-           // update for correct delta time in trip calculations.
-           old_time = millis();
-        }
+        // oops unexpected data, try again
         ISO_InitStep = 0;
       }
-      break;
+    }
+    else // ISO_InitStep == 9
+    {
+      byte b;
+      bool bread;
+        
+      bread = iso_read_byte(&b);  // read kw1
+    #ifdef DEBUGOutput
+      LastReceived1 = b;
+      LastReceived1OK = bread ? 1 : 0;
+    #endif
+      
+      bread = iso_read_byte(&b);  // read kw2
+    #ifdef DEBUGOutput
+      LastReceived2 = b;
+      LastReceived2OK = bread ? 1 : 0;
+    #endif
+
+      // 25ms delay needed before reply (url with spec is on forum page 56)
+      // it does not work without it on VW MK4
+      delay(25);
+        
+      // send ~kw2 (invert of last keyword)
+      iso_write_byte(~b);
+    #ifdef DEBUGOutput
+      LastSend1 = ~b;
+    #endif
+      
+      // ECU answer by 0xCC (~0x33)
+      // read several times, ECU not always responds in time
+      for (byte i=0; i<3; i++)
+      {
+        bread = iso_read_byte(&b);
+        if (bread)
+          break;
+      }
+       
+    #ifdef DEBUGOutput
+      LastReceived3 = b;
+      LastReceived3OK = bread ? 1 : 0;
+    #endif
+        
+      if (b == 0xCC)
+      {
+         ECUconnection = true;
+         // update for correct delta time in trip calculations.
+         old_time = millis();
+      }
+      ISO_InitStep = 0;
+    }
   }
 #elif defined ISO_14230_fast
   switch (ISO_InitStep)
@@ -1672,6 +1563,12 @@ void iso_init()
 }
 #endif // ELM or ISO init
 
+// remap pid to name array index
+byte remap_pid(byte pid)
+{
+  return pid > LAST_PID ? pid - FIRST_FAKE_PID + LAST_PID + 1 : pid;
+}
+
 // return false if pid is not supported, true if it is.
 // mode is 0 for get_pid() and 1 for menu config to allow pid > 0xF0
 boolean is_pid_supported(byte pid, byte mode)
@@ -1821,9 +1718,31 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
 #else
     *ret=(buf[0] * params.speed_adjust) / 100U;
 #endif
+
+#ifdef AllowChangeUnits
     if(!params.use_metric)
       *ret=(*ret*1000U)/1609U;
-    sprintf_P(retbuf, pctldpcts, *ret, params.use_metric?"\003\004":"\006\004");
+#else
+  #ifdef UseSI
+  #endif  
+  #ifdef UseUS
+    *ret=(*ret*1000U)/1609U;
+  #endif  
+#endif
+    
+    sprintf_P(retbuf, pctldpcts, *ret, 
+    #ifdef AllowChangeUnits 
+      params.use_metric?"\003\004":"\006\004" 
+    #else
+      #ifdef UseSI
+        "\003\004" 
+      #endif  
+      #ifdef UseUS
+        "\006\004" 
+      #endif
+    #endif
+    );
+    
     // do not touch vss, it is used by fuel calculation after, so reset it
 #ifdef DEBUG
     *ret=100;
@@ -1908,9 +1827,30 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
     break;
   case DIST_MIL_ON:
   case DIST_MIL_CLR:
+
+#ifdef AllowChangeUnits 
     if(!params.use_metric)
       *ret=(*ret*1000U)/1609U;
-    sprintf_P(retbuf, pctldpcts, *ret, params.use_metric?"\003":"\006");
+#else
+  #ifdef UseSI
+  #endif  
+  #ifdef UseUS
+    *ret=(*ret*1000U)/1609U;
+  #endif
+#endif
+
+    sprintf_P(retbuf, pctldpcts, *ret,
+    #ifdef AllowChangeUnits 
+      params.use_metric?"\003":"\006"
+    #else
+      #ifdef UseSI
+        "\003" 
+      #endif  
+      #ifdef UseUS
+        "\006" 
+      #endif
+    #endif
+    );
     break;
   case TIME_MIL_ON:
   case TIME_MIL_CLR:
@@ -1935,9 +1875,30 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
 #else
       *ret=buf[0]-40;
 #endif
+
+#ifdef AllowChangeUnits 
     if(!params.use_metric)
       *ret=(*ret*9)/5+32;
-    sprintf_P(retbuf, PSTR("%ld\005%c"), *ret, params.use_metric?'C':'F');
+#else
+  #ifdef UseSI
+  #endif  
+  #ifdef UseUS
+    *ret=(*ret*9)/5+32;
+  #endif
+#endif
+
+    sprintf_P(retbuf, PSTR("%ld\005%c"), *ret, 
+    #ifdef AllowChangeUnits 
+      params.use_metric?'C':'F'
+    #else
+      #ifdef UseSI
+        'C' 
+      #endif  
+      #ifdef UseUS
+        'F'
+      #endif
+    #endif
+    );
     break;
   case STFT_BANK1:
   case LTFT_BANK1:
@@ -2113,11 +2074,30 @@ void get_temperature(char *retbuf, byte TemperatureSensorPin)
   Temperature = Temperature - 15; // Sensor is showing 1.5°C more then realy it is
   
    // convert °C in F if requested
+#ifdef AllowChangeUnits 
   if(!params.use_metric)
     Temperature = convertToFarenheit(Temperature);
+#else
+  #ifdef UseSI
+  #endif  
+  #ifdef UseUS
+    Temperature = convertToFarenheit(Temperature);
+  #endif
+#endif
 
   long_to_dec_str(Temperature, decs, 1);
-  sprintf_P(retbuf, PSTR("%s\005%c"), decs, params.use_metric?'C':'F');
+  sprintf_P(retbuf, PSTR("%s\005%c"), decs, 
+  #ifdef AllowChangeUnits 
+    params.use_metric?'C':'F'
+  #else
+    #ifdef UseSI
+      'C' 
+    #endif  
+    #ifdef UseUS
+      'F'
+    #endif
+  #endif
+  );
 }
 #endif
 
@@ -2142,7 +2122,18 @@ unsigned int get_icons(char *retbuf)
   byte nb_entry=0;
   long cons;
   char decs[16];
-  long toggle_speed = params.use_metric ? params.per_hour_speed : (params.per_hour_speed*1609)/1000;
+  long toggle_speed = params.per_hour_speed;
+
+#ifdef AllowChangeUnits
+  if (!params.use_metric)
+    toggle_speed = (toggle_speed *1609) / 1000;
+#else
+  #ifdef UseSI
+  #endif  
+  #ifdef UseUS
+    toggle_speed = (toggle_speed *1609) / 1000;
+  #endif  
+#endif
 
   for(byte i=0; i<NBSMOOTH; i++)
   {
@@ -2182,23 +2173,18 @@ unsigned int get_icons(char *retbuf)
   // if maf is 0 it will just output 0
   cons=(maf * GasConst)/vss;
 
-  if(params.use_metric)
-  {
-    long_to_dec_str(cons, decs, 2);
-    sprintf_P(retbuf, pctspcts, decs, lowSpeed?"L\004":"\001\002" );
-  }
-  else
-  {
-    // MPG
-    // 6.17 pounds per gallon
-    // 454 g in a pound
-    // 14.7 * 6.17 * 454 * (VSS * 0.621371) / (3600 * MAF / 100)
-    // multipled by 10 for single digit precision
+  // MPG
+  // 6.17 pounds per gallon
+  // 454 g in a pound
+  // 14.7 * 6.17 * 454 * (VSS * 0.621371) / (3600 * MAF / 100)
+  // multipled by 10 for single digit precision
+  // new comment: convert from L/100 to MPG
 
-    // new comment: convert from L/100 to MPG
-
+#ifdef AllowChangeUnits
+  if(!params.use_metric)
+  {
     if(lowSpeed)
-        cons=(cons*10)/378;   // convert to gallon, can be 0 G/h
+      cons=(cons*10)/378;   // convert to gallon, can be 0 G/h
     else
     {
       if(cons==0)             // if cons is 0 (DFCO?) display 999.9MPG
@@ -2206,10 +2192,36 @@ unsigned int get_icons(char *retbuf)
       else
         cons=235214/cons;     // convert to MPG
     }
-
-    long_to_dec_str(cons, decs, 1);
-    sprintf_P(retbuf, pctspcts, decs, lowSpeed?"G\004":"\006\007" );
   }
+#else
+  #ifdef UseSI
+  #endif  
+  #ifdef UseUS
+    if(lowSpeed)
+      cons=(cons*10)/378;   // convert to gallon, can be 0 G/h
+    else
+    {
+      if(cons==0)             // if cons is 0 (DFCO?) display 999.9MPG
+        cons=9999;
+      else
+        cons=235214/cons;     // convert to MPG
+    }
+  #endif  
+#endif
+
+  long_to_dec_str(cons, decs, (1+params.use_metric));
+  sprintf_P(retbuf, pctspcts, decs, 
+  #ifdef AllowChangeUnits 
+    params.use_metric?(lowSpeed?"L\004":"\001\002"):(lowSpeed?"G\004":"\006\007")
+  #else
+    #ifdef UseSI
+      lowSpeed?"L\004":"\001\002" 
+    #endif  
+    #ifdef UseUS
+      lowSpeed?"G\004":"\006\007"
+    #endif
+  #endif
+  );
 
   return (unsigned int) cons;
 }
@@ -2231,7 +2243,17 @@ unsigned int get_cons(char *retbuf, byte ctrip)
   if(cdist<1000 || cfuel==0)
   {
     // will display 0.00L/100 or 999.9mpg
-    trip_cons=params.use_metric?0:9999;
+    trip_cons=0;
+  #ifdef AllowChangeUnits
+    if (!params.use_metric)
+      trip_cons=9999;
+  #else
+    #ifdef UseSI
+    #endif  
+    #ifdef UseUS
+      trip_cons=9999;
+    #endif  
+  #endif
   }
   else  // the car has moved and fuel used
   {
@@ -2242,6 +2264,8 @@ unsigned int get_cons(char *retbuf, byte ctrip)
 
     trip_cons=cfuel/(cdist/1000); // div by 0 avoided by previous test
 
+
+  #ifdef AllowChangeUnits
     if(params.use_metric)
     {
       if(trip_cons>9999)    // SI
@@ -2252,12 +2276,22 @@ unsigned int get_cons(char *retbuf, byte ctrip)
       // it's imperial, convert.
       // from m/mL to MPG so * by 3.78541178 to have gallon and * by 0.621371 for mile
       // multiply by 10 to have a digit precision
-
       // new comment: convert L/100 to MPG
       trip_cons=235214/trip_cons;
       if(trip_cons<10)
         trip_cons=10;  // display 1.0 MPG min
     }
+  #else
+    #ifdef UseSI
+      if(trip_cons>9999)    // SI
+        trip_cons=9999;     // display 99.99 L/100 maximum
+    #endif  
+    #ifdef UseUS
+      trip_cons=235214/trip_cons;
+      if(trip_cons<10)
+        trip_cons=10;  // display 1.0 MPG min
+    #endif  
+  #endif
   }
 
 #if 1
@@ -2269,7 +2303,18 @@ unsigned int get_cons(char *retbuf, byte ctrip)
     long_to_dec_str(trip_cons, decs, 1);
 #endif
 
-  sprintf_P(retbuf, pctspcts, decs, (params.use_metric?"\001\002":"\006\007" ));
+  sprintf_P(retbuf, pctspcts, decs, 
+  #ifdef AllowChangeUnits 
+    params.use_metric?"\001\002":"\006\007"
+  #else
+    #ifdef UseSI
+      "\001\002" 
+    #endif  
+    #ifdef UseUS
+      "\006\007"
+    #endif
+  #endif
+  );
 
   return (unsigned int)trip_cons;
 }
@@ -2286,11 +2331,30 @@ void get_fuel(char *retbuf, byte ctrip)
   cfuel=params.trip[ctrip].fuel/10000;
 
   // convert in gallon if requested
+#ifdef AllowChangeUnits
   if(!params.use_metric)
     cfuel = (cfuel * 100L) / 378L;//convertToGallons(cfuel);
+#else
+  #ifdef UseSI
+  #endif  
+  #ifdef UseUS
+    cfuel = (cfuel * 100L) / 378L;//convertToGallons(cfuel);
+  #endif  
+#endif
 
   long_to_dec_str(cfuel, decs, 2);
-  sprintf_P(retbuf, pctspcts, decs, params.use_metric?"L":"G" );
+  sprintf_P(retbuf, pctspcts, decs, 
+  #ifdef AllowChangeUnits 
+    params.use_metric?"L":"G"
+  #else
+    #ifdef UseSI
+      "L" 
+    #endif  
+    #ifdef UseUS
+      "G"
+    #endif
+  #endif
+  );
 }
 
 // trip 0 is tank
@@ -2305,11 +2369,30 @@ void get_waste(char *retbuf, byte ctrip)
   cfuel=params.trip[ctrip].waste/10000;
 
   // convert in gallon if requested
+#ifdef AllowChangeUnits
   if(!params.use_metric)
     cfuel = (cfuel * 100L) / 378L;//convertToGallons(cfuel);
+#else
+  #ifdef UseSI
+  #endif  
+  #ifdef UseUS
+    cfuel = (cfuel * 100L) / 378L;//convertToGallons(cfuel);
+  #endif  
+#endif
 
   long_to_dec_str(cfuel, decs, 2);
-  sprintf_P(retbuf, pctspcts, decs, params.use_metric?"L":"G" );
+  sprintf_P(retbuf, pctspcts, decs, 
+  #ifdef AllowChangeUnits 
+    params.use_metric?"L":"G"
+  #else
+    #ifdef UseSI
+      "L" 
+    #endif  
+    #ifdef UseUS
+      "G"
+    #endif
+  #endif
+  );
 }
 
 // trip 0 is tank
@@ -2324,11 +2407,30 @@ void get_dist(char *retbuf, byte ctrip)
   cdist=params.trip[ctrip].dist/10000;
 
   // convert in miles if requested
+#ifdef AllowChangeUnits
   if(!params.use_metric)
     cdist=(cdist*1000)/1609;
+#else
+  #ifdef UseSI
+  #endif  
+  #ifdef UseUS
+    cdist=(cdist*1000)/1609;
+  #endif  
+#endif
 
   long_to_dec_str(cdist, decs, 1);
-  sprintf_P(retbuf, pctspcts, decs, params.use_metric?"\003":"\006" );
+  sprintf_P(retbuf, pctspcts, decs, 
+  #ifdef AllowChangeUnits
+    params.use_metric?"\003":"\006"
+  #else
+    #ifdef UseSI
+      "\003"
+    #endif  
+    #ifdef UseUS
+      "\006"
+    #endif  
+  #endif
+  );
 }
 
 // distance you can do with the remaining fuel in your tank
@@ -2353,20 +2455,60 @@ void get_remain_dist(char *retbuf)
     tank_cons=params.trip[TANK].fuel/(params.trip[TANK].dist/1000);
     remain_dist=remain_fuel*1000/tank_cons;
 
+  #ifdef AllowChangeUnits
     if(!params.use_metric)  // convert to miles
       remain_dist=(remain_dist*1000)/1609;
+  #else
+    #ifdef UseSI
+    #endif  
+    #ifdef UseUS
+      remain_dist=(remain_dist*1000)/1609;
+    #endif  
+  #endif
   }
 
-  sprintf_P(retbuf, pctldpcts, remain_dist, params.use_metric?"\003":"\006" );
+  sprintf_P(retbuf, pctldpcts, remain_dist, 
+  #ifdef AllowChangeUnits
+    params.use_metric?"\003":"\006"
+  #else
+    #ifdef UseSI
+      "\003"
+    #endif  
+    #ifdef UseUS
+      "\006"
+    #endif  
+  #endif
+  );
 }
 
 //get_max_vss returns max speed achieved in trip
 void get_max_vss(char *retbuf, byte trip)
 {
   long maxspeed = params.tripmax[trip].maxspeed;
+
+#ifdef AllowChangeUnits
   if(!params.use_metric)
      maxspeed=(maxspeed*100U)/161U; //low differense between 1609 and 1610
-  sprintf_P(retbuf, pctldpcts, maxspeed, params.use_metric?"\003\004":"\006\004");  
+#else
+  #ifdef UseSI
+  #endif  
+  #ifdef UseUS
+     maxspeed=(maxspeed*100U)/161U; //low differense between 1609 and 1610
+  #endif  
+#endif
+
+  sprintf_P(retbuf, pctldpcts, maxspeed, 
+  #ifdef AllowChangeUnits
+    params.use_metric?"\003\004":"\006\004"
+  #else
+    #ifdef UseSI
+      "\003\004"
+    #endif  
+    #ifdef UseUS
+      "\006\004"
+    #endif  
+  #endif
+  );  
 }
 
 /*
@@ -2693,17 +2835,19 @@ void check_supported_pids(void)
   // on some ECU first PID read attemts some time fails, changed to 3 attempts
   for (byte i=0; i<3; i++)
   {
-    pid01to20_support  = (get_pid(PID_SUPPORT00, str, &tempLong)) ? tempLong : 0;
+    pid01to20_support = (get_pid(PID_SUPPORT00, str, &tempLong)) ? tempLong : 0;
     if (pid01to20_support) 
       break; 
   }
 #endif
 
   if(is_pid_supported(PID_SUPPORT20, 0))
-    pid21to40_support = (get_pid(PID_SUPPORT20, str, &tempLong)) ? tempLong : 0;
+    if (get_pid(PID_SUPPORT20, str, &tempLong))
+      pid21to40_support = tempLong; 
 
   if(is_pid_supported(PID_SUPPORT40, 0))
-    pid41to60_support = (get_pid(PID_SUPPORT40, str, &tempLong)) ? tempLong : 0;
+    if (get_pid(PID_SUPPORT40, str, &tempLong))
+      pid41to60_support = tempLong;
 }
 
 void display_mil_code_count(char *str, unsigned long *n, byte *count)
@@ -2863,7 +3007,7 @@ void check_mil_code(bool Silent)
   else 
     if (!Silent)
     {
-      lcd_cls_print_P(PSTR("No DTC codes"));
+      lcd_cls_print_P(noDTCcodes);
       delay(1500);
       lcd.clear();
     }  
@@ -2905,7 +3049,7 @@ void clear_mil_code(void)
   }  
   else
   {
-    lcd_cls_print_P(PSTR("No DTC codes"));
+    lcd_cls_print_P(noDTCcodes);
     delay(1000);
     lcd.clear();
   }
@@ -3158,6 +3302,7 @@ void config_menu(void)
             saveParams = true;
           }
         }
+      #ifdef AllowChangeUnits        
         else if (displaySelection == 2)  // Metric
         {
           lcd_cls_print_P(PSTR("Use metric unit"));
@@ -3182,6 +3327,7 @@ void config_menu(void)
             }
           }
         }
+      #endif  
         else if (displaySelection == 3) // Display speed
         {
           oldByteValue = params.per_hour_speed;
@@ -3207,6 +3353,7 @@ void config_menu(void)
         }
         else if (displaySelection == 4) // Font
         {
+          #ifdef use_BIG_font
           oldByteValue = params.BigFontType;
 
           // speed from which we toggle to fuel/hour
@@ -3229,6 +3376,7 @@ void config_menu(void)
               lcd_char_bignum();
             saveParams = true;
           }
+          #endif
         }
       } while (displaySelection != 0); // exit from this menu
     }
@@ -3252,17 +3400,28 @@ void config_menu(void)
 
           oldUIntValue = params.tank_size;
 
+          fuelUnits = params.tank_size;
           // convert in gallon if requested
-          if(!params.use_metric)
+
+        #ifdef AllowChangeUnits
+          if(params.use_metric)
           {
-            lcd_print_P(PSTR("G)"));
-            fuelUnits = (params.tank_size * 100L) / 378L;//convertToGallons(params.tank_size);
+            lcd_print_P(PSTR("L)"));
           }
           else
           {
-            lcd_print_P(PSTR("L)"));
-            fuelUnits = params.tank_size;
+            fuelUnits = params.tank_size * 100L / 378L;//convertToGallons(params.tank_size);
+            lcd_print_P(PSTR("G)"));
           }
+        #else
+          #ifdef UseSI
+            lcd_print_P(PSTR("L)"));
+          #endif  
+          #ifdef UseUS
+            fuelUnits = params.tank_size * 100L / 378L;//convertToGallons(params.tank_size);
+            lcd_print_P(PSTR("G)"));
+          #endif  
+        #endif
 
           // set value with left/right and set with middle
           do
@@ -3285,14 +3444,19 @@ void config_menu(void)
 
           if (changed)
           {
+          #ifdef AllowChangeUnits
             if(!params.use_metric)
-            {
-              params.tank_size = (fuelUnits * 378L) / 100L; //convertToLitres(fuelUnits);
-            }
-            else
-            {
-              params.tank_size = fuelUnits;
-            }
+              fuelUnits = (fuelUnits * 378L) / 100L; //convertToLitres(fuelUnits);
+          #else
+            #ifdef UseSI
+            #endif  
+            #ifdef UseUS
+              fuelUnits = (fuelUnits * 378L) / 100L; //convertToLitres(fuelUnits);
+            #endif  
+          #endif
+
+            params.tank_size = fuelUnits;
+
             changed = false;
           }
 
@@ -3308,18 +3472,30 @@ void config_menu(void)
           lcd_cls_print_P(PSTR("Fuel Price ("));
           oldUIntValue = params.gas_price;
 
+          fuelUnits = params.gas_price;
           // convert in gallons if requested
-          if(!params.use_metric)
+
+        #ifdef AllowChangeUnits
+          if(params.use_metric)
           {
-            lcd_print_P(PSTR("G)"));
-            // Convert unit price to litres for the cost per gallon. (ie $1 a litre = $3.785 per gallon)
-            fuelUnits = (params.gas_price * 378L) / 100L; //convertToLitres(params.gas_price);
+            lcd_print_P(PSTR("L)"));
           }
           else
           {
-            lcd_print_P(PSTR("L)"));
-            fuelUnits = params.gas_price;
+            // Convert unit price to litres for the cost per gallon. (ie $1 a litre = $3.785 per gallon)
+            fuelUnits = (fuelUnits * 378L) / 100L; //convertToLitres(params.gas_price);
+            lcd_print_P(PSTR("G)"));
           }
+        #else
+          #ifdef UseSI
+            lcd_print_P(PSTR("L)"));
+          #endif  
+          #ifdef UseUS
+            // Convert unit price to litres for the cost per gallon. (ie $1 a litre = $3.785 per gallon)
+            fuelUnits = (fuelUnits * 378L) / 100L; //convertToLitres(params.gas_price);
+            lcd_print_P(PSTR("G)"));
+          #endif  
+        #endif
 
           // set value with left/right and set with middle
           do
@@ -3369,14 +3545,19 @@ void config_menu(void)
 
           if (changed)
           {
+          #ifdef AllowChangeUnits
             if(!params.use_metric)
-            {
-              params.gas_price = (fuelUnits * 100L) / 378L; //convertToGallons(fuelUnits);
-            }
-            else
-            {
-              params.gas_price = fuelUnits;
-            }
+              fuelUnits = (fuelUnits * 100L) / 378L; //convertToGallons(fuelUnits);
+          #else
+            #ifdef UseSI
+            #endif  
+            #ifdef UseUS
+              fuelUnits = (fuelUnits * 100L) / 378L; //convertToGallons(fuelUnits);
+            #endif  
+          #endif
+
+            params.gas_price = fuelUnits;
+            
             changed = false;
           }
 
@@ -3478,17 +3659,28 @@ void config_menu(void)
 
           oldULongValue = params.trip[0].fuel;
 
+          tankUnits = params.trip[0].fuel / 1000 / 100; // converted from uL to dL
+
+        #ifdef AllowChangeUnits
           // convert in gallon if requested
-          if(!params.use_metric)
+          if(params.use_metric)
           {
-            lcd_print_P(PSTR("G)"));
-            tankUnits = params.trip[0].fuel / 1000 /* / 100 * 100L */ / 378L; //convertToGallons(params.trip[0].fuel / 1000 / 100); // converted from uL to dL
+            lcd_print_P(PSTR("L)"));
           }
           else
           {
-            lcd_print_P(PSTR("L)"));
-            tankUnits = params.trip[0].fuel / 1000 / 100; // converted from uL to dL
+            tankUnits = params.trip[0].fuel * 100L / 378L; //convertToGallons(params.trip[0].fuel / 1000 / 100); // converted from uL to dL
+            lcd_print_P(PSTR("G)"));
           }
+        #else
+          #ifdef UseSI
+            lcd_print_P(PSTR("L)"));
+          #endif  
+          #ifdef UseUS
+            tankUnits = params.trip[0].fuel * 100L / 378L; //convertToGallons(params.trip[0].fuel / 1000 / 100); // converted from uL to dL
+            lcd_print_P(PSTR("G)"));
+          #endif  
+        #endif
 
           // set value with left/right and set with middle
           do
@@ -3511,14 +3703,19 @@ void config_menu(void)
 
           if (changed)
           {
+          #ifdef AllowChangeUnits
             if(!params.use_metric)
-            {
-              params.trip[0].fuel = tankUnits * 378L /* / 100L * 100 */ * 1000; //convertToLitres(tankUnits) * 1000 * 100;
-            }
-            else
-            {
-              params.trip[0].fuel = tankUnits * 1000 * 100;
-            }
+              tankUnits = tankUnits * 378L / 100L; //convertToLitres(tankUnits) * 1000 * 100;
+          #else
+            #ifdef UseSI
+            #endif  
+            #ifdef UseUS
+              tankUnits = tankUnits * 378L / 100L; //convertToLitres(tankUnits) * 1000 * 100;
+            #endif  
+          #endif
+
+            params.trip[0].fuel = tankUnits * 1000 * 100;
+
             changed = false;
           }
 
@@ -3533,17 +3730,29 @@ void config_menu(void)
 
           oldULongValue = params.trip[0].dist;
 
+          tankUnits = params.trip[0].dist / 100 / 1000;
+          
+
+        #ifdef AllowChangeUnits
           // convert in miles if requested
-          if(!params.use_metric)
+          if(params.use_metric)
           {
-            lcd_print_P(PSTR("M)"));
-            tankUnits = params.trip[0].dist / 100 /* / 1000 * 1000 */ / 1609; // converted from cm to km
+            lcd_print_P(PSTR("KM)"));
           }
           else
           {
-            lcd_print_P(PSTR("KM)"));
-            tankUnits = params.trip[0].dist / 100 / 1000; // converted from cm to km
+            tankUnits = (tankUnits * 1000) / 1609; // converted from cm to km
+            lcd_print_P(PSTR("M)"));
           }
+        #else
+          #ifdef UseSI
+            lcd_print_P(PSTR("KM)"));
+          #endif  
+          #ifdef UseUS
+            tankUnits = (tankUnits * 1000) / 1609; // converted from cm to km
+            lcd_print_P(PSTR("M)"));
+          #endif  
+        #endif
 
           // set value with left/right and set with middle
           do
@@ -3566,14 +3775,19 @@ void config_menu(void)
 
           if (changed)
           {
+          #ifdef AllowChangeUnits
             if(!params.use_metric)
-            {
-              params.trip[0].dist = (tankUnits * 1609 / 1000) * 100 * 1000;
-            }
-            else
-            {
-              params.trip[0].dist = tankUnits * 100 * 1000;
-            }
+              tankUnits = tankUnits * 1609 / 1000;
+          #else
+            #ifdef UseSI
+            #endif  
+            #ifdef UseUS
+              tankUnits = tankUnits * 1609 / 1000;
+            #endif  
+          #endif
+
+            params.trip[0].dist = tankUnits * 100 * 1000;
+            
             changed = false;
           }
 
@@ -3645,7 +3859,7 @@ void config_menu(void)
               }
 
               char strpid[10];
-              strcpy_P(strpid, PID_Desc[pid]);
+              strcpy_P(strpid, PID_Desc[remap_pid(pid)]);
               sprintf_P(str, PSTR("- %8s +  "), strpid);
               exitMenu = displaySecondLine(2, str);
             } while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
@@ -3784,11 +3998,11 @@ void test_buttons(void)
   // left is cycle through active screen
   else if(LEFT_BUTTON_PRESSED)
   {
-#if 1  // set to 1 to test bignum
-    active_screen = (active_screen+1) % (NBSCREEN+BIG_NBSCREEN);
-#else
-    active_screen = (active_screen+1) % (NBSCREEN);
-#endif
+    #ifdef use_BIG_font
+      active_screen = (active_screen+1) % (NBSCREEN+BIG_NBSCREEN);
+    #else  
+      active_screen = (active_screen+1) % (NBSCREEN);
+    #endif  
     if(active_screen<NBSCREEN)
     {
       lcd.clear();
@@ -3798,7 +4012,9 @@ void test_buttons(void)
     else
     {
       lcd.clear();
+      #ifdef use_BIG_font
       lcd_char_bignum();
+      #endif
     }  
   }
   // right is cycle through brightness settings
@@ -3845,7 +4061,7 @@ void display_PID_names(void)
     for (byte col = 0; col == 0 || col == LCD_SPLIT; col+=LCD_SPLIT)
     {
       lcd.setCursor(col,row);
-      lcd_print_P(PID_Desc[params.screen[active_screen].PID[count++]]);
+      lcd_print_P(PID_Desc[remap_pid(params.screen[active_screen].PID[count++])]);
     }
   }
 
@@ -3921,7 +4137,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v191"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v192"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
@@ -4013,12 +4229,12 @@ static void DisplayLCDPIDS(char *str, char *str2)
   if (active_screen<NBSCREEN)
     for(byte current_PID=0; current_PID<LCD_PID_COUNT; current_PID++)
       display(current_PID, params.screen[active_screen].PID[current_PID]);
+  #ifdef use_BIG_font
   else
   if (active_screen==NBSCREEN)
   {
     get_pid_internal(str, params.screen[active_screen].PID[0]);
     bigNum(str, "");
-//    bigNum(str, "INST", params.use_metric?(vss > params.per_hour_speed?"L/KM":"L/Hr"):(vss > params.per_hour_speed?"MPG ":"G/Hr"));
   } else 
   {
     //params.screen[active_screen].PID[0]
@@ -4029,15 +4245,14 @@ static void DisplayLCDPIDS(char *str, char *str2)
 
       get_pid_internal(str, params.screen[active_screen].PID[0]);
       bigNum(str, str2);
-//      bigNum(str, str2, params.use_metric?"AVG L/KM":"AVG MPG ");
     }  
     else
     {
       get_pid_internal(str, params.screen[active_screen].PID[0]);
       bigNum(str, "");
-//      bigNum(str, "AVG", params.use_metric?"L/KM":"MPG ");
     }  
   }
+  #endif
 }
 
 /*
@@ -4218,6 +4433,15 @@ void loop()                     // run over and over again
 
   // test buttons
   test_buttons();
+  
+// TESTING ONLY
+#ifdef useSDCard 
+//SD card write BEGIN
+// make a string for assembling the data to log:
+  sprintf_P(str, PSTR("something"));
+  FileLogger::append("data.log", (byte*)str, STRLEN); 
+//SD card write END  
+#endif
 }
 
 // Calculate the time difference, and account for roll over too
@@ -4368,6 +4592,16 @@ void params_load(void)
   // compare CRC
   if(crc==crc_calc)     // good, copy read params to params
     params=params_tmp;
+    
+#ifdef AllowChangeUnits
+#else
+  #ifdef UseSI
+    params.use_metric = 1;
+  #endif  
+  #ifdef UseUS
+    params.use_metric = 0;
+  #endif  
+#endif    
 }
 
 #ifdef DEBUG  // how can this takes 578 bytes!!
@@ -4430,6 +4664,7 @@ void lcd_char_init()
       lcd.write(pgm_read_byte(&chars[y*NB_CHAR+x])); //write the character data to the character generator ram
 }
 
+#ifdef use_BIG_font
 void lcd_char_bignum()
 {
   //creating the custom fonts:
@@ -4474,6 +4709,7 @@ void lcd_char_bignum()
     for (byte y = 0; y < 8; y++)
       lcd.write(pgm_read_byte(&chars[params.BigFontType*BIGFontSymbolCount*8 + y*BIGFontSymbolCount + x])); //write the character data to the character generator ram
 }
+#endif
 
 char fBuff[7];//used by format
 char *format(unsigned long num)
@@ -4514,6 +4750,7 @@ char *format(unsigned long num)
   return fBuff;
 }
 
+#ifdef use_BIG_font
 void bigNum(char *txt, char *txt1)
 {
   static prog_char bignumchars1[40*BIGFontFontCount] PROGMEM = { 
@@ -4678,6 +4915,7 @@ void bigNum(char *txt, char *txt1)
       lcd.write(' ');    
   }    
 }
+#endif
 
 /*
 Adj %
