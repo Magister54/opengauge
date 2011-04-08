@@ -11,6 +11,10 @@
  LCD bignum: Frederic based on mpguino code by Dave, Eimantas
 
 Latest Changes
+Apr 07th, 2011 (v193)
+ Logging to SD card (base) HOWTO in forum page 68
+ TANK/TRIP/OUTING trip counters
+ 
 Apr 06th, 2011 (v192)
  Removed not used PID_Desc (saved ~1200bytes)
  Changed SI and US units selection - if disabled saves ~1300bytes
@@ -65,7 +69,7 @@ August 30th, 2010:
  Some LCD optimizations, formula for MAP, fix check_mil (untested)
 June 9th, 2009:
  ISO 9141 re-init, ECU polling, Car alarm and other tweaks by Antony
-June 24, 1009:
+June 24, 2009:
  Added three parameters to the mix, removed unrequired RPM call,
    added off and full to backlight levels, added waste PIDs: Antony
 June 25, 2009:
@@ -87,7 +91,8 @@ To-Do:
   
   Features Requested:
     1. Aero-Drag calculations?
-    2. SD Card logging
+    2. SD Card logging time limitations; buffering; loging format; analizing software or xls charts;
+       single row per second; logging pid selection; internal pid logging; real time clock; and other improvements
     3. Add another Fake PID to track max values (Speed, RPM, Tank KM's, etc...)
     4. Add a "Score" PID, to rate you for a trip (Quickness, IdleTime, Fuel Used etc as factors)
     5. Allow config for L/100 or km/l
@@ -260,7 +265,7 @@ To-Do:
 #endif
 
 // Uncomment to use SD card logging, neet uncomment #include <FileLogger.h> too (few lines bellow)
-//#define useSDCard (NOT WORKING JET)
+//#define useSDCard 
 
 #undef int
 #include <stdio.h>
@@ -279,19 +284,24 @@ To-Do:
 #define LCD_DATA4 13
 
 #ifdef useSDCard
-  //http://code.google.com/p/arduino-filelogger/
-  //#include <FileLogger.h>
+  // NOTE: some cards must be formated with not Windows, but http://panasonic.jp/support/global/cs/sd/download/index.html or others.
   
-  // Need to change LCD data pins 12 and 13
+  // http://code.google.com/p/arduino-filelogger/
+  #include <FileLogger.h>
+  
+  // Need to change LCD data pins 12 and 13 (rewire also)
   #define LCD_DATA3 2
   #define LCD_DATA4 3
   
-  //wiring instructions:
-  //http://www.arduino.cc/cgi-bin/yabb2/YaBB.pl?num=1206874649/all
-  // SCK_PIN   13 <-> SD ???
-  // MISO_PIN  12 <-> SD ???
-  // MOSI_PIN  11 <-> SD ???
-  // SS_PIN    10 <-> SD ???
+  // wiring instructions:
+  // http://www.arduino.cc/cgi-bin/yabb2/YaBB.pl?num=1206874649/all
+  // SCK_PIN   13 <-> SD 5 SCK    DIVIDER (1.8kOhm, 3.3kOhm) or (2.2kOhm, 3.9kOhm) or similar
+  // MISO_PIN  12 <-> SD 7 DO     DIRECT
+  // MOSI_PIN  11 <-> SD 2 DI     DIVIDER (1.8kOhm, 3.3kOhm) or (2.2kOhm, 3.9kOhm) or similar
+  // SS_PIN    10 <-> SD 1 CS     DIVIDER (1.8kOhm, 3.3kOhm) or (2.2kOhm, 3.9kOhm) or similar
+  // 3.3V         <-> SD 4 VCC    DIRECT
+  // GND          <-> SD 3 GND    DIRECT
+  // GND          <-> SD 6 GND1   DIRECT
 #endif  
 
 // LCD Pins same as mpguino
@@ -352,9 +362,9 @@ void get_cost(char *retbuf, byte ctrip);
 byte buttonState = buttonsUp;
 
 // Easy to read macros
-#define LEFT_BUTTON_PRESSED (buttonState&lbuttonBit)
+#define LEFT_BUTTON_PRESSED   (buttonState&lbuttonBit)
 #define MIDDLE_BUTTON_PRESSED (buttonState&mbuttonBit)
-#define RIGHT_BUTTON_PRESSED (buttonState&rbuttonBit)
+#define RIGHT_BUTTON_PRESSED  (buttonState&rbuttonBit)
 
 #define brightnessLength 7 //array size
 const byte brightness[brightnessLength]={
@@ -728,8 +738,9 @@ typedef struct
 {
   unsigned char maxspeed;    // in km/h
   unsigned int maxrpm;       // in rpm 
-  unsigned char maxload;     // in %
   unsigned char maxmaf;      // in g
+
+  unsigned char counter;     // in #
   
   unsigned long timedriving; // in ms
   unsigned long timeidling;  // in ms
@@ -786,9 +797,9 @@ params_t params=
     { 0,0,0 }  // outing:dist, fuel, waste
   },
   {
-    { 0,0,0,0, 0,0 }, // tank:  speed,rpm,load,maf; time driving, time idling
-    { 0,0,0,0, 0,0 }, // trip:  speed,rpm,load,maf; time driving, time idling
-    { 0,0,0,0, 0,0 }  // outing:speed,rpm,load,maf; time driving, time idling
+    { 0,0,0,0, 0,0 }, // tank:  speed,rpm,maf; trip count; time driving, time idling
+    { 0,0,0,0, 0,0 }, // trip:  speed,rpm,maf; trip count; time driving, time idling
+    { 0,0,0,0, 0,0 }  // outing:speed,rpm,maf; trip count; time driving, time idling
   },
   {
     { {FUEL_CONS,LOAD_VALUE,TANK_CONS,OUTING_FUEL
@@ -821,7 +832,7 @@ params_t params=
   0 //MetricDisplayType
 };
 
-prog_char * econ_Visual[] PROGMEM=
+prog_char *econ_Visual[] PROGMEM=
 {
   "Yuck!!8{",
   "Aweful:(",
@@ -1966,6 +1977,10 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
   }
  #endif
  
+ #ifdef useSDCard 
+  logdata(pid, retbuf, ret);
+ #endif
+  
   return true;
 }
 
@@ -3926,8 +3941,15 @@ void trip_reset(byte ctrip, boolean ask)
 
     params.tripmax[ctrip].maxspeed = 0;
     params.tripmax[ctrip].maxrpm = 0;
-    params.tripmax[ctrip].maxload = 0;
     params.tripmax[ctrip].maxmaf = 0;
+
+    // Increase trip counter (if 255 then 0)
+    params.tripmax[ctrip].counter++;
+    // Reset lower level counts (if TANK then reset TRIP and OUTING; if TRIP then reset OUTING)
+    if (ctrip < TRIP)
+      params.tripmax[TRIP].counter = 0; 
+    if (ctrip < OUTING)
+      params.tripmax[OUTING].counter = 0; 
 
     params.tripmax[ctrip].timedriving = 0L;
     params.tripmax[ctrip].timeidling = 0L;
@@ -4137,7 +4159,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v192"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v193"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
@@ -4433,15 +4455,6 @@ void loop()                     // run over and over again
 
   // test buttons
   test_buttons();
-  
-// TESTING ONLY
-#ifdef useSDCard 
-//SD card write BEGIN
-// make a string for assembling the data to log:
-  sprintf_P(str, PSTR("something"));
-  FileLogger::append("data.log", (byte*)str, STRLEN); 
-//SD card write END  
-#endif
 }
 
 // Calculate the time difference, and account for roll over too
@@ -5055,3 +5068,24 @@ void save_params_and_display(void)
   //Turn the Backlight off
   needBacklight(false);
 }
+
+// SD card functions
+#ifdef useSDCard 
+// driving time, engine on time etc.
+// limit time intervals (maybe)
+void logdata(byte pid, char *str, long *value)
+{
+  char string[STRLEN];
+  char engine_time[10];
+  get_engine_on_time(engine_time);
+  
+  sprintf_P(string, PSTR("%d\t%d\t%d\t%s\t%d\t%ld\t%s\r\n"),
+                    params.tripmax[TANK].counter, 
+                    params.tripmax[TRIP].counter, 
+                    params.tripmax[OUTING].counter,
+                    engine_time, 
+                    pid, *value, str);
+                    
+  FileLogger::append("data.log", (byte*)string, strlen(string)); 
+}
+#endif
