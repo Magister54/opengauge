@@ -11,7 +11,9 @@
  LCD bignum: Frederic based on mpguino code by Dave, Eimantas
 
 Latest Changes
-Apr 07th, 2011 (v193)
+Apr 07th, 2011 (v193-v194)
+ Single pid and data collection logging (see #define useSDCard section)
+ Log buffering (one access to SD card takes ~170-200ms)
  Logging to SD card (base) HOWTO in forum page 68
  TANK/TRIP/OUTING trip counters
  
@@ -91,8 +93,8 @@ To-Do:
   
   Features Requested:
     1. Aero-Drag calculations?
-    2. SD Card logging time limitations; buffering; loging format; analizing software or xls charts;
-       single row per second; logging pid selection; internal pid logging; real time clock; and other improvements
+    2. SD Card logging time limitations; loging format; analizing software or xls charts;
+       logging pid selection; internal pid logging; real time clock; and other improvements
     3. Add another Fake PID to track max values (Speed, RPM, Tank KM's, etc...)
     4. Add a "Score" PID, to rate you for a trip (Quickness, IdleTime, Fuel Used etc as factors)
     5. Allow config for L/100 or km/l
@@ -214,35 +216,49 @@ To-Do:
 // Uncomment to use ECU polling to see if car is On or Off
 #define useECUState
 
+// Uncomment to "disconnect" from ECU if RPM is 0 (set ECU state to off) 
+// because VW (maybe others) keeps responding some time after turning car off, 
+// but if engine is restarted - fails
+// Comment out to disable 
+// DEFAULT: commented
+//#define DisconnectECUIfRPMIsZero
+
 // Comment out if ISO 9141 does not need to reinit
 // Uncomment define below to force reinitialization of ISO 9141 after no ECU communication
 // this requires ECU polling
+// DEFAULT: commented
 //#define do_ISO_Reinit 
 
 // Comment out if ISO 9141 initialization should be done on first startup
 // Uncomment define below to skip initialization of ISO 9141 after first startup, initialization will be done in ISO_Reinit mode
+// DEFAULT: commented
 //#define skip_ISO_Init 
 
 // Comment out to use the PID screen when the car is off (This will interfere with ISO reinit process)
 // Uncomment to use the Car Alarm Screen when the car is off
+// DEFAULT: commented
 //#define carAlarmScreen
 
 // Comment out to disable trip data saving after engine is off and RPM = 0
 // Uncomment to save trip data after engine is off and RPM = 0
+// DEFAULT: uncommented
 #define SaveTripDataAfterEngineTurnOff
 
 // Comment out to read DTC on OBDuino start.
 // Uncomment to disable DTC read.
+// DEFAULT: commented
 //#define DisableDTCReadOnStart
 
 // Comment out to do not use temperature sensor
 // Uncomment to use temperature sensor
+// DEFAULT: commented
 //#define UseInsideTemperatureSensor
 //#define UseOutsideTemperatureSensor
 //#define TemperatureSensorTypeKTY81_210
 
 // Comment out to do not use voltage sensor
 // Uncomment to use voltage sensor
+// DEFAULT: commented
 //#define BatteryVoltageSensor
 
 // Define currency symbols 
@@ -254,10 +270,17 @@ To-Do:
 
 // Uncomment to use PIDs cache, 
 // it makes faster refresh rate in ISO mode, but uses ~200bytes of memory
+// DEFAULT: uncommented
 #define UsePIDCache
+
+#ifdef DEBUG
+ #undef do_ISO_Reinit
+ #undef skip_ISO_Init 
+#endif
 
 // Uncoment to enable changing metric to US system
 // If commented - saves 1300bytes in metric, and 600bytes in US
+// DEFAULT: uncommented
 #define AllowChangeUnits
 #ifndef AllowChangeUnits
   #define UseSI
@@ -288,6 +311,20 @@ To-Do:
   
   // http://code.google.com/p/arduino-filelogger/
   #include <FileLogger.h>
+  
+  // Can use multiple log data
+  //#define logEveryPid
+  #define logDataCollections
+
+  // Choose only one type
+  #define logTypeVerbose
+  //#define logTypeSystem
+  
+  // for faster writing need buffer, bigger is better, but 512 is maximum
+  // if memory ussage is too big - reduce size
+  #define logBufferSize 256
+  static char logString[logBufferSize] = {0};
+
   
   // Need to change LCD data pins 12 and 13 (rewire also)
   #define LCD_DATA3 2
@@ -869,6 +906,7 @@ unsigned long old_time;
 byte has_rpm=0;
 long vss=0;  // speed
 long maf=0;  // MAF
+long engineRPM=0; // RPM
 unsigned long engine_on, engine_off; //used to track time of trip.
 
 #ifdef AutoSave
@@ -918,6 +956,14 @@ byte param_saved=0;
 #if defined skip_ISO_Init
 #error skip_ISO_Init must have do_ISO_Reinit also defined
 #endif
+#endif
+
+#if defined (DEBUG) && defined (do_ISO_Reinit)
+#error Error: could not be defined DEBUG and do_ISO_Reinit at same time
+#endif
+
+#if defined (DEBUG) && defined (skip_ISO_Init)
+#error Error: could not be defined DEBUG and skip_ISO_Init at same time
 #endif
 
 /*
@@ -1977,8 +2023,8 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
   }
  #endif
  
- #ifdef useSDCard 
-  logdata(pid, retbuf, ret);
+ #ifdef logEveryPid
+  logpid(pid, retbuf, ret);
  #endif
   
   return true;
@@ -2645,7 +2691,7 @@ void accu_trip(void)
       long imap, rpm, manp, iat;
 
       // get_pid successful, assign variable, otherwise quit
-      if (get_pid(ENGINE_RPM, str, &tempLong)) rpm = tempLong;
+      if (get_pid(ENGINE_RPM, str, &engineRPM)) rpm = engineRPM;
       else return;
       if (get_pid(MAN_PRESSURE, str, &tempLong)) manp = tempLong;
       else return;
@@ -2700,6 +2746,11 @@ void accu_trip(void)
   tmaf[tindex]=maf;
   // increment index and roll over
   tindex = (tindex+1) % NBSMOOTH;
+  
+  #ifdef logDataCollections
+    //log data speed, maf, etc
+    logdata(throttle_pos);
+  #endif
 }
 
 // this function is needet for normal PID display and BIG PID display
@@ -4159,7 +4210,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v193"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v194"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
@@ -4392,7 +4443,7 @@ void loop()                     // run over and over again
 #else
 
   // test if engine is started
-  has_rpm = (get_pid(ENGINE_RPM, str, &tempLong) && tempLong > 0) ? 1 : 0;
+  has_rpm = (get_pid(ENGINE_RPM, str, &engineRPM) && engineRPM > 0) ? 1 : 0;
 
   if (engine_started==0 && has_rpm!=0)
   {
@@ -4491,13 +4542,18 @@ boolean verifyECUAlive(void)
     return ECUconnection;
   }
   #endif
-    // Send command to ECU, if it is active, we will get data back.
-    // Set RPM to 1 if ECU active and RPM above 0, otherwise zero.
-    char str[STRLEN];
-    boolean connected = get_pid(ENGINE_RPM, str, &tempLong);
-    has_rpm = (connected && tempLong > 0) ? 1 : 0;
 
-    return connected;
+  // Send command to ECU, if it is active, we will get data back.
+  // Set RPM to 1 if ECU active and RPM above 0, otherwise zero.
+  char str[STRLEN];
+  boolean connected = get_pid(ENGINE_RPM, str, &engineRPM);
+  has_rpm = (connected && engineRPM > 0) ? 1 : 0;
+    
+  #ifdef DisconnectECUIfRPMIsZero
+   connected = has_rpm;
+  #endif
+    
+  return connected;
 #endif
 }
 #endif
@@ -5071,21 +5127,59 @@ void save_params_and_display(void)
 
 // SD card functions
 #ifdef useSDCard 
+
+void logbuffer(void)
+{
+  int length = strlen(logString);
+  if (length >= logBufferSize - 60)
+  {
+    FileLogger::append("data.log", (byte*)logString, length); 
+    logString[0] = 0;
+  }  
+}
+
 // driving time, engine on time etc.
 // limit time intervals (maybe)
-void logdata(byte pid, char *str, long *value)
+void logpid(byte pid, char *str, long *value)
 {
-  char string[STRLEN];
-  char engine_time[10];
+  char engine_time[9];
   get_engine_on_time(engine_time);
   
-  sprintf_P(string, PSTR("%d\t%d\t%d\t%s\t%d\t%ld\t%s\r\n"),
-                    params.tripmax[TANK].counter, 
-                    params.tripmax[TRIP].counter, 
-                    params.tripmax[OUTING].counter,
-                    engine_time, 
-                    pid, *value, str);
-                    
-  FileLogger::append("data.log", (byte*)string, strlen(string)); 
+ #ifdef logTypeVerbose
+  sprintf_P(&logString[strlen(logString)], 
+            PSTR("%d\t%d\t%d\t%s\t%d\t%ld\t%s\r\n"),
+            params.tripmax[TANK].counter, 
+            params.tripmax[TRIP].counter, 
+            params.tripmax[OUTING].counter,
+            engine_time, 
+            pid, *value, str);
+ #endif                    
+ #ifdef logTypeSystem
+  sprintf_P(&logString[strlen(logString)],
+            PSTR("%02X%02X%02X%02X%08lX\r\n"),
+            params.tripmax[TANK].counter, 
+            params.tripmax[TRIP].counter, 
+            params.tripmax[OUTING].counter,
+            pid, *value);
+ #endif
+
+  logbuffer();
+}
+
+// log data collection every accu_trip() cycle
+void logdata(byte throttle_pos)
+{
+  char engine_time[9];
+  get_engine_on_time(engine_time);
+
+  sprintf_P(&logString[strlen(logString)],
+            PSTR("%02X%02X%02X\t%s\t%ld\t%ld\t%ld\t%d\r\n"),
+            params.tripmax[TANK].counter, 
+            params.tripmax[TRIP].counter, 
+            params.tripmax[OUTING].counter,
+            engine_time,
+            vss, engineRPM, maf, throttle_pos);
+            
+  logbuffer();
 }
 #endif
