@@ -11,7 +11,8 @@
  LCD bignum: Frederic based on mpguino code by Dave, Eimantas
 
 Latest Changes
-Apr 07th, 2011 (v193-v194)
+Apr 06-12th, 2011 (v193-v195)
+ Summary logging to separate file
  Single pid and data collection logging (see #define useSDCard section)
  Log buffering (one access to SD card takes ~170-200ms)
  Logging to SD card (base) HOWTO in forum page 68
@@ -93,25 +94,20 @@ To-Do:
   
   Features Requested:
     1. Aero-Drag calculations?
-    2. SD Card logging time limitations; loging format; analizing software or xls charts;
-       logging pid selection; internal pid logging; real time clock; and other improvements
+    2. SD Card logging:
+      a) PID time limitations; loging format; analizing software or xls charts;
+         logging pid selection; internal pid logging; real time clock; and other improvements.
+       
     3. Add another Fake PID to track max values (Speed, RPM, Tank KM's, etc...)
     4. Add a "Score" PID, to rate you for a trip (Quickness, IdleTime, Fuel Used etc as factors)
     5. Allow config for L/100 or km/l
   
   Other:
     1. Trim the Code as we are aproaching the 30.7K limit.
-      a) params.use_metric could be changed to "#define", a lot of "if" could be 
-          changed to #ifdef (~1-2 K bytes expected, 1546bytes saved in metric mode) 
-      b) in config always save params (~200-300 bytes expected)
-      c) millis() rollover handling inspired by http://www.arduino.cc/playground/Code/TimingRollover 
-          [diff = calcTimeDiff(start, end) = (long)(end - start)], could save ~230bytes.
-          Partly done: modified calcTimeDiff, but removing calls to function could save some more.
-
-    2. Move variable caching strings to PROGMEM
-    3. Add a "dirty" flag to tank data when the obduino detects that it has been
+      a) in config always save params (~200-300 bytes expected)
+    2. Add a "dirty" flag to tank data when the obduino detects that it has been
         disconnected from the car to indicate that the data may no longer be complete
-    4. Config menu optimization (one universal function for all items)
+    3. Config menu optimization (one universal function for all items)
 
 
  This program is free software; you can redistribute it and/or modify it under
@@ -287,9 +283,6 @@ To-Do:
 //  #define UseUS
 #endif
 
-// Uncomment to use SD card logging, neet uncomment #include <FileLogger.h> too (few lines bellow)
-//#define useSDCard 
-
 #undef int
 #include <stdio.h>
 #include <limits.h>
@@ -306,24 +299,36 @@ To-Do:
 #define LCD_DATA3 12
 #define LCD_DATA4 13
 
+// Uncomment to use SD card logging, 
+// need uncomment "#include <FileLogger.h>" too (few lines bellow) and "static char logString[logBufferSize] = {0};"
+// arduino0022 is messing up with #include and static variables within #ifdef ... #endif
+
+//#define useSDCard 
+
 #ifdef useSDCard
-  // NOTE: some cards must be formated with not Windows, but http://panasonic.jp/support/global/cs/sd/download/index.html or others.
+  // NOTE: some cards must be formated with not Windows, 
+  // but http://panasonic.jp/support/global/cs/sd/download/index.html or others.
   
   // http://code.google.com/p/arduino-filelogger/
-  #include <FileLogger.h>
+//  #include <FileLogger.h>
   
-  // Can use multiple log data
+  // PIDs and data collections goes to "data.log"
   //#define logEveryPid
   #define logDataCollections
+  
+  // Summary goes to "summary.log" (must be created in SD card but space for data log has to be continuous)
+  #define logTripSummary
 
-  // Choose only one type
-  #define logTypeVerbose
-  //#define logTypeSystem
+  // Choose only one type and at least one
+  // Type logTypeSystem is more compact, uses less memory, 
+  // but need some additional application for analizing
+  //#define logTypeVerbose
+  #define logTypeSystem
   
   // for faster writing need buffer, bigger is better, but 512 is maximum
   // if memory ussage is too big - reduce size
   #define logBufferSize 256
-  static char logString[logBufferSize] = {0};
+//  static char logString[logBufferSize] = {0};
 
   
   // Need to change LCD data pins 12 and 13 (rewire also)
@@ -1727,8 +1732,13 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
   elm_compact_response(buf, str);
 #endif
 #else
-  // wait until ISORequestDelay is delayed after last PID read
 
+  // if not connected - do not send any request, 
+  // and do not disturb init proccess in case of reinit
+  if (!ECUconnection)
+    return false;    
+
+  // wait until ISORequestDelay is delayed after last PID read
   while (long(millis() - ISORequestDelay) < lastReceivedPIDTime)
     delay(1);
 
@@ -3986,6 +3996,10 @@ void trip_reset(byte ctrip, boolean ask)
 
   if(reset)
   {
+    #ifdef logTripSummary
+      logSummary();
+    #endif
+    
     params.trip[ctrip].dist=0L;
     params.trip[ctrip].fuel=0L;
     params.trip[ctrip].waste=0L;
@@ -4210,7 +4224,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v194"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v195"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
@@ -5182,4 +5196,46 @@ void logdata(byte throttle_pos)
             
   logbuffer();
 }
-#endif
+
+// log trip summary
+#ifdef logTripSummary
+void logSummary(void)
+{
+ #ifdef logTypeVerbose
+ // write params_t structure in verbose mode to SD card (300bytes of code)
+  char string[60];
+  
+  for (byte i=OUTING; i<NBTRIP; i++)
+  {
+    sprintf_P(string,
+              PSTR("%02X%02X%02X\t%ld\t%ld\t%ld\t%ud\t%ud\t%ud\t%ld\t%ld\t\r\n"),
+              params.tripmax[TANK].counter, 
+              params.tripmax[TRIP].counter, 
+              params.tripmax[OUTING].counter,
+              params.trip[i].dist,
+              params.trip[i].fuel,
+              params.trip[i].waste,
+              params.tripmax[i].maxspeed,
+              params.tripmax[i].maxrpm,
+              params.tripmax[i].maxmaf,
+              params.tripmax[i].timedriving,
+              params.tripmax[i].timeidling
+             );
+    FileLogger::append("summary.log", (byte*)string, strlen(string)); 
+  }          
+ #endif                    
+ #ifdef logTypeSystem
+  // write params_t structure dump to SD card (30bytes of code)
+  FileLogger::append("summary.log", (byte*)&params, sizeof(params_t)); 
+/*
+  char string[sizeof(params_t)+1];
+  memcpy(string, &params, sizeof(params_t));
+  string[sizeof(params_t)] = 0;
+
+  FileLogger::append("summary.log", (byte*)string, strlen(string)); 
+*/   
+ #endif 
+}
+#endif //logTripSummary
+
+#endif //useSDCard
