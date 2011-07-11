@@ -4,9 +4,12 @@ Role of the three buttons:
 LEFT    rotate screen         decrease, select NO
 MIDDLE  go into menu          apply and go to next item
 RIGHT   rotate brightness     increase, select YES
+
 MIDDLE+LEFT tank reset
 MIDDLE+RIGHT trip reset and outing reset
 RIGHT+LEFT display PID information for current screen
+RIGHT+MIDDLE+LEFT display ECU errors and clear them
+
 
 When you press middle and left button, a screen appear:
 - Zero tank data (NO/YES)
@@ -68,6 +71,19 @@ Configuration menu (accessed by middle button);
   Some specials PIDs you can access (either by decreasing below 0 or by
   going far up):  
 
+  0xDE - Max speed reached after last outing reset
+  0xDF - Max speed reached after last trip reset
+  0xE0 - Max speed reached after last tank reset
+  0xE1 - Time while idling since last outing reset
+  0xE2 - Time while idling since last trip reset
+  0xE3 - Time while idling since last tank reset
+  0xE4 - Time while driving since last outing reset
+  0xE5 - Time while driving since last trip reset
+  0xE6 - Time while driving since last tank reset
+
+  0xE7 - Outside temperature (extra sensor is needed)
+  0xE8 - Inside temperature  (extra sensor is needed)
+
   0xE9 - Fuel wasted during idle state for this outing
   0xEA - Fuel wasted during idle state for this trip
   0xEB - Fuel wasted during idle state for this tank
@@ -85,7 +101,7 @@ Configuration menu (accessed by middle button);
   0xF6 - Average fuel consumption of the trip (since last trip reset)
   0xF7 - Fuel used for the current trip
   0xF8 - Distance of the current trip
-  0xF9 - Battery voltage (of the car)
+  0xF9 - Battery voltage (of the car) (extra sensor is needed in ISO mode)
   0xFA - Outing cons
   0xFB - Fuel used for this outing
   0xFC - Distance traveled for this outing
