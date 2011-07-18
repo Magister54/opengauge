@@ -11,6 +11,11 @@
  LCD bignum: Frederic based on mpguino code by Dave, Eimantas
 
 Latest Changes
+Jul 11th, 2011 (v197)
+ Buzzer for speed limit (active)
+ Buzzer for coolant temperature (every 1min)
+ Key response fixes
+ 
 Apr 06-12th, 2011 (v193-v195)
  Summary logging to separate file
  Single pid and data collection logging (see #define useSDCard section)
@@ -283,6 +288,28 @@ To-Do:
 //  #define UseUS
 #endif
 
+// Uncoment to use buzzer for speed limits or other notification
+// Wiring for buzzer with oscilator
+// 5V ------------- 2N3906 --- (+)Buzzer(-) ---- 0V(GND)
+//                    |
+//                   220hm
+//                    |
+//                    A1 (analog pin)
+// DEFAULT: commented
+//#define UseBuzzer
+
+#ifdef UseBuzzer
+  #define BuzzerPin 15
+
+  // Speed limit 60kmh, will trigger buzzer once on SpeedLimit (60kmh)
+  #define SpeedLimit 60 
+  bool SpeedLimitReached = false;
+
+  // Coolant temperature limit 100C, will trigger buzzer if limit reached (every 1min)
+  #define CoolantTemperatureLimit 100
+  unsigned long old_time_system_check;
+#endif
+
 #undef int
 #include <stdio.h>
 #include <limits.h>
@@ -374,10 +401,10 @@ int memoryTest(void);
 void test_buttons(void);
 void get_cost(char *retbuf, byte ctrip);
 
-#define KEY_WAIT 300 // Wait for potential other key press //Was 1000, but 300 works better
-#define ACCU_WAIT 500 // Only accumulate data so often.
-#define BUTTON_DELAY  100 //Was 125, but 100 works better
-#define MENU_TIMEOUT 10000 //Wait 10s and close config menu if no key is pressed
+#define KEY_WAIT 200       // Wait for potential other key press //Was 1000, but 200 works better
+#define ACCU_WAIT 1000     // Only accumulate data so often.
+#define BUTTON_DELAY 100   // Not in use any more. Was 125, but 100 works better
+#define MENU_TIMEOUT 10000 // Wait 10s and close config menu if no key is pressed
 
 #ifdef UseOutsideTemperatureSensor
   #define OutsideTemperaturePin 15 // Inside temperature sensor, on analog 1
@@ -1021,6 +1048,9 @@ unsigned long lastReceivedPIDTime = 0;
 ISR(PCINT1_vect)
 {
 #if 0
+  // it is wrong to access timers in ISR, 
+  // this code bellow in "#if 0" has to be removed
+/*
   static unsigned long last_millis = 0;
   unsigned long m = millis();
 
@@ -1030,6 +1060,7 @@ ISR(PCINT1_vect)
   }
   //  else ignore interrupt: probably a bounce problem
   last_millis = m;
+*/  
 #else
   buttonState |= ~PINC;
 #endif
@@ -2594,7 +2625,7 @@ void accu_trip(void)
   char str[STRLEN];
   unsigned long delta_dist, delta_fuel;
   unsigned long time_now, delta_time;
-
+  
  #ifdef UsePIDCache
   // read values from ECU, not from cache
   PIDCacheCount=0;
@@ -2617,7 +2648,7 @@ void accu_trip(void)
     return; // not valid, exit
   }
 
-  if(vss>0)
+  if ((byte)vss>0)
   {
     delta_dist=(vss*delta_time)/36;
     // accumulate for all trips
@@ -2626,10 +2657,48 @@ void accu_trip(void)
       params.trip[i].dist+=delta_dist;
 
       // collect max data
-      if (vss > params.tripmax[i].maxspeed)
-        params.tripmax[i].maxspeed = vss;
+      if ((byte)vss > params.tripmax[i].maxspeed)
+        params.tripmax[i].maxspeed = (byte)vss;
     }  
   }
+
+
+#ifdef UseBuzzer
+  if ((byte)vss > SpeedLimit)
+  {
+    if (!SpeedLimitReached)
+    {
+      Buzzer(20); //20*10ms=200ms
+      SpeedLimitReached = true;
+    }
+  }  
+  // Allow to drop speed before beeping again
+  if ((byte)vss < SpeedLimit - 5)
+    SpeedLimitReached = false;
+    
+  if ((long)(time_now - old_time_system_check) > 1L * 60000L) // more then 1min
+  {
+    boolean SomethingWrong = false;
+    
+    old_time_system_check = millis();   
+    if (get_pid(COOLANT_TEMP, str, &tempLong))
+      if ((byte)tempLong >= CoolantTemperatureLimit)
+        SomethingWrong = true;
+        
+//    if (get_pid(MIL_CODE, str, &tempLong))
+//      if (1L<<31 & (unsigned long)tempLong)
+//        SomethingWrong = true;
+          
+    if (SomethingWrong)     
+    {
+      Buzzer(10);
+      Buzzer(-10);
+      Buzzer(10);
+      Buzzer(-10);
+      Buzzer(10);
+    }
+  }    
+#endif  
 
   // if engine is stopped, we can get out now
   if (!has_rpm)
@@ -3157,6 +3226,8 @@ void clear_mil_code(void)
 
 boolean delay_reset_button(void)
 {
+  byte DelayCount = 0;
+  
   // accumulate data for trip while in the menu config, do not pool too often.
   // but anyway you should not configure your OBDuino while driving!
 
@@ -3164,27 +3235,46 @@ boolean delay_reset_button(void)
   // wait a little past the last key press before doing trip data.
   // Rapid key presses take priority...
   static unsigned long lastButtonTime = 0;
-
+  unsigned int timeSinceLastButton;
+  
   if (buttonState != buttonsUp)
   {
     lastButtonTime = millis();
 
-    buttonState = buttonsUp;
-    delay(BUTTON_DELAY);
+    #ifdef UseBuzzer
+      Buzzer(3);
+    #endif
+
+    // Waiting until buttons are released (for real) and wait for next button
+    while (analogRead(lbuttonPin-14) + analogRead(mbuttonPin-14) + analogRead(rbuttonPin-14) < 3 * 1024 - 64)
+      delay(50);
+
+    while (buttonState != buttonsUp)
+    {
+      buttonState = buttonsUp;
+      delay(50);
+    }
   }
   else
   {
-    //should be unsigned long if timeout is more 60s
-    unsigned int timeSinceLastButton = calcTimeDiff(lastButtonTime, millis()); //calcTimeDiff uses 40-50bytes each call
-    
-    if (timeSinceLastButton > KEY_WAIT &&
-        calcTimeDiff(old_time, millis()) > ACCU_WAIT)
+    while (buttonState == buttonsUp && DelayCount < 100)
     {
-      accu_trip();
-    }
+      DelayCount++;
+      
+      //should be unsigned long if timeout is more 60s
+      timeSinceLastButton = calcTimeDiff(lastButtonTime, millis()); //calcTimeDiff uses 40-50bytes each call
     
-    if (timeSinceLastButton > MENU_TIMEOUT)
-      return true;
+      if (timeSinceLastButton > KEY_WAIT && calcTimeDiff(old_time, millis()) > ACCU_WAIT)
+      {
+        accu_trip();
+      }
+    
+      if (timeSinceLastButton > MENU_TIMEOUT)
+        return true;
+      
+      // Some delay for less cycles
+      delay(20);
+    }
   }
   return false;
 }
@@ -3195,7 +3285,7 @@ byte menu_select_yes_no(byte p)
   boolean exitMenu = false;
 
   // set value with left/right and set with middle
-  exitMenu |= delay_reset_button();  // make sure to clear button
+  exitMenu = delay_reset_button();  // make sure to clear button
 
   do
   {
@@ -3214,7 +3304,7 @@ byte menu_select_yes_no(byte p)
 
     exitMenu |= delay_reset_button();
   }
-  while(!exitMenu);
+  while(!MIDDLE_BUTTON_PRESSED && !exitMenu);
 
   return p;
 }
@@ -3298,7 +3388,7 @@ byte menu_selection(char ** menu, byte arraySize)
     // Clean up button presses
     forceExit = delay_reset_button();
   }
-  while(!exitMenu && !forceExit);
+  while(!MIDDLE_BUTTON_PRESSED && !exitMenu && !forceExit);
 
   if (forceExit) 
     return 0;
@@ -4056,6 +4146,10 @@ int convertToFarenheit(int celsius)
 
 void test_buttons(void)
 {
+  // if any button pressed, wait for other buttons if any
+  if (buttonState != buttonsUp)
+    delay(KEY_WAIT);
+  
   // middle + left + right = mil check
   if (MIDDLE_BUTTON_PRESSED && LEFT_BUTTON_PRESSED && RIGHT_BUTTON_PRESSED)
   {
@@ -4190,6 +4284,7 @@ void setup()                    // run once, when the sketch starts
   pinMode(lbuttonPin, INPUT);
   pinMode(mbuttonPin, INPUT);
   pinMode(rbuttonPin, INPUT);
+  
   // "turn on" the internal pullup resistors
   digitalWrite(lbuttonPin, HIGH);
   digitalWrite(mbuttonPin, HIGH);
@@ -4218,13 +4313,21 @@ void setup()                    // run once, when the sketch starts
 #ifdef UseOutsideTemperatureSensor
   pinMode(OutsideTemperaturePin, INPUT);
 #endif
+
+  // Voltage sensor init
 #ifdef BatteryVoltageSensor
   pinMode(BatteryVoltagePin, INPUT);
 #endif
 
+  // Buzzer init
+#ifdef UseBuzzer
+  pinMode(BuzzerPin, OUTPUT);
+  digitalWrite(BuzzerPin, HIGH);
+#endif
+
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v195"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v197"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
@@ -5239,3 +5342,16 @@ void logSummary(void)
 #endif //logTripSummary
 
 #endif //useSDCard
+
+#ifdef UseBuzzer
+// Time in 10th of ms (1 = 10ms, 12 = 120ms) 
+// If negative - delay only
+void Buzzer(char Time)
+{
+  byte Delay = Time>0?Time:(-1)*Time;
+  if (Time>0)
+    digitalWrite(BuzzerPin, LOW);
+  delay(Delay*10);
+  digitalWrite(BuzzerPin, HIGH);
+}
+#endif
