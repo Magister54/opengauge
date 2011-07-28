@@ -299,15 +299,15 @@ To-Do:
 //#define UseBuzzer
 
 #ifdef UseBuzzer
-  #define BuzzerPin 15
+ #define BuzzerPin 15
 
   // Speed limit 60kmh, will trigger buzzer once on SpeedLimit (60kmh)
   #define SpeedLimit 60 
-  bool SpeedLimitReached = false;
+//  bool SpeedLimitReached = false;  //UNCOMENT if UseBuzzer
 
   // Coolant temperature limit 100C, will trigger buzzer if limit reached (every 1min)
   #define CoolantTemperatureLimit 100
-  unsigned long old_time_system_check;
+//  unsigned long old_time_system_check; UNCOMENT if UseBuzzer:
 #endif
 
 #undef int
@@ -4327,7 +4327,7 @@ void setup()                    // run once, when the sketch starts
 
   engine_off = engine_on = millis();
 
-  lcd_cls_print_P(PSTR("OBDuino32k  v197"));
+  lcd_cls_print_P(PSTR("OBDuino32k  v198"));
 #if !defined( ELM ) && !defined(skip_ISO_Init)
   do // init loop
   {
