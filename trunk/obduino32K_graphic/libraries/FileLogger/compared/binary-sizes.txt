@@ -1,0 +1,9 @@
+Object sizes 
+   text	   data	    bss	    dec	    hex	filename
+    116	      0	    513	    629	    275	FileLogger.o
+   text	   data	    bss	    dec	    hex	filename
+   1614	      0	     23	   1637	    665	nanofat.o
+   text	   data	    bss	    dec	    hex	filename
+   1192	      2	      0	   1194	    4aa	mmc.o
+   text	   data	    bss	    dec	    hex	filename
+    126	      0	      1	    127	     7f	Spi.o

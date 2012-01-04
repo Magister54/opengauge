@@ -1,0 +1,10 @@
+1. Libraries must be into Arduino/libraries folder 
+
+FileLogger (optional)
+OBDuinoLCD_LiquidCrystal (mandatory)
+OBDuinoLCD_ST7735 (mandatory)
+ST7735 (mandatory)
+
+2. Comment or Uncomment useLiquidCrystal and useST7735 for LCD type selection
+
+3. Wiring schematics for ST7735 will be included later
