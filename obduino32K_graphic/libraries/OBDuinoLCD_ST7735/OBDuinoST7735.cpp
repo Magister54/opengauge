@@ -16,13 +16,21 @@
 OBDuinoLCD::OBDuinoLCD(void)
 {
   SetCursor(0, 0);
+  ColorMode = 0;
+  BackGroundColor = CL_BLACK;
 }
 //--------------------------------------------------------------------------------
 
 void OBDuinoLCD::InitOBDuinoLCD(void)
 {
   SPI.setClockDivider(TFTInitSPISpeed);
-  
+
+  #ifdef UseSoftwareReset
+    pinMode(rstpin, OUTPUT);
+    
+    digitalWrite(rstpin, HIGH); 
+  #endif
+
   tft.initR();               // initialize a ST7735R chip
   tft.writecommand(ST7735_DISPON);
 
@@ -30,12 +38,19 @@ void OBDuinoLCD::InitOBDuinoLCD(void)
     SPI.setClockDivider(TFTDataSPISpeed);
   #endif
   
-  tft.fillScreen(CL_BLACK); 
+  tft.fillScreen(BackGroundColor); 
+}
+//--------------------------------------------------------------------------------
+
+void OBDuinoLCD::ReinitOBDuinoLCD(void)
+{
+  InitOBDuinoLCD();
 }
 //--------------------------------------------------------------------------------
 
 void OBDuinoLCD::LCDInitChar(void)
 {
+  //nothing
 }
 //--------------------------------------------------------------------------------
 
@@ -51,7 +66,7 @@ void OBDuinoLCD::PrintWarningChar(char c)
   if (tft_position >= LCD_COLS)
     return;
 
-  tft.redrawChar(WarningPosition(tft_position, tft_row), c, CL_MAIN, CL_BLACK);
+  tft.redrawChar(WarningPosition(tft_position, tft_row), c, CL_MAIN, BackGroundColor);
   tft_position++;
 }
 //--------------------------------------------------------------------------------
@@ -114,7 +129,7 @@ void OBDuinoLCD::LCDBar(byte Position, uint16_t Value, uint16_t MaxValue, char *
     // Draw bar
     for (i = 0; i < 16; i++)
     {
-      Color = CL_BLACK;
+      Color = BackGroundColor;
     
       if (Value > MaxValue / 16 * i)
         Color = pgm_read_word(BarColors + byte(i / 4));
@@ -126,7 +141,7 @@ void OBDuinoLCD::LCDBar(byte Position, uint16_t Value, uint16_t MaxValue, char *
     Left += 6;
   
     for (i = 0; i < Length; i++)
-      Left += tft.redrawChar(Left, Top, string[i], CL_MAIN, CL_BLACK);
+      Left += tft.redrawChar(Left, Top, string[i], CL_MAIN, BackGroundColor);
   }
   else //Vertical
   {
@@ -135,7 +150,7 @@ void OBDuinoLCD::LCDBar(byte Position, uint16_t Value, uint16_t MaxValue, char *
     // Draw bar
     for (i = 0; i < 15; i++)
     {
-      Color = CL_BLACK;
+      Color = BackGroundColor;
     
       if (Value > MaxValue / 16 * i)
         Color = pgm_read_word(BarColors + ((Position & 0x04) ? (4 + byte(i / 2)) : byte(i / 4)));
@@ -147,7 +162,7 @@ void OBDuinoLCD::LCDBar(byte Position, uint16_t Value, uint16_t MaxValue, char *
     Left = (Position & 0x08) ? (tft.width - Length * 6) : 0;
   
     for (i = 0; i < Length + 2; i++)
-      Left += tft.redrawChar(Left, 0, (i < Length) ? string[i] : 0x00, CL_MAIN, CL_BLACK);
+      Left += tft.redrawChar(Left, 0, (i < Length) ? string[i] : 0x00, CL_MAIN, BackGroundColor);
   }
 }
 //--------------------------------------------------------------------------------
@@ -171,7 +186,7 @@ void OBDuinoLCD::LCDNum(byte Position, char *string)
               ((Size == 4) ? 6 : 0);         // for 2-3rd rows (small font)
 
   for (byte i = 0; i < Length; i++)
-    Left += tft.redrawChar(Left, Top, output_str[i], CL_MAIN, CL_BLACK, Size);
+    Left += tft.redrawChar(Left, Top, output_str[i], CL_MAIN, BackGroundColor, Size);
 }
 //--------------------------------------------------------------------------------
 
@@ -180,13 +195,31 @@ void OBDuinoLCD::LCDTime(char *string)
   byte Length = strlen(string);
   byte Left = 60;
   for (byte i = 0; i < Length; i++)
-    Left += tft.redrawChar(Left, 0, string[i], CL_MAIN, CL_BLACK);  
+    Left += tft.redrawChar(Left, 0, string[i], CL_MAIN, BackGroundColor);  
 }
 //--------------------------------------------------------------------------------
 
 void OBDuinoLCD::LCDClearBottom(void)
 {
-  tft.fillRect(6, 107, 148, 3, CL_BLACK);
+  tft.fillRect(6, 107, 148, 3, BackGroundColor);
 }
 //--------------------------------------------------------------------------------
 
+
+void OBDuinoLCD::SwitchDayNightMode(void)
+{
+  ColorMode++;
+
+  if (ColorMode % 2 == 1)
+  {
+    tft.writecommand(ST7735_INVON);
+
+    return;
+  }
+
+  tft.writecommand(ST7735_INVOFF); 
+
+  BackGroundColor = CL_WHITE - BackGroundColor;
+  tft.fillScreen(BackGroundColor); 
+}
+//--------------------------------------------------------------------------------

@@ -13,6 +13,10 @@
 
 Latest Changes
 
+Feb 07th, 2012 (v201)
+ Day/Night mode switching (with right button).
+ ST7735 LCDs reset without restarting Arduino (every time before choosing reset tank data)
+
 Jan 04th, 2012 (v200)
  LiquidCrystal and ST7735 LCDs support in same project (not Tested, preview only)
 
@@ -330,7 +334,7 @@ To-Do:
 
   // Coolant temperature limit 102C, will trigger buzzer if limit reached (every 1min)
   #define CoolantTemperatureLimit 102
-//  unsigned long old_time_system_check; UNCOMENT if UseBuzzer:
+//  unsigned long old_time_system_check; //UNCOMENT if UseBuzzer:
 #endif
 
 #undef int
@@ -473,12 +477,8 @@ byte buttonState = buttonsUp;
      0xFF/brightnessLength*(brightnessLength-4),
      0xFF/brightnessLength*(brightnessLength-5),
      0x00}; // right button cycles through these brightness settings (off to on full)
-  byte brightnessIdx=2;
+  byte brightnessIdx = 2;
 #endif
-
-/* LCD Display parameters */
-/* Adjust LCD_COLS or LCD_ROWS if LCD is different than 16 characters by 2 rows*/
-// Note: Not currently tested on display larger than 16x2
 
 /* PID stuff */
 
@@ -859,15 +859,15 @@ typedef struct
   byte fuel_adjust;    // because of variation from car to car, temperature, etc
   byte speed_adjust;   // because of variation from car to car, tire size, etc
   byte eng_dis;        // engine displacement in dL
-  unsigned int gas_price; // price per unit of fuel in 10th of cents. 905 = $0.905
-  unsigned int  tank_size;   // tank size in dL or dgal depending of unit
-  byte OutingStopOver; // Allowable stop over time (in tens of minutes). Exceeding time starts a new outing.
-  byte TripStopOver;   // Allowable stop over time (in hours). Exceeding time starts a new outing.
-  trip_t trip[NBTRIP];        // trip0=tank, trip1=a trip, trip2=outing
-  trip_max tripmax[NBTRIP];   // trip0=tank, trip1=a trip, trip2=outing
+  unsigned int gas_price;   // price per unit of fuel in 10th of cents. 905 = $0.905
+  unsigned int  tank_size;  // tank size in dL or dgal depending of unit
+  byte OutingStopOver;      // Allowable stop over time (in tens of minutes). Exceeding time starts a new outing.
+  byte TripStopOver;        // Allowable stop over time (in hours). Exceeding time starts a new outing.
+  trip_t trip[NBTRIP];      // trip0=tank, trip1=a trip, trip2=outing
+  trip_max tripmax[NBTRIP]; // trip0=tank, trip1=a trip, trip2=outing
   screen_t screen[NBSCREEN + BIG_NBSCREEN];  // screen
-  byte BigFontType;    // Posible values: 0 - 2x2_alpha; 1 - 2x2_beta; 2 - 2x3.
-  byte MetricDisplayType; // Possible values: 0 - l/100km; 1 - km/l. //reserved place for future development
+  byte BigFontType;         // Posible values: 0 - 2x2_alpha; 1 - 2x2_beta; 2 - 2x3.
+  byte MetricDisplayType;   // Possible values: 0 - l/100km; 1 - km/l. //reserved place for future development
 }
 params_t;
 
@@ -4193,6 +4193,7 @@ void test_buttons(void)
   {
     needBacklight(true);
     trip_reset(TANK, true);
+    OBDLCD.ReinitOBDuinoLCD();
   }
   // middle + right = trip reset
   else if(MIDDLE_BUTTON_PRESSED && RIGHT_BUTTON_PRESSED)
@@ -4243,6 +4244,10 @@ void test_buttons(void)
     OBDLCD.PrintWarning(tempStr);
     delay(500);
   #endif  
+  
+  #ifdef UseDayNightMode
+    OBDLCD.SwitchDayNightMode();
+  #endif
   }
   // middle is go into menu
   else if(MIDDLE_BUTTON_PRESSED)

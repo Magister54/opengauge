@@ -44,6 +44,7 @@ class OBDuinoLCD
     // Same function list in all display H files
     OBDuinoLCD(void);
     void InitOBDuinoLCD(void);
+    void ReinitOBDuinoLCD(void);
 
     void LCDInitChar(void);
 

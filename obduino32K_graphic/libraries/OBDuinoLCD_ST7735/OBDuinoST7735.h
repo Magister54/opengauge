@@ -27,6 +27,17 @@
 #define cs 9
 #define dc 6 
 
+// Uncoment to use software reset
+#define UseSoftwareReset
+
+#ifdef UseSoftwareReset
+  #define rstpin 7
+  #define rst 0
+#endif
+
+// define UseDayNightMode if only brightness pin is not used
+#define UseDayNightMode
+
 // to draw images from the SD card, we will share the hardware SPI interface
 
 #ifndef cbi
@@ -82,6 +93,7 @@ class OBDuinoLCD
     // Same function list in all display H files
     OBDuinoLCD(void);
     void InitOBDuinoLCD(void);
+    void ReinitOBDuinoLCD(void);
 
     void LCDInitChar(void);
 
@@ -100,6 +112,12 @@ class OBDuinoLCD
 
     void LCDTime(char *string);
     void LCDClearBottom(void);
+
+    void SwitchDayNightMode(void);
+
+    // Additional parameters
+    uint16_t BackGroundColor;
+    byte ColorMode;
   
   private:
     byte tft_row;
