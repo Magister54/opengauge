@@ -1783,6 +1783,7 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
     return false;
   }
   
+ #ifdef useECUState
   // if not connected - do not send any request, 
   // and do not disturb init proccess in case of reinit
   if (!ECUconnection)
@@ -1791,6 +1792,7 @@ boolean get_pid(byte pid, char *retbuf, long *ret)
     retbuf[0] = 0;
     return false;    
   }  
+ #endif
   
  #ifdef UsePIDCache
   // Check if PID is available in PID cache
@@ -3439,19 +3441,19 @@ void config_menu(void)
 #ifndef DEBUG  // it takes 98 bytes
   // display protocol, just for fun
   OBDLCD.ClearWarning();
-  memset(str, 0, STRLEN);
-  elm_command(str, PSTR("ATDP\r"));
-  if(str[0]=='A')  // string start with "AUTO, ", skip it
+  memset(tempStr, 0, STRLEN);
+  elm_command(tempStr, PSTR("ATDP\r"));
+  if(tempStr[0]=='A')  // string start with "AUTO, ", skip it
   {
-    OBDLCD.PrintWarning(str+6);
+    OBDLCD.PrintWarning(tempStr+6);
     OBDLCD.SetCursor(0,1);
-    OBDLCD.PrintWarning(str+6+16);
+    OBDLCD.PrintWarning(tempStr+6+16);
   }
   else
   {
-    OBDLCD.PrintWarning(str);
+    OBDLCD.PrintWarning(tempStr);
     OBDLCD.SetCursor(0,1);
-    OBDLCD.PrintWarning(str+16);
+    OBDLCD.PrintWarning(tempStr+16);
   }
   delay(2000);
 #endif
@@ -4744,7 +4746,7 @@ void loop()                     // run over and over again
 #else
 
   // test if engine is started
-  has_rpm = (get_pid(ENGINE_RPM, str, &engineRPM) && engineRPM > 0) ? 1 : 0;
+  has_rpm = (get_pid(ENGINE_RPM, tempStr, &engineRPM) && engineRPM > 0) ? 1 : 0;
 
   if (engine_started==0 && has_rpm!=0)
   {
