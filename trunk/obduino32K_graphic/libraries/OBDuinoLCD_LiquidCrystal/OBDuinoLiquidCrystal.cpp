@@ -1,4 +1,4 @@
-#include "OBDuinoLiquidCrystal.h"
+﻿#include "OBDuinoLiquidCrystal.h"
 
 //#include <LiquidCrystal.h>
 
@@ -17,6 +17,12 @@ void OBDuinoLCD::InitOBDuinoLCD(void)
 {
   lcd.begin(LCD_COLS, LCD_ROWS);
   LCDInitChar();
+}
+//--------------------------------------------------------------------------------
+
+void OBDuinoLCD::ReinitOBDuinoLCD(void)
+{
+  //nothing
 }
 //--------------------------------------------------------------------------------
 

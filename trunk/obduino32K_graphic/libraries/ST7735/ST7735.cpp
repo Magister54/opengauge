@@ -184,7 +184,8 @@ void ST7735::initB(void) {
   rspin = digitalPinToBitMask(_rs);
   rsport = digitalPinToPort(_rs);
 
-  if (_rst) {
+  if (_rst) 
+  {
     pinMode(_rst, OUTPUT);
     digitalWrite(_rst, HIGH);
     delay(500);
@@ -300,7 +301,8 @@ void ST7735::initR(void) {
   // set pin directions
   pinMode(_rs, OUTPUT);
 
-  if (_sclk) {
+  if (_sclk) 
+  {
     pinMode(_sclk, OUTPUT);
     sclkport = digitalPinToPort(_sclk);
     sclkpin = digitalPinToBitMask(_sclk);
@@ -308,7 +310,9 @@ void ST7735::initR(void) {
     pinMode(_sid, OUTPUT);
     sidport = digitalPinToPort(_sid);
     sidpin = digitalPinToBitMask(_sid);
-  } else {
+  } 
+  else 
+  {
     // using the hardware SPI
     SPI.begin();
     SPI.setDataMode(SPI_MODE3);
@@ -322,7 +326,8 @@ void ST7735::initR(void) {
   rspin = digitalPinToBitMask(_rs);
   rsport = digitalPinToPort(_rs);
 
-  if (_rst) {
+  if (_rst) 
+  {
     pinMode(_rst, OUTPUT);
     digitalWrite(_rst, HIGH);
     delay(500);
