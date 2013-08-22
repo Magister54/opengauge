@@ -156,10 +156,9 @@ To-Do:
 /************************/
 /* DIESEL ENGINE CONFIG */
 /************************/
-// [NOT TESTED] For diesel car use ??? (1/??/830*3600)*10000
-//#define GasConst ????
-//#define GasMafConst ???   // ??*830*10
-
+// [NOT TESTED] For diesel car use ???
+//#define GasConst  2935 // (1/14.6/840*3600)*10000
+//#define GasMafConst 122640 // 14.6*840*10
 
 // Compilation modifiers:
 // The following will cause the compiler to add or remove features from the OBDuino build this keeps the
@@ -1163,20 +1162,6 @@ void elm_init()
   }
   while(elm_check_response("0100", str)!=0);
 
-  // ask protocol
-  elm_command(str, PSTR("ATDPN\r"));
-  // str[0] should be 'A' for automatic
-  // set header to talk directly to ECU#1
-  if(str[1]=='1')  // PWM
-    elm_command(str, PSTR("ATSHE410F1\r"));
-  else if(str[1]=='2')  // VPW
-    elm_command(str, PSTR("ATSHA810F1\r"));
-  else if(str[1]=='3')  // ISO 9141
-    elm_command(str, PSTR("ATSH6810F1\r"));
-  else if(str[1]=='6')  // CAN 11 bits
-    elm_command(str, PSTR("ATSH7E0\r"));
-  else if(str[1]=='7')  // CAN 29 bits
-    elm_command(str, PSTR("ATSHDA10F1\r"));
 #endif
 }
 #else
