@@ -1,6 +1,6 @@
 #summary OBDuino Description
 
-http://opengauge.org/~obduino/hardware/idle.jpg
+http://opengauge.org/obduino/hardware/idle.jpg
 
 <wiki:toc max_depth="2" />
 
