@@ -37,7 +37,7 @@ DB9F			OBD-II
 
 Example of my home made cable:
 
-http://opengauge.org/%7Eobduino/hardware/obd2_cable.jpg
+http://opengauge.org/obduino/hardware/obd2_cable.jpg
 
 A nice place to get OBD-II plugs and already made cable is [http://www.sensolutions.com/products/browse-products/ Senso] which are located in Canada.
 
@@ -81,11 +81,11 @@ Arduino 5V pin output -----8|CEN VBB|1-----------------+------- DB9M pin 9 (12V 
 
 Interface front:
 
-http://opengauge.org/%7Eobduino/hardware/iso_interface.jpg
+http://opengauge.org/obduino/hardware/iso_interface.jpg
 
 Interface back:
 
-http://opengauge.org/%7Eobduino/hardware/iso_interface_back.jpg
+http://opengauge.org/obduino/hardware/iso_interface_back.jpg
 
 
 ==Interface with ELM==
@@ -96,18 +96,10 @@ Note that for PWM/VPW it should be possible to use an ELM320 or ELM323 respectiv
 
 Diagram of the interface (adaptation of the generic diagram found in the PDF of the ELM327):
 
-http://opengauge.org/%7Eobduino/diagram/CANduino.gif
+http://opengauge.org/obduino/diagram/CANduino.gif
 
 On the diagram, note that CAN-L (OBD2 pin 14) go to a DB9M pin 5 and CAN-H (OBD2 pin 6) go to a DB9M pin 3. +5V comes from the Arduino board.
 
-http://opengauge.org/%7Eobduino/hardware/CAN_Interface_front.jpg
+http://opengauge.org/obduino/hardware/CAN_Interface_front.jpg
 
-http://opengauge.org/%7Eobduino/hardware/CAN_Interface_back.jpg
-
-
-==Interface for CAN==
-
-Microchip offers solution for CAN bus, mainly their MCP2551 for the physical layer (as on the ELM327 diagram above) and their MCP2515 for the protocol. The advantage is that it costs only a few $.
-To manipulate CAN message, I use a free library made by Fabian Greif called [http://www.kreatives-chaos.com/artikel/universelle-can-bibliothek libcan], his library also supports manipulation of the MCP2515 through SPI with an AVR, it's a little bit technical but let's say it helps me a lot as I do not have to re-invent the wheel!
-
-Design/Board will follow
+http://opengauge.org/obduino/hardware/CAN_Interface_back.jpg
