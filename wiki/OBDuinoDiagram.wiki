@@ -7,26 +7,26 @@
 
 A clone board called the freeduino, some headers were missing when I took pictures:
 
-http://opengauge.org/%7Eobduino/hardware/freeduino_front.jpg
-http://opengauge.org/%7Eobduino/hardware/freeduino_back.jpg
+http://opengauge.org/obduino/hardware/freeduino_front.jpg
+http://opengauge.org/obduino/hardware/freeduino_back.jpg
 
 
 The LCD screen with its wires attached, note the transistor and the resistor, covered by (not yet heated) shrink tube, on the right side:
 
-http://opengauge.org/%7Eobduino/hardware/lcd.jpg
-http://opengauge.org/%7Eobduino/hardware/lcd_back.jpg
+http://opengauge.org/obduino/hardware/lcd.jpg
+http://opengauge.org/obduino/hardware/lcd_back.jpg
 
 
 Example of the Freeduino and LCD attached:
 
-http://opengauge.org/%7Eobduino/hardware/duino_lcd.jpg
+http://opengauge.org/obduino/hardware/duino_lcd.jpg
 
 
 = CAN Diagram =
 
 Here's the proposed diagram of the [http://arduino.cc Arduino] board, the LCD screen, and the [OBDuinoInterface CAN interface].
 
-http://opengauge.org/%7Eobduino/diagram/OBDuino_can.gif
+http://opengauge.org/obduino/diagram/OBDuino_can.gif
 
 == Hardware for CAN ==
 
@@ -42,7 +42,7 @@ You need:
 
 Here's the proposed diagram of the [http://arduino.cc Arduino] board, the LCD screen, and the [OBDuinoInterface ISO interface].
 
-http://opengauge.org/%7Eobduino/diagram/obduino.gif
+http://opengauge.org/obduino/diagram/obduino.gif
 
 == Hardware for ISO ==
 
@@ -58,4 +58,4 @@ You need:
 
 Freeduino, LCD, ISO interface:
 
-http://opengauge.org/%7Eobduino/hardware/obduino.jpg
+http://opengauge.org/obduino/hardware/obduino.jpg
