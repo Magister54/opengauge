@@ -21,23 +21,6 @@ Example of the Freeduino and LCD attached:
 
 http://opengauge.org/obduino/hardware/duino_lcd.jpg
 
-
-= CAN Diagram =
-
-Here's the proposed diagram of the [http://arduino.cc Arduino] board, the LCD screen, and the [OBDuinoInterface CAN interface].
-
-http://opengauge.org/obduino/diagram/OBDuino_can.gif
-
-== Hardware for CAN ==
-
-You need:
-  # a duino clone board, serial or USB, your choice
-  # an HD44780 compatible LCD screen 2x16
-  # a transistor 2N3906 or NTE159 or equiv
-  # three small push buttons
-  # a 220 ohms resistor
-  # the [OBDuinoInterface CAN interface]
-
 = ISO Diagram =
 
 Here's the proposed diagram of the [http://arduino.cc Arduino] board, the LCD screen, and the [OBDuinoInterface ISO interface].
