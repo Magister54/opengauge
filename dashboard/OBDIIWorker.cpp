@@ -136,10 +136,10 @@ bool get_pid(PID pid, uint8_t* retbuf)
 	cmd[1] = pid;
 
 	// send command, length 2
-	iso_write_data(cmd, sizeof(cmd));
+	ISO9141::write(cmd, sizeof(cmd));
 
 	// read requested length, n bytes received in buf
-	iso_read_data(retbuf, PIDResLens[pid]);
+	ISO9141::read(retbuf, PIDResLens[pid]);
 
 	return true;
 }
@@ -189,12 +189,12 @@ void check_mil_codes(void)
 
 		// retrieve code
 		cmd[0] = 0x03;
-		iso_write_data(cmd, sizeof(cmd));
+		ISO9141::write(cmd, sizeof(cmd));
 
 		int readCodes = 0;
 		for (int i = 0; i < (nbMILCodes + 2) / 3; i++)  // each received packet contain 3 codes
 		{
-			iso_read_data(buf, 6);
+			ISO9141::read(buf, 6);
 			uint8_t* buf_ptr = buf;
 			
 			for (int j = 0; j < 3; j++)  // the 3 codes
@@ -255,7 +255,7 @@ void OBDIIWorker::setup()
 	do
 	{
 		printf("ISO9141 Init... ");
-		r = iso_init();
+		r = ISO9141::init();
 		if (r == 0)
 			printf("Success!\n");
 		else
@@ -286,15 +286,19 @@ void OBDIIWorker::display(PID pid)
 
 void OBDIIWorker::loop()
 {
+	static int i;
 	display(VEHICLE_SPEED);
+	display(ENGINE_RPM);
 
 	printf("Worker loop\n");
 	delay(2000);
+	emit updateSpeedLabel(QString().sprintf("%d km/h", i));
+	i++;
 }
 
 void OBDIIWorker::process()
 {
-	setup();
+	//setup();
 
 	while(true)
 		loop();

@@ -10,11 +10,14 @@ public:
 	OBDIIWorker();
 	~OBDIIWorker();
 
+public slots:
+	void process();
+
 private:
 	void setup();
 	void loop();
 	void display(PID pid);
 
-public slots:
-	void process();
+signals:
+	void updateSpeedLabel(const QString str);
 };

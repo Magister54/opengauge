@@ -16,9 +16,11 @@ int main(int argc, char **argv)
 	QObject::connect(thread, &QThread::started, worker, &OBDIIWorker::process);
 	thread->setPriority(QThread::HighestPriority);
 
-	MainWindow window;
-	window.show();
-	window.showFullScreen();
+	MainWindow* window = new MainWindow;
+	window->show();
+	window->showFullScreen();
+
+	QObject::connect(worker, &OBDIIWorker::updateSpeedLabel, window, &MainWindow::updateSpeedLabel);
 
 	return app.exec();
 }

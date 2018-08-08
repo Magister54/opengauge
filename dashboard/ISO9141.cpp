@@ -9,7 +9,7 @@
 
 #include "port.h"
 
-int iso_read_byte()
+uint8_t ISO9141::readByte()
 {
 	int b;
 	uint8_t t = 0;
@@ -25,7 +25,7 @@ int iso_read_byte()
 	return b;
 }
 
-void iso_write_byte(uint8_t b)
+void ISO9141::writeByte(uint8_t b)
 {
 	serial_rx_off();
 	serialWrite(b);
@@ -34,7 +34,7 @@ void iso_write_byte(uint8_t b)
 }
 
 // inspired by SternOBDII\code\checksum.c
-uint8_t iso_checksum(uint8_t *data, uint8_t len)
+uint8_t ISO9141::computeChecksum(uint8_t *data, uint8_t len)
 {
 	uint8_t i;
 	uint8_t crc;
@@ -47,7 +47,7 @@ uint8_t iso_checksum(uint8_t *data, uint8_t len)
 }
 
 // inspired by SternOBDII\code\iso.c
-uint8_t iso_write_data(uint8_t *data, uint8_t len)
+int ISO9141::write(uint8_t *data, uint8_t len)
 {
 	uint8_t i, n;
 	uint8_t buf[20];
@@ -62,13 +62,13 @@ uint8_t iso_write_data(uint8_t *data, uint8_t len)
 
 	// calculate checksum
 	i += 3;
-	buf[i] = iso_checksum(buf, i);
+	buf[i] = ISO9141::computeChecksum(buf, i);
 
 	// send char one by one
 	n = i + 1;
 	for (i = 0; i < n; i++)
 	{
-		iso_write_byte(buf[i]);
+		ISO9141::writeByte(buf[i]);
 	}
 
 	return 0;
@@ -76,7 +76,7 @@ uint8_t iso_write_data(uint8_t *data, uint8_t len)
 
 // read n uint8_t of data (+ header + cmd and crc)
 // return the result only in data
-uint8_t iso_read_data(uint8_t *data, uint8_t len)
+int ISO9141::read(uint8_t *data, uint8_t len)
 {
 	uint8_t i;
 	uint8_t buf[20];
@@ -86,7 +86,7 @@ uint8_t iso_read_data(uint8_t *data, uint8_t len)
 	// checksum 1 bytes: [sum(header)+sum(data)]
 
 	for (i = 0; i < 3 + 1 + 1 + 1 + len; i++)
-		buf[i] = iso_read_byte();
+		buf[i] = readByte();
 
 	// test, skip header comparison
 	// ignore failure for the moment (0x7f)
@@ -101,7 +101,7 @@ uint8_t iso_read_data(uint8_t *data, uint8_t len)
 }
 
 /* ISO 9141 init */
-uint8_t iso_init()
+int ISO9141::init()
 {
 	uint8_t b;
 	uint8_t kw1, kw2;
@@ -137,7 +137,7 @@ uint8_t iso_init()
 	//since our time out for reading is 125ms, we will try it three times
 	for (int i = 0; i < 3; i++)
 	{
-		b = iso_read_byte();
+		b = readByte();
 		if (b != 0)
 			break;
 	}
@@ -146,16 +146,16 @@ uint8_t iso_init()
 		return -1;
 
 	// wait for kw1 and kw2
-	kw1 = iso_read_byte();
+	kw1 = readByte();
 
-	kw2 = iso_read_byte();
-//  delay(25);
+	kw2 = readByte();
+	delay(25); // TODO: nécessaire?
 
 	// sent ~kw2 (invert of last keyword)
-	iso_write_byte(~kw2);
+	ISO9141::writeByte(~kw2);
 
 	// ECU answer by 0xCC (~0x33)
-	b = iso_read_byte();
+	b = readByte();
 	if (b != 0xCC)
 		return -1;
 

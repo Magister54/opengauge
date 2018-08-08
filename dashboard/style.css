@@ -1,0 +1,11 @@
+
+
+QLabel#speedLabel {
+	font : 72pt;
+}
+
+QLabel {
+	background-color : #333333;
+	color : #EEEEEE;
+	font : 24pt;
+}

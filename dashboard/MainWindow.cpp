@@ -32,18 +32,26 @@ void MainWindow::setupUI()
 	layoutLeft->addLayout(layoutTopLeft, 0, 0);
 	layoutLeft->addLayout(layoutBottomLeft, 1, 0);
 
-	QLabel* label0 = new QLabel("label0");
-	layoutLeft->addWidget(label0);
-	label0->setStyleSheet("QLabel { background-color : red; color : blue; font : 72pt; }");
-	label0->setAlignment(Qt::AlignCenter);
+	speedLabel = new QLabel("0 km/h");
+	speedLabel->setObjectName("speedLabel");
+	layoutLeft->addWidget(speedLabel);
+	speedLabel->setAlignment(Qt::AlignCenter);
 
-	QLabel* label1 = new QLabel("label1");
+	QLabel* label1 = new QLabel("0 L/100km");
 	layoutLeft->addWidget(label1);
-	label1->setStyleSheet("QLabel { background-color : yellow; color : cyan; }");
+	label1->setAlignment(Qt::AlignCenter);
 
-	QLabel* label2 = new QLabel("label2");
-	layoutRight->addWidget(label2);
-	label2->setStyleSheet("QLabel { background-color : green; color : magenta; }");
+	QLabel* label2 = new QLabel("0 RPM");
+	layoutLeft->addWidget(label2);
+	label2->setAlignment(Qt::AlignCenter);
+
+	QLabel* label3 = new QLabel("music");
+	layoutRight->addWidget(label3);
+	label3->setAlignment(Qt::AlignCenter);
+
+	QFile stylesheet("../style.css");
+	stylesheet.open(QFile::ReadOnly);
+	setStyleSheet(stylesheet.readAll());
 }
 
 void MainWindow::keyPressEvent(QKeyEvent* e)
@@ -53,4 +61,9 @@ void MainWindow::keyPressEvent(QKeyEvent* e)
 	{
 		isFullScreen() ? showNormal() : showFullScreen();
 	}
+}
+
+void MainWindow::updateSpeedLabel(const QString str)
+{
+	speedLabel->setText(str);
 }
