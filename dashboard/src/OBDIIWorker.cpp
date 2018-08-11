@@ -1,8 +1,6 @@
 
 #include "OBDIIWorker.h"
 
-#include <QThread>
-
 #include "ISO9141.h"
 #include "MILCode.h"
 #include "PID.h"
@@ -237,12 +235,8 @@ void check_mil_codes(void)
 
 OBDIIWorker::OBDIIWorker()
 {
-
-}
-
-OBDIIWorker::~OBDIIWorker()
-{
-
+	speed = 0;
+	mustStop = false;
 }
 
 void OBDIIWorker::setup()
@@ -278,28 +272,23 @@ void OBDIIWorker::setup()
 	check_mil_codes();
 }
 
-void OBDIIWorker::display(PID pid)
+void OBDIIWorker::run()
 {
-	uint8_t PIDRes[maxPIDResLen];
-	get_pid(pid, PIDRes);
+	int i = 0;
+	
+	setup();
+	
+	while(!mustStop)
+	{
+		speed = i;
+		emit speedChanged();
+		i++;
+
+		delay(200);
+	}
 }
 
-void OBDIIWorker::loop()
+void OBDIIWorker::stop()
 {
-	static int i;
-	display(VEHICLE_SPEED);
-	display(ENGINE_RPM);
-
-	printf("Worker loop\n");
-	delay(2000);
-	emit updateSpeedLabel(QString().sprintf("%d km/h", i));
-	i++;
-}
-
-void OBDIIWorker::process()
-{
-	//setup();
-
-	while(true)
-		loop();
+	mustStop = true;
 }
