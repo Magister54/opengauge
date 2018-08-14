@@ -6,6 +6,7 @@
 #include "ISO9141.h"
 
 #include <cstring>
+#include <stdio.h>
 
 #include "port.h"
 
@@ -15,7 +16,7 @@ uint8_t ISO9141::readByte()
 	uint8_t t = 0;
 	while (t != 125 && (b = serialRead()) == -1)
 	{
-		delay(1);
+		delayMs(1);
 		t++;
 	}
 	if (t >= 125)
@@ -29,7 +30,7 @@ void ISO9141::writeByte(uint8_t b)
 {
 	serial_rx_off();
 	serialWrite(b);
-	delay(10);		// ISO requires 5-20 ms delay between bytes.
+	delayMs(10);		// ISO requires 5-20 ms delay between bytes.
 	serial_rx_on();
 }
 
@@ -95,7 +96,7 @@ int ISO9141::read(uint8_t *data, uint8_t len)
 	// we send only one command, so result start at buf[4] Actually, result starts at buf[5], buf[4] is pid requested...
 	memcpy(data, buf + 5, len);
 
-	delay(55);    //guarantee 55 ms pause between requests
+	delayMs(55);    //guarantee 55 ms pause between requests
 
 	return len;
 }
@@ -107,57 +108,68 @@ int ISO9141::init()
 	uint8_t kw1, kw2;
 	serial_tx_off(); //disable UART so we can "bit-Bang" the slow init.
 	serial_rx_off();
-	delay(3000); //k line should be free of traffic for at least two secconds.
+	delayMs(3000); //k line should be free of traffic for at least two secconds.
+	
+	
 	// drive K line high for 300ms
-	digitalWrite(K_OUT_GPIO_Port, K_OUT_Pin, GPIO_PIN_SET);
-	delay(300);
+	digitalWrite(txPin, HIGH);
+	delayMs(300);
 
 	// send 0x33 at 5 bauds
 	// start bit
-	digitalWrite(K_OUT_GPIO_Port, K_OUT_Pin, GPIO_PIN_RESET);
-	delay(200);
+	printf("Bit-banging 0x33...\n");
+	digitalWrite(txPin, LOW);
+	delayMs(200);
 	// data
 	b = 0x33;
 	for (uint8_t mask = 0x01; mask; mask <<= 1)
 	{
 		if (b & mask) // choose bit
-			digitalWrite(K_OUT_GPIO_Port, K_OUT_Pin, GPIO_PIN_SET); // send 1
+			digitalWrite(txPin, HIGH); // send 1
 		else
-			digitalWrite(K_OUT_GPIO_Port, K_OUT_Pin, GPIO_PIN_RESET); // send 0
-		delay(200);
+			digitalWrite(txPin, LOW); // send 0
+		delayMs(200);
 	}
 	// stop bit + 60 ms delay
-	digitalWrite(K_OUT_GPIO_Port, K_OUT_Pin, GPIO_PIN_SET);
-	delay(260);
+	digitalWrite(txPin, HIGH);
+	delayMs(260);
 
 	// switch now to 10400 bauds
+	printf("Serial ON\n");
 	serial_on();
 
 	// wait for 0x55 from the ECU (up to 300ms)
 	//since our time out for reading is 125ms, we will try it three times
 	for (int i = 0; i < 3; i++)
 	{
+		printf("Reading response from ECU...\n");
 		b = readByte();
 		if (b != 0)
 			break;
 	}
 
-	if (b != 0x55)
+	if (b != 0x55) {
+		printf("Did not get 0x55 from ECU, got 0x%02X instead\n", b);
 		return -1;
+	}
 
 	// wait for kw1 and kw2
 	kw1 = readByte();
+	printf("kw1: 0x%02X\n", kw1);
 
 	kw2 = readByte();
-	delay(25); // TODO: nécessaire?
+	printf("kw2: 0x%02X\n", kw2);
+	delayMs(25); // TODO: nécessaire?
 
 	// sent ~kw2 (invert of last keyword)
-	ISO9141::writeByte(~kw2);
-
+	writeByte(~kw2);
+	
 	// ECU answer by 0xCC (~0x33)
 	b = readByte();
-	if (b != 0xCC)
+	if (b != 0xCC) {
+		printf("Did not get 0xCC from ECU, got 0x%02X instead\n", b);
 		return -1;
+	}
 
 	// init OK!
 	return 0;

@@ -14,13 +14,13 @@ public:
 	void run() override;
 	void stop();
 
-	Q_PROPERTY(int speed MEMBER speed NOTIFY speedChanged)
+	Q_PROPERTY(int rpm MEMBER rpm NOTIFY RPMChanged)
 
 signals:
-	void speedChanged();
+	void RPMChanged();
 
 private:
-	int speed;
+	int rpm;
 	bool mustStop;
 
 private:

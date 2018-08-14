@@ -183,7 +183,7 @@ void check_mil_codes(void)
 		int nbMILCodes = byteA & 0x7F;
 		printf("CHECK ENGINE ON\n");
 		printf("%d CODE(S) IN ECU\n", nbMILCodes);
-		delay(2000);
+		delayMs(2000);
 
 		// retrieve code
 		cmd[0] = 0x03;
@@ -235,7 +235,7 @@ void check_mil_codes(void)
 
 OBDIIWorker::OBDIIWorker()
 {
-	speed = 0;
+	rpm = 8000;
 	mustStop = false;
 }
 
@@ -245,17 +245,19 @@ void OBDIIWorker::setup()
 
 	printf("Dashboard v0.1\n");
 
+	portInit();
+
 	// Loop until ISO9141 is initiated
 	do
 	{
-		printf("ISO9141 Init... ");
+		printf("ISO9141 init...\n");
 		r = ISO9141::init();
 		if (r == 0)
-			printf("Success!\n");
+			printf("ISO9141 init success!\n");
 		else
-			printf("Failure!\n");
+			printf("ISO9141 init failure!\n");
 
-		delay(1000);
+		delayMs(1000);
 	} while (r != 0);
 
 	// check supported PIDs
@@ -278,13 +280,16 @@ void OBDIIWorker::run()
 	
 	setup();
 	
+	uint8_t retBuf[maxPIDResLen];
+	
 	while(!mustStop)
 	{
-		speed = i;
-		emit speedChanged();
-		i++;
-
-		delay(200);
+		get_pid(PID::ENGINE_RPM, retBuf);
+		EngineRPM engineRPM = EngineRPM(retBuf);
+		rpm = engineRPM.getEU();
+		emit RPMChanged();
+		printf("RPM: %d\n", rpm);
+		delayMs(200);
 	}
 }
 

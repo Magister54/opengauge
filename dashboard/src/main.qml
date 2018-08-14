@@ -15,12 +15,9 @@ Window {
 	}
 
     ColumnLayout {
-        Text {
-            text: "Speed: " + applicationData.speed + " km/h"
-        }
 
         CircularGauge {
-            value: applicationData.speed
+            value: applicationData.rpm
             maximumValue: 8000
 
             style: CircularGaugeStyle {

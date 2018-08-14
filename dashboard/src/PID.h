@@ -84,4 +84,75 @@ enum PID {
 	N_PIDS
 };
 
-	
+#define A			data[0]
+#define B			data[1]
+#define C			data[2]
+#define D			data[3]
+
+class OBDIIPID
+{
+public:
+	OBDIIPID(uint8_t* data) : data(data) {}
+	virtual double getEU() = 0;
+protected:
+	uint8_t* data;
+};
+
+class EngineRPM : OBDIIPID
+{
+public:
+	EngineRPM(uint8_t* data) : OBDIIPID(data) {}
+	virtual double getEU(){return (256.f * A + B) / 4;}
+};
+
+class VehicleSpeed : OBDIIPID
+{
+public:
+	VehicleSpeed(uint8_t* data) : OBDIIPID(data) {}
+	virtual double getEU(){return A;}
+};
+
+class CoolantTemp : OBDIIPID
+{
+public:
+	CoolantTemp(uint8_t* data) : OBDIIPID(data) {}
+	virtual double getEU(){return A - 40;}
+};
+
+class FuelTrim : OBDIIPID
+{
+public:
+	FuelTrim(uint8_t* data) : OBDIIPID(data) {}
+	virtual double getEU(){return 100.f * A / 128 - 100;}
+};
+
+class TimingAdvance : OBDIIPID
+{
+public:
+	TimingAdvance(uint8_t* data) : OBDIIPID(data) {}
+	virtual double getEU(){return 0.5f * A - 64;}
+};
+
+#define IntakeAirTemp CoolantTemp
+
+class AirFlowRate : OBDIIPID
+{
+public:
+	AirFlowRate(uint8_t* data) : OBDIIPID(data) {}
+	virtual double getEU(){return (256.f * A + B) / 100;}
+};
+
+class ThrottlePosition : OBDIIPID
+{
+public:
+	ThrottlePosition(uint8_t* data) : OBDIIPID(data) {}
+	virtual double getEU(){return 100.f / 255 * A;}
+};
+
+class OxySensor : OBDIIPID
+{
+public:
+	OxySensor(uint8_t* data) : OBDIIPID(data) {}
+	virtual double getEU(){return 2.0/65536*(256.f*A+B);}
+	double getVoltage(){return 8.0/65536*(256.f*C+D);}
+};
