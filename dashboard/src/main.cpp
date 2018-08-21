@@ -1,4 +1,4 @@
-#include <QApplication>
+#include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 
@@ -14,7 +14,7 @@ void aboutToQuit()
 
 int main(int argc, char *argv[])
 {
-	QApplication app(argc, argv);
+	QGuiApplication app(argc, argv);
 
 	data = new OBDIIWorker;
 

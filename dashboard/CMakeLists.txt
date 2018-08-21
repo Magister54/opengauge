@@ -14,7 +14,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Find the QtWidgets library
-find_package(Qt5 COMPONENTS Core Qml Quick Widgets REQUIRED)
+find_package(Qt5 COMPONENTS Core Qml Quick REQUIRED)
 
 # Add qrc file
 qt5_add_resources(QT_RESOURCES src/qml.qrc)
@@ -34,4 +34,4 @@ add_executable(${PROJECT} ${HEADERS} ${SOURCES} ${QT_RESOURCES})
 set_property(TARGET ${PROJECT} PROPERTY CXX_STANDARD 14)
 
 # Use the Widgets module from Qt 5
-target_link_libraries(${PROJECT} Qt5::Core Qt5::Qml Qt5::Quick Qt5::Widgets wiringPi)
+target_link_libraries(${PROJECT} Qt5::Core Qt5::Qml Qt5::Quick wiringPi)

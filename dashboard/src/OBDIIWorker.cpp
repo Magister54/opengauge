@@ -250,6 +250,10 @@ void OBDIIWorker::setup()
 	// Loop until ISO9141 is initiated
 	do
 	{
+		// To let this die properly
+		if(mustStop)
+			return;
+		
 		printf("ISO9141 init...\n");
 		r = ISO9141::init();
 		if (r == 0)
