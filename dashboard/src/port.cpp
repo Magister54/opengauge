@@ -25,7 +25,7 @@ static int set_interface_attribs (int fd, int speed, int parity)
 	memset (&tty, 0, sizeof tty);
 	if (tcgetattr (fd, &tty) != 0)
 	{
-		printf ("error %d from tcgetattr", errno);
+		printf ("error %d from tcgetattr: %s\n", errno, strerror(errno));
 		return -1;
 	}
 
@@ -53,7 +53,7 @@ static int set_interface_attribs (int fd, int speed, int parity)
 
 	if (tcsetattr (fd, TCSANOW, &tty) != 0)
 	{
-		printf ("error %d from tcsetattr", errno);
+		printf ("error %d from tcsetattr: %s\n", errno, strerror(errno));
 		return -1;
 	}
 	return 0;
@@ -65,7 +65,7 @@ static void set_blocking (int fd, int should_block)
 	memset (&tty, 0, sizeof tty);
 	if (tcgetattr (fd, &tty) != 0)
 	{
-		printf ("error %d from tggetattr", errno);
+		printf ("error %d from tggetattr: %s\n", errno, strerror(errno));
 		return;
 	}
 
@@ -73,7 +73,7 @@ static void set_blocking (int fd, int should_block)
 	tty.c_cc[VTIME] = 5;            // 0.5 seconds read timeout
 
 	if (tcsetattr (fd, TCSANOW, &tty) != 0)
-		printf ("error %d setting term attributes", errno);
+		printf ("error %d setting term attributes: %s\n", errno, strerror(errno));
 }
 
 void portInit()
@@ -90,7 +90,7 @@ void portInit()
 	uartFd = open(portname, O_RDWR | O_NOCTTY | O_SYNC);
 	if (uartFd < 0)
 	{
-		printf("error %d opening %s: %s", errno, portname, strerror(errno));
+		printf("error %d opening %s: %s\n", errno, portname, strerror(errno));
 	}
 	
 	set_interface_attribs(uartFd, B115200, 0);
