@@ -96,12 +96,18 @@ void portInit()
 	set_interface_attribs(uartFd, B115200, 0);
 	
 	struct termios2 tio;
-	ioctl(uartFd, TCGETS2, &tio);
+	if(ioctl(uartFd, TCGETS2, &tio) != 0)
+	{
+		printf("error %d ioctl: %s\n", errno, strerror(errno));
+	}
 	tio.c_cflag &= ~CBAUD;
 	tio.c_cflag |= BOTHER;
 	tio.c_ispeed = 10400; // Override with 10400 baud
 	tio.c_ospeed = 10400;
-	ioctl(uartFd, TCSETS2, &tio);
+	if(ioctl(uartFd, TCSETS2, &tio) != 0)
+	{
+		printf("error %d ioctl: %s\n", errno, strerror(errno));
+	}
 	
 	set_blocking(uartFd, 0);
 }
