@@ -13,10 +13,18 @@ Window {
 
     function checkErrorCodesDone(text) {
         console.log("checkEngineDone: " + text)
+        errorCodeResponseText.text = text
+        errorCodeResponseText.visible = true
+        
+        if(text != "") {
+			clearErrorCodesButton.visible = true
+        }
     }
 
     function clearErrorCodesDone(text) {
         console.log("clearEngineDone: " + text)
+        errorCodeResponseText.text = text
+        errorCodeResponseText.visible = true
     }
 
     id: window
@@ -211,7 +219,7 @@ Window {
                             id: canCheckCodes
                             width: 500
                             visible: speed.text == 0
-
+                            
                             Button {
                                 id: checkErrorCodeButton
                                 text: qsTr("Check for error codes")
@@ -220,18 +228,8 @@ Window {
                                 
                                 onClicked: {
 									checkErrorCodes()
-									visible = false
-									checkingEngineBusy.running = true
-									checkingEngineBusy.visible = true
 								}
                             }
-                            
-                            BusyIndicator {
-								id: checkingEngineBusy
-								running: false
-								visible: false
-								anchors.horizontalCenter: parent.horizontalCenter
-							}
 
                             Text {
                                 id: errorCodeResponseText
