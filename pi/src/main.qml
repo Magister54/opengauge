@@ -35,7 +35,7 @@ Window {
     maximumWidth: width
     minimumHeight: height
     minimumWidth: width
-    //visibility: Window.FullScreen
+    visibility: Window.FullScreen
 
     Shortcut {
         sequence: "Escape"
