@@ -1,0 +1,6 @@
+[Desktop Entry]
+Comment=test
+Exec=/home/pi/start.sh
+Name=dashboard
+Path=/home/pi
+Type=Application

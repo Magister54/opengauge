@@ -4,8 +4,21 @@ import QtQuick.Controls 2.3
 import QtQuick.Extras 1.4
 import QtQuick.Layouts 1.3
 import QtQuick.Controls.Styles 1.4
+import QtQuick.Dialogs 1.3
 
 Window {
+
+	signal checkErrorCodes()
+    signal clearErrorCodes()
+
+    function checkErrorCodesDone(text) {
+        console.log("checkEngineDone: " + text)
+    }
+
+    function clearErrorCodesDone(text) {
+        console.log("clearEngineDone: " + text)
+    }
+
     id: window
     visible: true
     width: 800
@@ -22,7 +35,7 @@ Window {
     }
 
     color: "#363636"
-    title: qsTr("Hello World")
+    title: qsTr("Dashboard")
 
     Column {
         id: column
@@ -35,7 +48,7 @@ Window {
             id: speed
             height: 120
             color: "#c4c4c4"
-            text: qsTr("110")
+            text: applicationData.speed
             verticalAlignment: Text.AlignVCenter
             horizontalAlignment: Text.AlignHCenter
             anchors.right: parent.right
@@ -48,12 +61,16 @@ Window {
             height: 240
             stepSize: 0
             value: applicationData.rpm
-            maximumValue: 8000
+            maximumValue: 8
             anchors.right: parent.right
             anchors.left: parent.left
+            
+            Behavior on value{
+                NumberAnimation { duration: 250; easing.type: Easing.Linear }
+            }
 
             style: CircularGaugeStyle {
-                tickmarkStepSize: 1000
+                tickmarkStepSize: 1
                 background: Canvas {
                     Text {
                         id: gearText
@@ -73,7 +90,7 @@ Window {
             id: cons
             height: 120
             color: "#c4c4c4"
-            text: qsTr("5.4 L/100km")
+            text: applicationData.ic.toFixed(2) + " L/100km"
             verticalAlignment: Text.AlignVCenter
             horizontalAlignment: Text.AlignHCenter
             anchors.right: parent.right
@@ -159,15 +176,97 @@ Window {
                 Layout.fillHeight: true
                 Layout.fillWidth: true
 
-                Button {
-                    id: errorCodeButton
-                    x: -75
-                    y: -20
-                    width: 150
-                    text: qsTr("Check for error codes")
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.verticalCenter: parent.verticalCenter
-                    font.weight: Font.Thin
+                ScrollView {
+                    id: statusScroll
+                    clip: true
+                    anchors.fill: parent
+
+                    Column {
+                        id: statusColumn
+                        width: 500
+                        spacing: 5
+
+                        Text {
+                            id: checkCodeTitle
+                            color: "#c4c4c4"
+                            text: qsTr("Engine status")
+                            visible: true
+                            padding: 10
+                            font.pixelSize: 16
+                        }
+
+                        Text {
+                            id: cannotCheckCodes
+                            color: "#c4c4c4"
+							text: qsTr("On board diagnostics are only available when the car is stopped")
+							horizontalAlignment: Text.AlignHCenter
+							font.pixelSize: 24
+							anchors.left: parent.left
+							anchors.right: parent.right
+							wrapMode: Text.WordWrap
+                            visible: speed.text != 0
+                        }
+
+                        Column {
+                            id: canCheckCodes
+                            width: 500
+                            visible: speed.text == 0
+
+                            Button {
+                                id: checkErrorCodeButton
+                                text: qsTr("Check for error codes")
+                                visible: true
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                
+                                onClicked: {
+									checkErrorCodes()
+									visible = false
+									checkingEngineBusy.running = true
+									checkingEngineBusy.visible = true
+								}
+                            }
+                            
+                            BusyIndicator {
+								id: checkingEngineBusy
+								running: false
+								visible: false
+								anchors.horizontalCenter: parent.horizontalCenter
+							}
+
+                            Text {
+                                id: errorCodeResponseText
+                                color: "#c4c4c4"
+                                text: qsTr("Check engine is ON\nError code(s):\n\nC1600")
+                                horizontalAlignment: Text.AlignHCenter
+                                padding: 5
+                                anchors.left: parent.left
+								anchors.right: parent.right
+                                font.pixelSize: 12
+                                visible: false
+                            }
+
+                            Button {
+                                id: clearErrorCodesButton
+                                anchors.horizontalCenter: parent.horizontalCenter
+								text: qsTr("Clear error codes")
+								visible: false
+
+								onClicked: {
+									messageDialog.open()
+								}
+                            }
+                            
+                            MessageDialog {
+								id: messageDialog
+								title: "Confirm error code removal"
+								text: "If you erase the error codes, you will not be able to query them anymore. Confirm removal?"
+								standardButtons: StandardButton.Yes | StandardButton.No
+								onYes: {
+									clearErrorCodes()
+								}
+							}
+                        }
+                    }
                 }
             }
         }

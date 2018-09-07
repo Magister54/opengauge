@@ -231,12 +231,31 @@ void check_mil_codes(void)
 			}
 		}
 	}
+	else
+	{
+		printf("CHECK ENGINE OFF, good for you!\n");
+	}
+}
+
+void clear_mil_codes(void)
+{
+	uint8_t cmd[1];
+
+	// clear code
+	cmd[0] = 0x03;
+	ISO9141::write(cmd, sizeof(cmd));
+	delayMs(200);
+
+	printf("Cleared codes. Restart engine.\n");
 }
 
 OBDIIWorker::OBDIIWorker()
 {
-	rpm = 8000;
+	rpm = 8.0;
+	speed = 0;
+	ic = 0.0;
 	mustStop = false;
+	checkErrorCodes = false;
 }
 
 void OBDIIWorker::setup()
@@ -266,16 +285,6 @@ void OBDIIWorker::setup()
 
 	// check supported PIDs
 	check_supported_pids();
-
-	printf("Supported PIDs %X:\n", pid01to20_support);
-	for(int i = 0; i < PID::N_PIDS; i++)
-	{
-		if(is_pid_supported((PID)i))
-			printf("%02X\n", i);
-	}
-
-	// check if we have MIL codes
-	check_mil_codes();
 }
 
 void OBDIIWorker::run()
@@ -288,16 +297,42 @@ void OBDIIWorker::run()
 	
 	while(!mustStop)
 	{
+		if(checkErrorCodes) {
+			check_mil_codes();
+			checkErrorCodes = false;
+			emit checkErrorCodesDone("Checked!");
+		}
+
+		if(clearErrorCodes) {
+			clear_mil_codes();
+			clearErrorCodes = false;
+			emit clearErrorCodesDone("Cleared! Please restart engine");
+		}
+
 		get_pid(PID::ENGINE_RPM, retBuf);
 		EngineRPM engineRPM = EngineRPM(retBuf);
-		rpm = engineRPM.getEU();
+		rpm = engineRPM.getEU() / 1000;
+		
+		get_pid(PID::VEHICLE_SPEED, retBuf);
+		VehicleSpeed vehicleSpeed = VehicleSpeed(retBuf);
+		speed = vehicleSpeed.getEU();
+		
 		emit RPMChanged();
-		printf("RPM: %d\n", rpm);
-		delayMs(200);
+		emit SpeedChanged();
 	}
 }
 
 void OBDIIWorker::stop()
 {
 	mustStop = true;
+}
+
+void OBDIIWorker::handleCheckErrorCodes()
+{
+	checkErrorCodes = true;
+}
+
+void OBDIIWorker::handleClearErrorCodes()
+{
+	clearErrorCodes = true;
 }
