@@ -246,7 +246,7 @@ void clear_mil_codes(void)
 	uint8_t cmd[1];
 
 	// clear code
-	cmd[0] = 0x03;
+	cmd[0] = 0x04;
 	ISO9141::write(cmd, sizeof(cmd));
 	delayMs(200);
 
