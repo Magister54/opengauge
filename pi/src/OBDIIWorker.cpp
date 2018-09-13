@@ -157,12 +157,13 @@ void check_supported_pids(void)
 }
 
 // might be incomplete
-void check_mil_codes(void)
+QString check_mil_codes(void)
 {
 	uint8_t PIDRes[maxPIDResLen];
 	char str[16];
 	uint8_t cmd[1];
 	uint8_t buf[6];
+	QString retText = QString("");
 
 	get_pid(MIL_CODE, PIDRes);
 
@@ -225,6 +226,7 @@ void check_mil_codes(void)
 					buf_ptr++;
 
 					m.print();
+					retText += m.toQString();
 
 					readCodes++;
 				}
@@ -235,6 +237,8 @@ void check_mil_codes(void)
 	{
 		printf("CHECK ENGINE OFF, good for you!\n");
 	}
+
+	return retText;
 }
 
 void clear_mil_codes(void)
@@ -298,9 +302,9 @@ void OBDIIWorker::run()
 	while(!mustStop)
 	{
 		if(checkErrorCodes) {
-			check_mil_codes();
+			QString retString = check_mil_codes();
 			checkErrorCodes = false;
-			emit checkErrorCodesDone("Checked!");
+			emit checkErrorCodesDone(retString);
 		}
 
 		if(clearErrorCodes) {
