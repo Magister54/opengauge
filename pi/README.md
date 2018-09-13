@@ -21,3 +21,7 @@ Also make sure qt.conf is next to the executable and points to the installation 
 [Paths]
 Prefix = /home/pi/Downloads/usr/local/Qt-5.11.1
 '''
+
+# Build on other system for testing
+
+cmake .. -DOFF_PLATFORM_TEST_BUILD:bool=true

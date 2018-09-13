@@ -13,7 +13,6 @@
 #include <termios.h>
 
 #include <QThread>
-#include <wiringPi.h>
 #include <asm/termios.h>
 
 const int serialTimeout = 500; // ms

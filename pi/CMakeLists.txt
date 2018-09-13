@@ -26,12 +26,21 @@ endif()
 if(NOT DEFINED SOURCES)
     file(GLOB SOURCES src/*.cpp)
 endif()
+
+if(OFF_PLATFORM_TEST_BUILD)
+	set(ADDITIONAL_SOURCES src/fakeWiringPi.cpp)
+	set(ADDITIONAL_LIBS "")
+else()
+	set(ADDITIONAL_SOURCES "")
+	set(ADDITIONAL_LIBS wiringPi)
+endif()
+
 source_group("Header Files" FILES ${HEADERS})
 source_group("Source Files" FILES ${SOURCES})
-add_executable(${PROJECT} ${HEADERS} ${SOURCES} ${QT_RESOURCES})
+add_executable(${PROJECT} ${HEADERS} ${SOURCES} ${QT_RESOURCES} ${ADDITIONAL_SOURCES})
 
 # Compile in C++14
 set_property(TARGET ${PROJECT} PROPERTY CXX_STANDARD 14)
 
 # Use the Widgets module from Qt 5
-target_link_libraries(${PROJECT} Qt5::Core Qt5::Qml Qt5::Quick wiringPi)
+target_link_libraries(${PROJECT} Qt5::Core Qt5::Qml Qt5::Quick ${ADDITIONAL_LIBS})
