@@ -260,6 +260,7 @@ OBDIIWorker::OBDIIWorker()
 	ic = 0.0;
 	mustStop = false;
 	checkErrorCodes = false;
+	clearErrorCodes = false;
 }
 
 void OBDIIWorker::setup()

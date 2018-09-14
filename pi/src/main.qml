@@ -10,6 +10,8 @@ Window {
 
 	signal checkErrorCodes()
     signal clearErrorCodes()
+    signal checkForUpdates()
+    signal killApplication()
 
     function checkErrorCodesDone(text) {
         console.log("checkEngineDone: " + text)
@@ -199,7 +201,6 @@ Window {
                             color: "#c4c4c4"
                             text: qsTr("Engine status")
                             visible: true
-                            padding: 10
                             font.pixelSize: 16
                         }
 
@@ -219,7 +220,30 @@ Window {
                             id: canCheckCodes
                             width: 500
                             visible: speed.text == 0
+                            spacing: 5
+
+                            Button {
+                                id: stopButton
+                                text: qsTr("STOP")
+                                visible: true
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                
+                                onClicked: {
+                                    killApplication()
+                                }
+                            }
                             
+                            Button {
+                                id: checkForUpdatesButton
+                                text: qsTr("Check for updates")
+                                visible: true
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                
+                                onClicked: {
+									checkForUpdates()
+								}
+                            }
+
                             Button {
                                 id: checkErrorCodeButton
                                 text: qsTr("Check for error codes")
@@ -227,8 +251,8 @@ Window {
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 
                                 onClicked: {
-									checkErrorCodes()
-								}
+                                    checkErrorCodes()
+                                }
                             }
 
                             Text {
@@ -236,7 +260,6 @@ Window {
                                 color: "#c4c4c4"
                                 text: qsTr("Check engine is ON\nError code(s):\n\nC1600")
                                 horizontalAlignment: Text.AlignHCenter
-                                padding: 5
                                 anchors.left: parent.left
 								anchors.right: parent.right
                                 font.pixelSize: 12

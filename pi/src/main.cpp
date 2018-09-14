@@ -1,23 +1,14 @@
-#include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
 
+#include "DashboardApplication.h"
 #include "OBDIIWorker.h"
-
-static OBDIIWorker* worker = nullptr;
-
-void aboutToQuit()
-{
-	worker->stop();
-	worker->wait();
-}
 
 int main(int argc, char *argv[])
 {
-	QGuiApplication app(argc, argv);
-
-	worker = new OBDIIWorker;
+	OBDIIWorker* worker = new OBDIIWorker;
+	DashboardApplication* app = new DashboardApplication(worker, argc, argv);
 
 	QQmlApplicationEngine engine;
 	engine.rootContext()->setContextProperty("applicationData", worker);
@@ -28,11 +19,13 @@ int main(int argc, char *argv[])
 	QQuickWindow* window = qobject_cast<QQuickWindow*>(topLevel);
 	QObject::connect(window, SIGNAL(checkErrorCodes()), worker, SLOT(handleCheckErrorCodes()));
 	QObject::connect(window, SIGNAL(clearErrorCodes()), worker, SLOT(handleClearErrorCodes()));
+	QObject::connect(window, SIGNAL(checkForUpdates()), app, SLOT(handleCheckForUpdates()));
+	QObject::connect(window, SIGNAL(killApplication()), app, SLOT(handleKillApplication()));
 	QObject::connect(worker, SIGNAL(checkErrorCodesDone(QVariant)), window, SLOT(checkErrorCodesDone(QVariant)));
 	QObject::connect(worker, SIGNAL(clearErrorCodesDone(QVariant)), window, SLOT(clearErrorCodesDone(QVariant)));
 
-	QObject::connect(&app, &QGuiApplication::aboutToQuit, aboutToQuit);
+	QObject::connect(app, &DashboardApplication::aboutToQuit, app, &DashboardApplication::killWorker);
 	worker->start();
 
-	return app.exec();
+	return app->exec();
 }
