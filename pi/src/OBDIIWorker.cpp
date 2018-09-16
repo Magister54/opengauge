@@ -321,7 +321,16 @@ void OBDIIWorker::run()
 		get_pid(PID::VEHICLE_SPEED, retBuf);
 		VehicleSpeed vehicleSpeed = VehicleSpeed(retBuf);
 		speed = vehicleSpeed.getEU();
-		
+
+		get_pid(PID::MAF_AIR_FLOW, retBuf);
+		AirFlowRate airFlowRate = AirFlowRate(retBuf);
+		double airFlow = airFlowRate.getEU(); // g of air / s
+		double fuelFlow_g_s = airFlow / 14.7; // g of fuel / s
+		double fuelFlow_L_s = fuelFlow_g_s / 730.0; // L of fuel / s
+		double fuelFlow_L_h = fuelFlow_L_s * 3600.0; // L of fuel / h
+		ic = fuelFlow_L_h * 100 * speed; // L per 100km
+
+		emit IcChanged();
 		emit RPMChanged();
 		emit SpeedChanged();
 	}
