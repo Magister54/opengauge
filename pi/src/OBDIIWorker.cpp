@@ -328,7 +328,7 @@ void OBDIIWorker::run()
 		double fuelFlow_g_s = airFlow / 14.7; // g of fuel / s
 		double fuelFlow_L_s = fuelFlow_g_s / 730.0; // L of fuel / s
 		double fuelFlow_L_h = fuelFlow_L_s * 3600.0; // L of fuel / h
-		ic = fuelFlow_L_h * speed / 100; // L per 100km
+		ic = fuelFlow_L_h * 100.0 / speed; // L per 100km
 
 		emit IcChanged();
 		emit RPMChanged();
