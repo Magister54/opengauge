@@ -204,6 +204,17 @@ Window {
                             font.pixelSize: 16
                         }
 
+                        Button {
+                            id: stopButton
+                            text: qsTr("STOP")
+                            visible: true
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            
+                            onClicked: {
+                                killApplication()
+                            }
+                        }
+
                         Text {
                             id: cannotCheckCodes
                             color: "#c4c4c4"
@@ -221,17 +232,6 @@ Window {
                             width: 500
                             visible: speed.text == 0
                             spacing: 5
-
-                            Button {
-                                id: stopButton
-                                text: qsTr("STOP")
-                                visible: true
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                
-                                onClicked: {
-                                    killApplication()
-                                }
-                            }
                             
                             Button {
                                 id: checkForUpdatesButton

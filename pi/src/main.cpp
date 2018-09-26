@@ -1,6 +1,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QCursor>
 
 #include "DashboardApplication.h"
 #include "OBDIIWorker.h"
@@ -9,6 +10,9 @@ int main(int argc, char *argv[])
 {
 	OBDIIWorker* worker = new OBDIIWorker;
 	DashboardApplication* app = new DashboardApplication(worker, argc, argv);
+
+	// Hide cursor
+	app->setOverrideCursor(QCursor(Qt::BlankCursor));
 
 	QQmlApplicationEngine engine;
 	engine.rootContext()->setContextProperty("applicationData", worker);
