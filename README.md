@@ -12,3 +12,4 @@ Copy config/dashboard.desktop to ~/.config/autostart
 
 Copy config/start.sh to where config/dashboard.desktop points. Make sure to give the good path to the executable
 
+Copy config/config.txt to /boot/config.txt
