@@ -1,12 +1,14 @@
-Dashboard
+# Dashboard
 
-# setup
+Super fancy Raspberry Pi based infotainment system mor my car
 
-make sure you are a member of the dialout group:
+## Global setup on the Pi
 
-$ sudo usermod -a -G dialout pi
+Make sure you are a member of the dialout group:
 
-copy config/dashboard.desktop to ~/.config/autostart
+`$ sudo usermod -a -G dialout pi`
 
-copy config/start.sh to where config/dashboard.desktop points. Make sure to give the good path to the executable
+Copy config/dashboard.desktop to ~/.config/autostart
+
+Copy config/start.sh to where config/dashboard.desktop points. Make sure to give the good path to the executable
 
