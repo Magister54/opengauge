@@ -7,20 +7,27 @@ sudo rpi-update
 # Packages to install
 sudo apt install at-spi2-core
 
-# Raspberry pi config
+# Raspberry pi GL config
+
+## GL driver
+This will make app run smoother
+
 sudo raspi-config
 
-# Change GL driver
+### Change GL driver
 7 - Advanced Options
 A7 GL Driver
 G2 GL (Fake KMS)
 
-# Allow more ram for graphics
+### Allow more ram for graphics
 7 - Advanced Options
 A3 Memory Split
 256
 
-app runs smoother
+## Screen turn-off disable
+Open /etc/lightdm/lightdm.conf and add the following line
+
+xserver-command=X -s 0 -dpms
 
 # Qt version 5.11.1 mandatory
 
