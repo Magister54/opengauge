@@ -7,6 +7,21 @@ sudo rpi-update
 # Packages to install
 sudo apt install at-spi2-core
 
+# Raspberry pi config
+sudo raspi-config
+
+# Change GL driver
+7 - Advanced Options
+A7 GL Driver
+G2 GL (Fake KMS)
+
+# Allow more ram for graphics
+7 - Advanced Options
+A3 Memory Split
+256
+
+app runs smoother
+
 # Qt version 5.11.1 mandatory
 
 Top build:
