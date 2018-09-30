@@ -1,0 +1,357 @@
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+CLSEOXYS
+
+PID 4:
+13 %
+
+PID 5:
+93C
+
+PID 6:
+2.34 %
+
+PID 7:
+-.78 %
+
+PID C:
+703 RPM
+
+PID D:
+0
+
+PID E:
+9
+
+PID F:
+56C
+
+PID 10:
+1.42 g/s
+
+PID 11:
+12 %
+
+PID 13:
+00000003
+
+PID 14:
+95mV/3%
+
+PID 15:
+75 mV
+
+PID 1C:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+CLSEOXYS
+
+PID 4:
+13 %
+
+PID 5:
+93C
+
+PID 6:
+1.56 %
+
+PID 7:
+-.78 %
+
+PID C:
+701 RPM
+
+PID D:
+0
+
+PID E:
+11
+
+PID F:
+56C
+
+PID 10:
+1.42 g/s
+
+PID 11:
+12 %
+
+PID 13:
+00000003
+
+PID 14:
+75mV/0%
+
+PID 15:
+410 mV
+
+PID 1C:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+CLSEOXYS
+
+PID 4:
+13 %
+
+PID 5:
+93C
+
+PID 6:
+3.12 %
+
+PID 7:
+-.78 %
+
+PID C:
+699 RPM
+
+PID D:
+0
+
+PID E:
+8
+
+PID F:
+56C
+
+PID 10:
+1.43 g/s
+
+PID 11:
+12 %
+
+PID 13:
+00000003
+
+PID 14:
+505mV/3%
+
+PID 15:
+95 mV
+
+PID 1C:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+CLSEOXYS
+
+PID 4:
+14 %
+
+PID 5:
+94C
+
+PID 6:
+0.78 %
+
+PID 7:
+-.78 %
+
+PID C:
+706 RPM
+
+PID D:
+0
+
+PID E:
+9
+
+PID F:
+56C
+
+PID 10:
+1.43 g/s
+
+PID 11:
+12 %
+
+PID 13:
+00000003
+
+PID 14:
+75mV/2%
+
+PID 15:
+75 mV
+
+PID 1C:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+CLSEOXYS
+
+PID 4:
+14 %
+
+PID 5:
+94C
+
+PID 6:
+4.68 %
+
+PID 7:
+-.78 %
+
+PID C:
+695 RPM
+
+PID D:
+0
+
+PID E:
+8
+
+PID F:
+56C
+
+PID 10:
+1.42 g/s
+
+PID 11:
+12 %
+
+PID 13:
+00000003
+
+PID 14:
+175mV/0%
+
+PID 15:
+565 mV
+
+PID 1C:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+CLSEOXYS
+
+PID 4:
+13 %
+
+PID 5:
+94C
+
+PID 6:
+3.12 %
+
+PID 7:
+-.78 %
+
+PID C:
+692 RPM
+
+PID D:
+0
+
+PID E:
+8
+
+PID F:
+56C
+
+PID 10:
+1.42 g/s
+
+PID 11:
+12 %
+
+PID 13:
+00000003
+
+PID 14:
+95mV/4%
+
+PID 15:
+95 mV
+
+PID 1C:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+CLSEOXYS
+
+PID 4:
+13 %
+
+PID 5:
+95C
+
+PID 6:
+1.56 %
+
+PID 7:
+-.78 %
+
+PID C:
+705 RPM
+
+PID D:
+0
+
+PID E:
+11
+
+PID F:
+56C
+
+PID 10:
+1.42 g/s
+
+PID 11:
+12 %
+
+PID 13:
+00000003
+
+PID 14:
+75mV/1%
+
+PID 15:
+115 mV
+
+PID 1C:
+OBD2CARB

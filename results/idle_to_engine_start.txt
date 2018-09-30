@@ -1,0 +1,2024 @@
+PID 4:
+0 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+0 RPM
+
+PID 13:
+0
+
+PID 14:
+5
+
+PID 15:
+59C
+
+PID 16:
+0.21 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+0 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+0 RPM
+
+PID 13:
+0
+
+PID 14:
+5
+
+PID 15:
+59C
+
+PID 16:
+0.21 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+0 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+0 RPM
+
+PID 13:
+0
+
+PID 14:
+5
+
+PID 15:
+59C
+
+PID 16:
+0.20 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+0 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+0 RPM
+
+PID 13:
+0
+
+PID 14:
+5
+
+PID 15:
+59C
+
+PID 16:
+0.20 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+0 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+0 RPM
+
+PID 13:
+0
+
+PID 14:
+5
+
+PID 15:
+59C
+
+PID 16:
+0.20 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+0 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+0 RPM
+
+PID 13:
+0
+
+PID 14:
+5
+
+PID 15:
+59C
+
+PID 16:
+0.20 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+0 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+0 RPM
+
+PID 13:
+0
+
+PID 14:
+5
+
+PID 15:
+59C
+
+PID 16:
+0.20 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+0 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+0 RPM
+
+PID 13:
+0
+
+PID 14:
+5
+
+PID 15:
+59C
+
+PID 16:
+0.20 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+0 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+0 RPM
+
+PID 13:
+0
+
+PID 14:
+5
+
+PID 15:
+59C
+
+PID 16:
+0.20 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+0 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+0 RPM
+
+PID 13:
+0
+
+PID 14:
+5
+
+PID 15:
+59C
+
+PID 16:
+0.20 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+0 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+0 RPM
+
+PID 13:
+0
+
+PID 14:
+5
+
+PID 15:
+59C
+
+PID 16:
+0.20 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+22 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-3.90 %
+
+PID 12:
+1710 RPM
+
+PID 13:
+0
+
+PID 14:
+12
+
+PID 15:
+59C
+
+PID 16:
+3.26 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+210mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+25 %
+
+PID 5:
+76C
+
+PID 6:
+0.00 %
+
+PID 7:
+-3.12 %
+
+PID 12:
+1016 RPM
+
+PID 13:
+0
+
+PID 14:
+4
+
+PID 15:
+58C
+
+PID 16:
+2.82 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+210mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+19 %
+
+PID 5:
+76C
+
+PID 6:
+0.00 %
+
+PID 7:
+-3.12 %
+
+PID 12:
+920 RPM
+
+PID 13:
+0
+
+PID 14:
+11
+
+PID 15:
+57C
+
+PID 16:
+2.46 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+210mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+75C
+
+PID 6:
+0.00 %
+
+PID 7:
+-2.34 %
+
+PID 12:
+838 RPM
+
+PID 13:
+0
+
+PID 14:
+12
+
+PID 15:
+56C
+
+PID 16:
+2.07 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+230mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+75C
+
+PID 6:
+0.00 %
+
+PID 7:
+-1.56 %
+
+PID 12:
+720 RPM
+
+PID 13:
+0
+
+PID 14:
+12
+
+PID 15:
+56C
+
+PID 16:
+1.84 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+195mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+18 %
+
+PID 5:
+75C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+709 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+56C
+
+PID 16:
+1.90 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+195mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+18 %
+
+PID 5:
+75C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+710 RPM
+
+PID 13:
+0
+
+PID 14:
+6
+
+PID 15:
+55C
+
+PID 16:
+1.92 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+175mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+18 %
+
+PID 5:
+75C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+732 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+55C
+
+PID 16:
+1.93 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+135mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+18 %
+
+PID 5:
+76C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+733 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+55C
+
+PID 16:
+1.92 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+95mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+76C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+734 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+55C
+
+PID 16:
+1.92 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+95mV/0%
+
+PID 21:
+15 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+76C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+730 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+55C
+
+PID 16:
+1.89 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+35 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+76C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+732 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+55C
+
+PID 16:
+1.90 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+35 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+76C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+727 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+55C
+
+PID 16:
+1.89 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+35 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+728 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+55C
+
+PID 16:
+1.85 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+35 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+712 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+55C
+
+PID 16:
+1.84 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+35mV/0%
+
+PID 21:
+35 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+77C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+705 RPM
+
+PID 13:
+0
+
+PID 14:
+6
+
+PID 15:
+55C
+
+PID 16:
+1.82 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+35mV/0%
+
+PID 21:
+55 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+78C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+710 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+55C
+
+PID 16:
+1.81 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+35mV/0%
+
+PID 21:
+55 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+78C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+710 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+55C
+
+PID 16:
+1.81 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+55mV/0%
+
+PID 21:
+55 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+78C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+699 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+55C
+
+PID 16:
+1.78 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+35mV/0%
+
+PID 21:
+55 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+78C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+679 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+54C
+
+PID 16:
+1.79 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+35mV/0%
+
+PID 21:
+55 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+79C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+685 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+54C
+
+PID 16:
+1.78 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+35mV/0%
+
+PID 21:
+55 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+79C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+689 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+54C
+
+PID 16:
+1.76 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+35mV/0%
+
+PID 21:
+55 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+79C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+686 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+54C
+
+PID 16:
+1.76 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+35mV/0%
+
+PID 21:
+55 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+16 %
+
+PID 5:
+80C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+692 RPM
+
+PID 13:
+0
+
+PID 14:
+8
+
+PID 15:
+54C
+
+PID 16:
+1.75 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+35mV/0%
+
+PID 21:
+55 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+80C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+697 RPM
+
+PID 13:
+0
+
+PID 14:
+8
+
+PID 15:
+54C
+
+PID 16:
+1.76 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+35mV/0%
+
+PID 21:
+55 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+80C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+694 RPM
+
+PID 13:
+0
+
+PID 14:
+7
+
+PID 15:
+54C
+
+PID 16:
+1.75 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+35mV/0%
+
+PID 21:
+55 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+80C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+696 RPM
+
+PID 13:
+0
+
+PID 14:
+8
+
+PID 15:
+54C
+
+PID 16:
+1.78 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+35mV/0%
+
+PID 21:
+55 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+80C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+695 RPM
+
+PID 13:
+0
+
+PID 14:
+8
+
+PID 15:
+54C
+
+PID 16:
+1.78 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+35mV/0%
+
+PID 21:
+55 mV
+
+PID 28:
+OBD2CARB
+
+PID 0:
+BE1FB810
+
+PID 1:
+00076500
+
+PID 3:
+OPENLOWT
+
+PID 4:
+17 %
+
+PID 5:
+80C
+
+PID 6:
+0.00 %
+
+PID 7:
+-.78 %
+
+PID 12:
+696 RPM
+
+PID 13:
+0
+
+PID 14:
+8
+
+PID 15:
+54C
+
+PID 16:
+1.78 g/s
+
+PID 17:
+12 %
+
+PID 19:
+00000003
+
+PID 20:
+3
