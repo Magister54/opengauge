@@ -30,6 +30,7 @@ int main(int argc, char *argv[])
 
 	QObject::connect(app, &DashboardApplication::aboutToQuit, app, &DashboardApplication::killWorker);
 	worker->start();
+	worker->setPriority(QThread::TimeCriticalPriority);
 
 	return app->exec();
 }
