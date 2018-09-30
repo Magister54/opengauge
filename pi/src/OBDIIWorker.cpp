@@ -6,6 +6,8 @@
 #include "PID.h"
 #include "port.h"
 
+#include <QTime>
+
 /* PID support */
 uint32_t pid01to20_support = 0;
 uint32_t pid21to40_support = 0;
@@ -299,6 +301,8 @@ void OBDIIWorker::run()
 	setup();
 	
 	uint8_t retBuf[maxPIDResLen];
+
+	QTime t1, t2;
 	
 	while(!mustStop)
 	{
@@ -314,25 +318,36 @@ void OBDIIWorker::run()
 			emit clearErrorCodesDone("Cleared! Please restart engine");
 		}
 
-		get_pid(PID::ENGINE_RPM, retBuf);
-		EngineRPM engineRPM = EngineRPM(retBuf);
-		rpm = engineRPM.getEU() / 1000;
+		t1 = QTime::currentTime();
+			get_pid(PID::ENGINE_RPM, retBuf);
+			EngineRPM engineRPM = EngineRPM(retBuf);
+			rpm = engineRPM.getEU() / 1000;
+		t2 = QTime::currentTime();
+		int rpmTime = t1.msecsTo(t2);
 		
-		get_pid(PID::VEHICLE_SPEED, retBuf);
-		VehicleSpeed vehicleSpeed = VehicleSpeed(retBuf);
-		speed = vehicleSpeed.getEU();
+		t1 = QTime::currentTime();
+			get_pid(PID::VEHICLE_SPEED, retBuf);
+			VehicleSpeed vehicleSpeed = VehicleSpeed(retBuf);
+			speed = vehicleSpeed.getEU();
+		t2 = QTime::currentTime();
+		int speedTime = t1.msecsTo(t2);
 
-		get_pid(PID::MAF_AIR_FLOW, retBuf);
-		AirFlowRate airFlowRate = AirFlowRate(retBuf);
-		double airFlow = airFlowRate.getEU(); // g of air / s
-		double fuelFlow_g_s = airFlow / 14.7; // g of fuel / s
-		double fuelFlow_L_s = fuelFlow_g_s / 730.0; // L of fuel / s
-		double fuelFlow_L_h = fuelFlow_L_s * 3600.0; // L of fuel / h
-		ic = fuelFlow_L_h * 100.0 / speed; // L per 100km
+		t1 = QTime::currentTime();
+			get_pid(PID::MAF_AIR_FLOW, retBuf);
+			AirFlowRate airFlowRate = AirFlowRate(retBuf);
+			double airFlow = airFlowRate.getEU(); // g of air / s
+			double fuelFlow_g_s = airFlow / 14.7; // g of fuel / s
+			double fuelFlow_L_s = fuelFlow_g_s / 730.0; // L of fuel / s
+			double fuelFlow_L_h = fuelFlow_L_s * 3600.0; // L of fuel / h
+			ic = fuelFlow_L_h * 100.0 / speed; // L per 100km
+		t2 = QTime::currentTime();
+		int mafTime = t1.msecsTo(t2);
 
 		emit IcChanged();
 		emit RPMChanged();
 		emit SpeedChanged();
+
+		printf("RPM %d SPEED %d MAF %d\n", rpmTime, speedTime, mafTime);
 	}
 }
 
