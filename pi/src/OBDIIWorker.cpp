@@ -186,7 +186,6 @@ QString check_mil_codes(void)
 		int nbMILCodes = byteA & 0x7F;
 		printf("CHECK ENGINE ON\n");
 		printf("%d CODE(S) IN ECU\n", nbMILCodes);
-		delayMs(2000);
 
 		// retrieve code
 		cmd[0] = 0x03;
