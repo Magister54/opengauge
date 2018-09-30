@@ -15,14 +15,9 @@ uint8_t ISO9141::readByte()
 	int b;
 	uint8_t t = 0;
 	while (t != 125 && (b = serialRead()) == -1)
-	{
-		delayMs(1);
 		t++;
-	}
 	if (t >= 125)
-	{
 		b = 0;
-	}
 	return b;
 }
 
@@ -30,7 +25,7 @@ void ISO9141::writeByte(uint8_t b)
 {
 	serial_rx_off();
 	serialWrite(b);
-	delayMs(10);		// ISO requires 5-20 ms delay between bytes.
+	delayMs(1);		// ISO requires 5-20 ms delay between bytes.
 	serial_rx_on();
 }
 
@@ -81,7 +76,7 @@ int ISO9141::read(uint8_t *data, uint8_t len)
 {
 	uint8_t i;
 	uint8_t buf[20];
-
+	
 	// header 3 bytes: [80+datalen] [destination=f1] [source=01]
 	// data 1+1+len bytes: [40+cmd0] [cmd1] [result0]
 	// checksum 1 bytes: [sum(header)+sum(data)]
@@ -96,7 +91,7 @@ int ISO9141::read(uint8_t *data, uint8_t len)
 	// we send only one command, so result start at buf[4] Actually, result starts at buf[5], buf[4] is pid requested...
 	memcpy(data, buf + 5, len);
 
-	delayMs(55);    //guarantee 55 ms pause between requests
+	delayMs(1);    //guarantee 55 ms pause between requests
 
 	return len;
 }

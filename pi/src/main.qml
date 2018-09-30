@@ -8,7 +8,7 @@ import QtQuick.Dialogs 1.3
 
 Window {
 
-	signal checkErrorCodes()
+    signal checkErrorCodes()
     signal clearErrorCodes()
     signal checkForUpdates()
     signal killApplication()
@@ -71,12 +71,12 @@ Window {
             height: 240
             stepSize: 0
             value: applicationData.rpm
-            maximumValue: 8
+            maximumValue: 6
             anchors.right: parent.right
             anchors.left: parent.left
             
             Behavior on value{
-                NumberAnimation { duration: 250; easing.type: Easing.Linear }
+                NumberAnimation { duration: 230; easing.type: Easing.Linear }
             }
 
             style: CircularGaugeStyle {
