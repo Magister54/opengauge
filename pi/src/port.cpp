@@ -144,8 +144,6 @@ uint8_t serialRead()
 void serialWrite(uint8_t data)
 {
 	write(uartFd, &data, sizeof(data));
-	// Wait for the byte to be sent
-	delayMs(1);
 }
 
 void serial_on()

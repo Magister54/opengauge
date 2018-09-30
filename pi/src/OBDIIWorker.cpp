@@ -257,7 +257,7 @@ void clear_mil_codes(void)
 
 OBDIIWorker::OBDIIWorker()
 {
-	rpm = 8.0;
+	rpm = 6.0;
 	speed = 0;
 	ic = 0.0;
 	mustStop = false;
