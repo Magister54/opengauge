@@ -11,6 +11,9 @@
  LCD bignum: Frederic based on mpguino code by Dave, Eimantas
 
 Latest Changes
+May 28, 2016 (v198)
+ Fixed KWP2000 implementation
+
 Jul 11th, 2011 (v197)
  Buzzer for speed limit (active)
  Buzzer for coolant temperature (every 1min)
@@ -199,7 +202,7 @@ To-Do:
 // Define delay between ISO request bytes (min 5ms, max 20ms) slower is faster refresh rate. By default 10ms.
 // 5ms gives 8.2pids/s, 10ms gives 6.6pids/s
 // On some cars 1ms works fine, it will just poll the ECU until it is ready.
-#define ISORequestByteDelay 5
+#define ISORequestByteDelay 10
 
 // Define delay between ISO requests (min 55ms, max 5000ms) slower is faster refresh rate. By default 55ms.
 // Some cars works with <55ms (faster refresh rate)
@@ -227,7 +230,7 @@ To-Do:
 // Uncomment define below to force reinitialization of ISO 9141 after no ECU communication
 // this requires ECU polling
 // DEFAULT: commented
-//#define do_ISO_Reinit 
+#define do_ISO_Reinit 
 
 // Comment out if ISO 9141 initialization should be done on first startup
 // Uncomment define below to skip initialization of ISO 9141 after first startup, initialization will be done in ISO_Reinit mode
@@ -1219,7 +1222,7 @@ boolean iso_read_byte(byte * b)
 void iso_write_byte(byte b)
 {
   serial_rx_off();
-  Serial.print(b);
+  Serial.write(b);
   delay(ISORequestByteDelay);  // ISO requires 5-20 ms delay between bytes.
   serial_rx_on();
 }
@@ -1485,8 +1488,8 @@ void iso_init()
           iso_write_byte(dataStream[i]);
         }
 
-        // Wait for response for 300 ms
-        initTime = currentTime + 300;
+        // Wait for response for 1000 ms
+        initTime = currentTime + 1000;
         do
         {
            // If we find any data, keep catching it until it ends
