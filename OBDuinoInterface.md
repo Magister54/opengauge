@@ -34,7 +34,7 @@ DB9F			OBD-II
 
 Example of my home made cable:
 
-![](https://github.com/Magister54/opengauge/pictures/obd2_cable.jpg)
+![](https://github.com/Magister54/opengauge/blob/master/pictures/obd2_cable.jpg)
 
 A nice place to get OBD-II plugs and already made cable is [Senso](http://www.sensolutions.com/products/browse-products/) which are located in Canada.
 
@@ -60,7 +60,7 @@ This interface converts the ISO signals for the Arduino inputs.
 It consists of a small IC ([Freescale MCZ33290EF](http://www.freescale.com/webapp/sps/site/prod_summary.jsp?code=MC33290)), a 510 ohms resistor, a DB9M that will be plugged with the cable mentioned above, and few wires that connect to the Arduino board.
 
 The MC33290 is a small chip, you can solder some wires on it for better handling.
-![](https://github.com/Magister54/opengauge/pictures/MC33290.jpg)
+![](https://github.com/Magister54/opengauge/blob/master/pictures/MC33290.jpg)
 
 Schematic is like this:
 ```
@@ -78,11 +78,11 @@ Arduino 5V pin output -----8|CEN VBB|1-----------------+------- DB9M pin 9 (12V 
 
 Interface front:
 
-![](https://github.com/Magister54/opengauge/pictures/iso_interface.jpg)
+![](https://github.com/Magister54/opengauge/blob/master/pictures/iso_interface.jpg)
 
 Interface back:
 
-![](https://github.com/Magister54/opengauge/pictures/iso_interface_back.jpg)
+![](https://github.com/Magister54/opengauge/blob/master/pictures/iso_interface_back.jpg)
 
 
 ## Interface with ELM ##
@@ -93,9 +93,9 @@ Note that for PWM/VPW it should be possible to use an ELM320 or ELM323 respectiv
 
 Diagram of the interface (adaptation of the generic diagram found in the PDF of the ELM327):
 
-![](https://github.com/Magister54/opengauge/pictures/CANduino.gif)
+![](https://github.com/Magister54/opengauge/blob/master/pictures/CANduino.gif)
 
 On the diagram, note that CAN-L (OBD2 pin 14) go to a DB9M pin 5 and CAN-H (OBD2 pin 6) go to a DB9M pin 3. +5V comes from the Arduino board.
 
-![](https://github.com/Magister54/opengauge/pictures/CAN_Interface_front.jpg)
-![](https://github.com/Magister54/opengauge/pictures/CAN_Interface_back.jpg)
+![](https://github.com/Magister54/opengauge/blob/master/pictures/CAN_Interface_front.jpg)
+![](https://github.com/Magister54/opengauge/blob/master/pictures/CAN_Interface_back.jpg)
